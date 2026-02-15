@@ -1,6 +1,6 @@
 # RomHoard
 
-A self-hosted ROM library manager. Point it at your ROM folders, and it handles the rest: identifies games, fetches metadata and artwork from ScreenScraper, and lets you build collections to send directly to your devices.
+A self-hosted ROM library manager. Point it at your ROM folders, and it handles the rest: identifies games, fetches metadata and artwork from ScreenScraper, and lets you build collections to send directly to your devices. Discover curated collections from the community or share your own.
 
 ![Library View](documentation/screenshots/library.png)
 
@@ -9,6 +9,7 @@ A self-hosted ROM library manager. Point it at your ROM folders, and it handles 
 - Scans your ROM directories and identifies games automatically
 - Fetches cover art, screenshots, and game metadata from ScreenScraper.fr
 - Build collections to curate your favorites, top lists, or themed sets
+- Browse community collections at [romhoard.cubical.fyi](https://romhoard.cubical.fyi) and import them into your library
 - Send collections or individual games to handhelds via FTP/SFTP, with images
 - Includes presets for common device OSes (MuOS, KNULLI, Batocera, etc.)
 
@@ -70,6 +71,20 @@ Open http://localhost:6766 in your browser.
 Most things are configured through the web UI. For ScreenScraper metadata fetching, you'll need a free account at [screenscraper.fr](https://www.screenscraper.fr/).
 
 See [documentation/docker.md](documentation/docker.md) for environment variables and advanced configuration.
+
+## Why RomHoard?
+
+RomHoard didn't start as a ROM manager. The original idea was to discover and share curated game lists—because having 2000 ROMs and not knowing what to play is a real problem.
+
+Then I wanted to send those collections straight to my retro handhelds. Turns out you need to manage ROMs to do that, so here we are.
+
+### RomHoard vs Romm
+
+[Romm](https://romm.app/) is great if you want to carefully curate your library with metadata from lots of sources.
+
+RomHoard is collections-first: discover curated lists, share your own, and send them to your devices. The ROM management exists to support that.
+
+You can run both—they're good neighbors.
 
 ## Tech Stack
 
