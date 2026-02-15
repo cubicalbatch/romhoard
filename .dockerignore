@@ -1,0 +1,72 @@
+# Git
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Environment files
+.env
+.env.*
+*.local
+.idea/
+.vscode/
+.claude/
+.crush/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+*.swp
+*.swo
+
+# Runtime data (mounted as volume)
+data/
+data
+roms/
+
+# Development/test directories
+tests/
+docs/
+plans/
+ftp/
+smallLibrary/
+conductor/
+prompts/
+collections/
+
+# Development scripts
+build.sh
+reset_db.sh
+start.sh
+start_workers.sh
+worker.sh
+.worker_started
+
+# Documentation (except README)
+*.md
+!README.md
+AGENT.md
+GEMINI.md
+
+# Docker files (prevent recursive copying)
+docker-compose*.yml
+Dockerfile*
+
+# Misc
+.coverage
+*.log
+pyrightconfig.json
+.pre-commit-config.yaml
+
+# CollectionHub (separate private repo - not included in Docker images)
+collectionhub/

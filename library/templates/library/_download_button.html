@@ -1,0 +1,7 @@
+{# Download button with arrow down icon. Requires: game.pk #}
+<button x-data @click="$store.gameDownload.handle({{ game.pk }})" class="text-[var(--color-text-muted)] hover:text-[var(--color-primary)]" title="Download">
+    <svg class="h-5 w-5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+    </svg>
+</button>

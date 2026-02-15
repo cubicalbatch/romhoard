@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}Import Collection - RomHoard{% endblock %}
+
+{% block content %}
+<div x-data="{
+    mode: 'file',
+    file: null,
+    fileError: '',
+    isUploading: false,
+    uploadProgress: 0,
+    maxFileSize: 1073741824,  // 1GB in bytes
+    validateFile() {
+        this.fileError = '';
+        if (!this.file) return true;
+
+        // Check file size
+        if (this.file.size > this.maxFileSize) {
+            const sizeMB = (this.file.size / (1024 * 1024)).toFixed(1);
+            const maxMB = (this.maxFileSize / (1024 * 1024)).toFixed(0);
+            this.fileError = `File too large: ${sizeMB}MB (max ${maxMB}MB)`;
+            return false;
+        }
+
+        // Check file extension
+        const ext = this.file.name.split('.').pop().toLowerCase();
+        if (!['json', 'zip'].includes(ext)) {
+            this.fileError = 'Invalid file type. Please select a .json or .zip file.';
+            return false;
+        }
+
+        return true;
+    }
+}">
+    <!-- Header -->
+    <div class="mb-8 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <div>
+            <h2 class="retro-heading retro-heading-lg">Import Collection</h2>
+            <p class="text-[var(--color-text-muted)] mt-1">Import a collection from a file or URL</p>
+        </div>
+        <a href="{% url 'romcollections:collection_list' %}" class="retro-btn">
+            Back to Collections
+        </a>
+    </div>
+
+    {% if error %}
+    <div class="retro-system-card retro-system-card-static mb-6">
+        <div class="retro-system-card-header retro-header-red flex items-center gap-2 !text-left">
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <h3>Error</h3>
+        </div>
+        <div class="retro-system-card-body !text-left !items-start">
+            <span class="text-[var(--color-danger)]">{{ error }}</span>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="retro-system-card retro-system-card-static">
+        <div class="retro-system-card-header retro-header-purple flex items-center gap-2 !text-left">
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            <h3>Import Collection</h3>
+        </div>
+        <div class="retro-system-card-body !text-left !items-start">
+            <form method="POST" enctype="multipart/form-data" class="w-full"
+                  @submit="if (!fileError) isUploading = true">
+                {% csrf_token %}
+
+                <!-- Mode Toggle -->
+                <div class="mb-6">
+                    <div class="flex gap-2">
+                        <button type="button"
+                                @click="mode = 'file'"
+                                :class="mode === 'file' ? 'retro-btn retro-btn-primary' : 'retro-btn'"
+                                class="flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                            </svg>
+                            Upload File
+                        </button>
+                        <button type="button"
+                                @click="mode = 'url'"
+                                :class="mode === 'url' ? 'retro-btn retro-btn-primary' : 'retro-btn'"
+                                class="flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                            </svg>
+                            Import from URL
+                        </button>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <!-- File Upload -->
+                    <div x-show="mode === 'file'" x-cloak>
+                        <label for="file" class="block text-base font-medium mb-2">
+                            Collection File <span class="text-[var(--color-danger)]">*</span>
+                        </label>
+                        <div class="retro-bevel-in p-4 bg-[var(--color-bg)]">
+                            <input type="file" name="file" id="file" accept=".json,.zip"
+                                   :required="mode === 'file'"
+                                   @change="file = $event.target.files[0]; validateFile()"
+                                   class="w-full text-base text-[var(--color-text)]
+                                          file:mr-4 file:py-2 file:px-4
+                                          file:border-2 file:border-[var(--color-border)]
+                                          file:text-base file:font-bold file:uppercase
+                                          file:bg-[var(--color-panel)] file:text-[var(--color-text)]
+                                          file:cursor-pointer file:hover:bg-[var(--color-surface-alt)]
+                                          file:shadow-[inset_2px_2px_0_var(--bevel-light),inset_-2px_-2px_0_var(--bevel-dark)]">
+                            <p class="mt-2 text-base text-[var(--color-text-muted)]">JSON file or ZIP with images exported from RomHoard (max 1GB)</p>
+
+                            <!-- File size validation error -->
+                            <div x-show="fileError" x-cloak class="mt-3 p-3 bg-[var(--color-danger)]/10 border-2 border-[var(--color-danger)] text-[var(--color-danger)] text-base">
+                                <span x-text="fileError"></span>
+                            </div>
+
+                            <!-- Selected file info -->
+                            <div x-show="file && !fileError" x-cloak class="mt-3 text-base text-[var(--color-text-muted)]">
+                                Selected: <span x-text="file.name" class="text-[var(--color-text)]"></span>
+                                (<span x-text="(file.size / (1024 * 1024)).toFixed(1)"></span> MB)
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- URL Input -->
+                    <div x-show="mode === 'url'" x-cloak>
+                        <label for="url" class="block text-base font-medium mb-2">
+                            Collection URL <span class="text-[var(--color-danger)]">*</span>
+                        </label>
+                        <div class="retro-bevel-in p-4 bg-[var(--color-bg)]">
+                            <input type="url" name="url" id="url"
+                                   :required="mode === 'url'"
+                                   placeholder="https://example.com/collection.json"
+                                   class="retro-input w-full">
+                            <p class="mt-2 text-base text-[var(--color-text-muted)]">
+                                Direct link to a collection JSON file (max 1MB)
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="p-4 bg-[var(--color-bg)] border-2 border-[var(--color-border)]">
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" name="overwrite" id="overwrite" class="retro-checkbox">
+                            <div>
+                                <span class="font-medium text-[var(--color-text)]">Overwrite existing</span>
+                                <p class="text-base text-[var(--color-text-muted)] mt-1">
+                                    If a collection with the same slug exists, replace it with the imported one.
+                                </p>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="flex flex-col-reverse sm:flex-row gap-3 mt-6">
+                    <a href="{% url 'romcollections:collection_list' %}"
+                       class="retro-btn text-center">
+                        Cancel
+                    </a>
+                    <button type="submit"
+                            class="retro-btn retro-btn-primary flex items-center justify-center gap-2"
+                            :disabled="fileError || isUploading"
+                            :class="(fileError || isUploading) ? 'opacity-50 cursor-not-allowed' : ''">
+                        <svg x-show="!isUploading" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                        </svg>
+                        <span x-show="!isUploading" x-text="mode === 'url' ? 'Fetch & Preview' : 'Import Collection'"></span>
+
+                        <!-- Loading state -->
+                        <svg x-show="isUploading" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span x-show="isUploading">Importing... (this may take a moment for large files)</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

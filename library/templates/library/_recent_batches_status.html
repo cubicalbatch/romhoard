@@ -1,0 +1,66 @@
+{% load duration %}
+{% if recent_batches %}
+{% for batch in recent_batches %}
+<div class="retro-batch-card {% if batch.status == 'completed' %}batch-completed{% elif batch.status == 'cancelled' %}batch-cancelled{% else %}batch-failed{% endif %} mb-4 last:mb-0">
+    <!-- Header Row -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+        <div class="flex items-center gap-3">
+            {% if batch.system_slug %}
+            <span class="retro-badge retro-badge-primary">{{ batch.system_slug|upper }}</span>
+            {% else %}
+            <span class="retro-badge">All Systems</span>
+            {% endif %}
+            <span class="retro-badge {% if batch.status == 'completed' %}retro-badge-success{% elif batch.status == 'cancelled' %}retro-badge-warning{% else %}retro-badge-danger{% endif %}">
+                {{ batch.status|title }}
+            </span>
+        </div>
+        <div class="text-base text-[var(--color-text-muted)]">
+            {% if batch.completed_at %}{{ batch.completed_at|timesince }} ago{% endif %}
+            {% if batch.running_duration %} ({{ batch.running_duration|format_duration }}){% endif %}
+        </div>
+    </div>
+
+    <!-- Completed Progress Bar -->
+    {% widthratio batch.matched_count batch.total_count 100 as match_percent %}
+    <div class="mb-3">
+        <div class="retro-progress">
+            <div class="retro-progress-bar bg-[var(--color-success)]" style="width: {{ match_percent|default:0 }}%"></div>
+        </div>
+        <div class="text-base text-[var(--color-text-muted)] mt-1">
+            {{ batch.matched_count }}/{{ batch.total_count }} games matched ({{ match_percent|default:0 }}%)
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="retro-mini-stat">
+            <div class="retro-mini-stat-value text-[var(--color-primary)]">{{ batch.total_count }}</div>
+            <div class="retro-mini-stat-label">Total</div>
+        </div>
+        <div class="retro-mini-stat">
+            <div class="retro-mini-stat-value text-[var(--color-success)]">{{ batch.matched_count }}</div>
+            <div class="retro-mini-stat-label">Matched</div>
+        </div>
+        <div class="retro-mini-stat">
+            <div class="retro-mini-stat-value text-yellow-600">{{ batch.total_count|add:"-"|add:batch.matched_count|add:"-"|add:batch.failed_count }}</div>
+            <div class="retro-mini-stat-label">Unmatched</div>
+        </div>
+        <div class="retro-mini-stat">
+            <div class="retro-mini-stat-value text-[var(--color-teal)]">{{ batch.images_downloaded }}</div>
+            <div class="retro-mini-stat-label">Images</div>
+        </div>
+    </div>
+
+    {% if batch.failed_count > 0 %}
+    <div class="mt-3 text-base text-[var(--color-danger)] flex items-center gap-1">
+        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+        </svg>
+        {{ batch.failed_count }} job{% if batch.failed_count != 1 %}s{% endif %} failed
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
+{% else %}
+<p class="text-base text-[var(--color-text-muted)]">No recent batches</p>
+{% endif %}

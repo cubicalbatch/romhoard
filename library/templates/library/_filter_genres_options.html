@@ -1,0 +1,25 @@
+{# HTMX partial: Genre filter options with hierarchical checkboxes #}
+{% if genres %}
+<div class="divide-y divide-[var(--color-border)]">
+    {% for item in genres %}
+    <label class="retro-filter-option flex items-center gap-3 p-3 cursor-pointer hover:bg-[var(--color-bg)]{% if item.level > 0 %} pl-8{% endif %}"
+           data-slug="{{ item.genre.slug }}"
+           data-name="{{ item.genre.short_name }}"
+           @click="$store.searchFilters.toggleGenre('{{ item.genre.slug }}', '{{ item.genre.short_name|escapejs }}')">
+        <span class="retro-checkbox-visual"
+              :class="{ 'checked': $store.searchFilters.hasGenre('{{ item.genre.slug }}') }"></span>
+        <span class="flex-1 truncate{% if item.level > 0 %} text-base{% endif %}">
+            {% if item.level > 0 %}
+            <span class="text-[var(--color-text-muted)]">&ndash;</span>
+            {% endif %}
+            {{ item.genre.short_name }}
+        </span>
+        <span class="text-base text-[var(--color-text-muted)]">{{ item.genre.game_count }}</span>
+    </label>
+    {% endfor %}
+</div>
+{% else %}
+<div class="p-4 text-center text-base text-[var(--color-text-muted)]">
+    No genres found
+</div>
+{% endif %}

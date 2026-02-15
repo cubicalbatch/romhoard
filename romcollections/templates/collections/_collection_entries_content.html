@@ -1,0 +1,54 @@
+{# HTMX partial: Collection entries list with pagination #}
+<div class="space-y-4" id="entries-list">
+    {% for item in entries %}
+    {% include "collections/_entry_card.html" with entry=item.entry matched_game=item.matched_game is_matched=item.is_matched has_roms=item.has_roms system=item.system %}
+    {% empty %}
+    <div class="retro-system-card">
+        <div class="retro-empty-state">
+            <div class="retro-empty-state-icon">
+                <svg class="h-16 w-16 mx-auto text-[var(--color-text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+            </div>
+            <h3 class="retro-empty-state-title">No Matching Entries</h3>
+            <p class="retro-empty-state-text">Try adjusting your search or filters.</p>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{# Pagination - uses Alpine store to build filter params #}
+{% if page_obj.has_other_pages %}
+<div class="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-[var(--color-bg)] border border-[var(--color-border)]"
+     x-data="{
+         buildUrl(page) {
+             const params = $store.searchFilters.toParams();
+             params.set('page', page);
+             params.set('page_size', '{{ current_page_size }}');
+             params.set('sort', '{{ current_sort }}');
+             params.set('order', '{{ current_order }}');
+             return '{% url 'romcollections:collection_entry_search' collection.creator collection.slug %}?' + params.toString();
+         }
+     }">
+    <div class="text-base text-[var(--color-text-muted)]">
+        Showing {{ page_obj.start_index }} - {{ page_obj.end_index }} of {{ total_count }}
+    </div>
+    <div class="flex gap-2 items-center">
+        <div class="flex gap-1">
+            {% if page_obj.has_previous %}
+            <button @click="htmx.ajax('GET', buildUrl(1), {target: '#collection-entries-container', swap: 'innerHTML'})"
+                    class="retro-btn retro-btn-sm">&laquo;</button>
+            <button @click="htmx.ajax('GET', buildUrl({{ page_obj.previous_page_number }}), {target: '#collection-entries-container', swap: 'innerHTML'})"
+                    class="retro-btn retro-btn-sm">Prev</button>
+            {% endif %}
+            <span class="retro-btn retro-btn-sm retro-btn-primary">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+            {% if page_obj.has_next %}
+            <button @click="htmx.ajax('GET', buildUrl({{ page_obj.next_page_number }}), {target: '#collection-entries-container', swap: 'innerHTML'})"
+                    class="retro-btn retro-btn-sm">Next</button>
+            <button @click="htmx.ajax('GET', buildUrl({{ page_obj.paginator.num_pages }}), {target: '#collection-entries-container', swap: 'innerHTML'})"
+                    class="retro-btn retro-btn-sm">&raquo;</button>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}

@@ -1,0 +1,76 @@
+{# Single game row for tables. Requires: game object with pk, name, wheel_mini_image #}
+{# Uses Alpine.js: $dispatch for events, $store.gameDownload for downloads #}
+<tr x-data class="hover:bg-[var(--color-surface-alt)] transition-colors">
+    <td class="w-12 px-4 py-2">
+        <input type="checkbox" class="game-checkbox retro-checkbox" data-game-id="{{ game.pk }}" data-system-slug="{{ game.system.slug }}">
+    </td>
+    <td class="w-32 px-2 py-2 text-center">
+        <a href="{% url 'library:game_detail' game.pk %}">
+            {% if game.wheel_mini_image %}
+            <img src="{% url 'library:serve_image' game.wheel_mini_image.pk %}"
+                 alt="" class="h-12 w-auto object-contain inline-block" loading="lazy">
+            {% elif game.cover_image %}
+            <img src="{% url 'library:serve_image' game.cover_image.pk %}"
+                 alt="" class="h-12 max-h-12 w-auto object-contain inline-block" loading="lazy">
+            {% else %}
+            <div class="h-12 w-28 bg-[var(--color-bg)] border border-[var(--color-border)] flex items-center justify-center mx-auto">
+                <span class="text-base text-[var(--color-text-muted)] truncate px-1">{{ game.name|truncatechars:14 }}</span>
+            </div>
+            {% endif %}
+        </a>
+    </td>
+    <td class="px-6 py-2">
+        <a href="{% url 'library:game_detail' game.pk %}" class="text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] font-medium">
+            {{ game.name }}
+        </a>
+    </td>
+    <td class="px-4 py-2 text-right">
+        {% if game.genres.all %}
+        <div class="flex flex-wrap gap-1 justify-end">
+            {% for genre in game.display_genres %}
+            {% if genre.parent %}
+            <span class="text-base px-1.5 py-0.5 bg-[var(--color-surface-alt)] text-[var(--color-text-muted)] border border-[var(--color-border)]">{{ genre.parent.name }}</span>
+            {% endif %}
+            <span class="text-base px-1.5 py-0.5 bg-[var(--color-surface-alt)] text-[var(--color-text-muted)] border border-[var(--color-border)]">{{ genre.short_name }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </td>
+    <td class="px-4 py-2 text-center">
+        {% include "components/_rating_badge.html" with rating=game.rating %}
+    </td>
+    <td class="px-4 py-2 text-right">
+        <div class="flex items-center justify-end gap-2">
+            <!-- Add to Collection button -->
+            <button @click="$dispatch('add-to-collection', { gameId: {{ game.pk }}, gameName: '{{ game.name|escapejs }}', systemSlug: '{{ game.system.slug }}' })"
+                    class="retro-btn retro-btn-sm retro-btn-teal"
+                    title="Add to collection">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+            </button>
+            <!-- Visual divider -->
+            <div class="w-px h-6 bg-[var(--color-border)]"></div>
+            <!-- Send button -->
+            <button @click="$dispatch('open-send-for-game', { gameId: {{ game.pk }}, systemSlug: '{{ game.system.slug }}' })"
+                    class="retro-btn retro-btn-sm retro-btn-purple flex items-center gap-1"
+                    title="Send to device">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <span>Send</span>
+            </button>
+            <!-- Download button -->
+            <button @click="$store.gameDownload.handle({{ game.pk }})"
+                    class="retro-btn retro-btn-sm retro-btn-success flex items-center gap-1"
+                    title="Download">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>Download</span>
+            </button>
+        </div>
+    </td>
+</tr>

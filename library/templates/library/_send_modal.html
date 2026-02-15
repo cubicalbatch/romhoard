@@ -1,0 +1,54 @@
+{% load retro_components %}
+
+<!-- Send Modal -->
+{% retro_modal id="send" title="Send to Device" %}
+<div class="retro-modal-body" x-data="{ showGames: false }"
+     @modal-opened.window="if($event.detail.id === 'send') showGames = false"
+     @modal-closed.window="if($event.detail.id === 'send') showGames = false">
+    <!-- Game count + expandable list -->
+    <div class="mb-4 pb-3 border-b border-[var(--color-border)]"
+         x-show="$store.downloadManager.matchedCount > 0">
+        <p class="text-[var(--color-text)]">
+            <span class="font-bold" x-text="$store.downloadManager.matchedCount"></span>
+            <span x-text="$store.downloadManager.matchedCount === 1 ? 'game' : 'games'"></span>
+            will be sent.
+        </p>
+        <button @click="showGames = !showGames; if(showGames) $store.downloadManager.loadGamePreview('send-games-preview')"
+                class="text-base text-[var(--color-primary)] hover:underline mt-2 flex items-center gap-1">
+            <svg class="h-4 w-4 transition-transform" :class="showGames && 'rotate-90'" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+            </svg>
+            <span x-text="showGames ? 'Hide games' : 'Show games'"></span>
+        </button>
+        <div x-show="showGames" x-collapse class="mt-2" id="send-games-preview"></div>
+    </div>
+
+    <!-- Device picker -->
+    <div id="send-modal-content">
+        <div hx-get="{% url 'devices:device_picker' %}?transfer_only=1"
+             hx-trigger="load"
+             hx-swap="innerHTML">
+            {% include "components/_loading_spinner.html" %}
+        </div>
+    </div>
+</div>
+<div class="retro-modal-footer">
+    <button @click="$store.modals.close('send')" class="retro-btn">
+        Cancel
+    </button>
+    <button @click="startSend()" class="retro-btn retro-btn-purple flex items-center gap-2">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+        </svg>
+        Send
+    </button>
+</div>
+{% endretro_modal %}
+
+<!-- Send Progress Modal -->
+{% retro_modal id="send-progress" title="" close_btn=False %}
+<div class="retro-modal-body">
+    <div id="send-progress-content"></div>
+</div>
+{% endretro_modal %}

@@ -1,0 +1,701 @@
+{
+  "systems": [
+    {
+      "name": "Sega Genesis",
+      "slug": "genesis",
+      "extensions": [".gen", ".smd", ".bin", ".md"],
+      "exclusive_extensions": [".gen", ".smd", ".md"],
+      "folder_names": ["Genesis", "Mega Drive", "MD", "gen", "megadrive"],
+      "screenscraper_ids": [1]
+    },
+    {
+      "name": "Sega Master System",
+      "slug": "sms",
+      "extensions": [".sms"],
+      "exclusive_extensions": [".sms"],
+      "folder_names": ["SMS", "Master System", "Sega Master System", "SegaMasterSystem"],
+      "screenscraper_ids": [2]
+    },
+    {
+      "name": "NES",
+      "slug": "nes",
+      "extensions": [".nes"],
+      "exclusive_extensions": [".nes"],
+      "folder_names": ["NES", "Famicom", "fc", "famicom", "Nintendo Entertainment System", "NintendoEntertainmentSystem"],
+      "screenscraper_ids": [3]
+    },
+    {
+      "name": "SNES",
+      "slug": "snes",
+      "extensions": [".sfc", ".smc"],
+      "exclusive_extensions": [".sfc", ".smc"],
+      "folder_names": ["SNES", "SFC", "Super Famicom", "Super Nintendo", "SuperNintendo", "SuperFamicom", "Super Nintendo Entertainment System"],
+      "screenscraper_ids": [4]
+    },
+    {
+      "name": "Capcom Play System 1",
+      "slug": "cps1",
+      "extensions": [],
+      "exclusive_extensions": [],
+      "folder_names": ["Capcom Play System 1", "CPS1"],
+      "archive_as_rom": true,
+      "screenscraper_ids": [6]
+    },
+    {
+      "name": "Capcom Play System 2",
+      "slug": "cps2",
+      "extensions": [],
+      "exclusive_extensions": [],
+      "folder_names": ["Capcom Play System 2", "CPS2"],
+      "archive_as_rom": true,
+      "screenscraper_ids": [7]
+    },
+    {
+      "name": "Capcom Play System 3",
+      "slug": "cps3",
+      "extensions": [],
+      "exclusive_extensions": [],
+      "folder_names": ["Capcom Play System 3", "CPS3"],
+      "archive_as_rom": true,
+      "screenscraper_ids": [8]
+    },
+    {
+      "name": "Game Boy",
+      "slug": "gb",
+      "extensions": [".gb"],
+      "exclusive_extensions": [".gb"],
+      "folder_names": ["GB", "Game Boy", "GameBoy"],
+      "screenscraper_ids": [9]
+    },
+    {
+      "name": "Game Boy Color",
+      "slug": "gbc",
+      "extensions": [".gbc"],
+      "exclusive_extensions": [".gbc"],
+      "folder_names": ["GBC", "Game Boy Color", "GameBoyColor"],
+      "screenscraper_ids": [10]
+    },
+    {
+      "name": "Virtual Boy",
+      "slug": "vb",
+      "extensions": [".vb", ".vboy"],
+      "exclusive_extensions": [".vb", ".vboy"],
+      "folder_names": ["VB", "Virtual Boy", "VirtualBoy"],
+      "screenscraper_ids": [11]
+    },
+    {
+      "name": "Game Boy Advance",
+      "slug": "gba",
+      "extensions": [".gba"],
+      "exclusive_extensions": [".gba"],
+      "folder_names": ["GBA", "Game Boy Advance", "GameBoyAdvance"],
+      "screenscraper_ids": [12]
+    },
+    {
+      "name": "Nintendo 64",
+      "slug": "n64",
+      "extensions": [".n64", ".z64", ".v64"],
+      "exclusive_extensions": [".n64", ".z64", ".v64"],
+      "folder_names": ["N64", "Nintendo 64", "Nintendo64"],
+      "screenscraper_ids": [14]
+    },
+    {
+      "name": "Nintendo DS",
+      "slug": "nds",
+      "extensions": [".nds"],
+      "exclusive_extensions": [".nds"],
+      "folder_names": ["NDS", "Nintendo DS", "NintendoDS"],
+      "screenscraper_ids": [15]
+    },
+    {
+      "name": "Nintendo Wii",
+      "slug": "wii",
+      "extensions": [".wbfs", ".wad", ".iso", ".ciso"],
+      "exclusive_extensions": [".wbfs"],
+      "folder_names": ["Nintendo Wii", "WII", "NintendoWii"],
+      "screenscraper_ids": [16]
+    },
+    {
+      "name": "Nintendo 3DS",
+      "slug": "3ds",
+      "extensions": [".3ds", ".cia"],
+      "exclusive_extensions": [".3ds", ".cia"],
+      "folder_names": ["Nintendo 3DS", "3DS", "N3DS", "Nintendo3DS", "Citra"],
+      "screenscraper_ids": [17]
+    },
+    {
+      "name": "Nintendo GameCube",
+      "slug": "gamecube",
+      "extensions": [".iso", ".gcm", ".ciso"],
+      "exclusive_extensions": [".gcm"],
+      "folder_names": ["Nintendo GameCube", "GAMECUBE", "GC", "NGC", "NintendoGameCube"],
+      "screenscraper_ids": [13]
+    },
+    {
+      "name": "Sega 32X",
+      "slug": "32x",
+      "extensions": [".32x", ".bin"],
+      "exclusive_extensions": [".32x"],
+      "folder_names": ["32X", "Sega 32X"],
+      "screenscraper_ids": [19]
+    },
+    {
+      "name": "Sega CD",
+      "slug": "segacd",
+      "extensions": [".iso", ".bin", ".chd", ".cue"],
+      "exclusive_extensions": [],
+      "folder_names": ["Sega CD", "Mega-CD", "SegaCD"],
+      "screenscraper_ids": [20]
+    },
+    {
+      "name": "Sega Game Gear",
+      "slug": "gg",
+      "extensions": [".gg"],
+      "exclusive_extensions": [".gg"],
+      "folder_names": ["GG", "Game Gear", "GameGear"],
+      "screenscraper_ids": [21]
+    },
+    {
+      "name": "Sega Saturn",
+      "slug": "saturn",
+      "extensions": [".iso", ".bin", ".chd", ".cue", ".mds", ".zip"],
+      "exclusive_extensions": [],
+      "folder_names": ["Sega Saturn", "SATURN", "SegaSaturn"],
+      "screenscraper_ids": [22]
+    },
+    {
+      "name": "Sega Dreamcast",
+      "slug": "dreamcast",
+      "extensions": [".gdi", ".cdi", ".chd"],
+      "exclusive_extensions": [".gdi", ".cdi"],
+      "folder_names": ["Sega Dreamcast", "DREAMCAST", "DC", "SegaDreamcast"],
+      "screenscraper_ids": [23]
+    },
+    {
+      "name": "Neo Geo Pocket / Color",
+      "slug": "ngp",
+      "extensions": [".ngp", ".ngc"],
+      "exclusive_extensions": [".ngp", ".ngc"],
+      "folder_names": ["NGP", "Neo Geo Pocket", "NGPC", "NeoGeoPocket", "Neo Geo Pocket Color", "NeoGeoPocketColor"],
+      "screenscraper_ids": [25, 82]
+    },
+    {
+      "name": "Atari 2600",
+      "slug": "2600",
+      "extensions": [".a26", ".bin"],
+      "exclusive_extensions": [".a26"],
+      "folder_names": ["2600", "Atari 2600"],
+      "screenscraper_ids": [26]
+    },
+    {
+      "name": "Atari Jaguar",
+      "slug": "jaguar",
+      "extensions": [".j64", ".jag"],
+      "exclusive_extensions": [".j64", ".jag"],
+      "folder_names": ["Jaguar", "Atari Jaguar"],
+      "screenscraper_ids": [27]
+    },
+    {
+      "name": "Atari Lynx",
+      "slug": "lynx",
+      "extensions": [".lnx", ".lyx"],
+      "exclusive_extensions": [".lnx", ".lyx"],
+      "folder_names": ["Lynx", "Atari Lynx"],
+      "screenscraper_ids": [28]
+    },
+    {
+      "name": "3DO",
+      "slug": "3do",
+      "extensions": [".iso", ".bin", ".chd", ".cue"],
+      "exclusive_extensions": [],
+      "folder_names": ["3DO"],
+      "screenscraper_ids": [29]
+    },
+    {
+      "name": "Nokia N-Gage",
+      "slug": "ngage",
+      "extensions": [".app"],
+      "exclusive_extensions": [],
+      "folder_names": ["Nokia N-Gage", "NGAGE"],
+      "screenscraper_ids": [30]
+    },
+    {
+      "name": "NEC PC Engine SuperGrafx",
+      "slug": "sgfx",
+      "extensions": [".sgx", ".pce", ".cue", ".ccd", ".chd"],
+      "exclusive_extensions": [".sgx"],
+      "folder_names": ["SuperGrafx", "SGFX"],
+      "screenscraper_ids": [105]
+    },
+    {
+      "name": "NEC PC Engine",
+      "slug": "pce",
+      "extensions": [".pce", ".cue", ".ccd", ".chd", ".toc", ".m3u"],
+      "exclusive_extensions": [".pce"],
+      "folder_names": ["PCE", "TurboGrafx", "TurboGrafx-16", "PC Engine", "PCEngine", "TG16"],
+      "screenscraper_ids": [31]
+    },
+    {
+      "name": "Microsoft Xbox",
+      "slug": "xbox",
+      "extensions": [".iso", ".xiso"],
+      "exclusive_extensions": [".xiso"],
+      "folder_names": ["Microsoft Xbox", "XBOX"],
+      "screenscraper_ids": [32]
+    },
+    {
+      "name": "Microsoft Xbox 360",
+      "slug": "xbox360",
+      "extensions": [".iso", ".xex"],
+      "exclusive_extensions": [".xex"],
+      "folder_names": ["Microsoft Xbox 360", "XBOX360"],
+      "screenscraper_ids": [33]
+    },
+    {
+      "name": "Microsoft Xbox One",
+      "slug": "xboxone",
+      "extensions": [],
+      "exclusive_extensions": [],
+      "folder_names": ["Microsoft Xbox One", "XBOXONE"],
+      "screenscraper_ids": [34]
+    },
+    {
+      "name": "Atari 5200",
+      "slug": "5200",
+      "extensions": [".a52", ".bin"],
+      "exclusive_extensions": [".a52"],
+      "folder_names": ["5200", "Atari 5200"],
+      "screenscraper_ids": [40]
+    },
+    {
+      "name": "Atari 7800",
+      "slug": "7800",
+      "extensions": [".a78", ".bin"],
+      "exclusive_extensions": [".a78"],
+      "folder_names": ["7800", "Atari 7800"],
+      "screenscraper_ids": [41]
+    },
+    {
+      "name": "Atari ST",
+      "slug": "atarist",
+      "extensions": [".st", ".stx", ".msa", ".dim", ".ipf", ".ctr", ".m3u", ".m3u8", ".zip", ".gz", ".acsi", ".ahd", ".vhd", ".scsi", ".shd", ".ide", ".gem"],
+      "exclusive_extensions": [".st", ".stx", ".msa"],
+      "folder_names": ["Atari ST", "ST", "Atari ST-STE-TT-Falcon"],
+      "screenscraper_ids": [42]
+    },
+    {
+      "name": "Game.com",
+      "slug": "gamecom",
+      "extensions": [".tgc"],
+      "exclusive_extensions": [".tgc"],
+      "folder_names": ["Game.com", "GAMECOM"],
+      "screenscraper_ids": [121]
+    },
+    {
+      "name": "WonderSwan",
+      "slug": "ws",
+      "extensions": [".ws", ".wsc"],
+      "exclusive_extensions": [".ws", ".wsc"],
+      "folder_names": ["WonderSwan", "WS", "WSC"],
+      "screenscraper_ids": [45]
+    },
+    {
+      "name": "Namco System 2",
+      "slug": "namcos2",
+      "extensions": [],
+      "exclusive_extensions": [],
+      "folder_names": ["Namco System 2", "NAMCOS2"],
+      "archive_as_rom": true,
+      "screenscraper_ids": []
+    },
+    {
+      "name": "ColecoVision",
+      "slug": "coleco",
+      "extensions": [".col", ".rom", ".cv", ".bin"],
+      "exclusive_extensions": [".col"],
+      "folder_names": ["Coleco", "Colecovision"],
+      "screenscraper_ids": [48]
+    },
+    {
+      "name": "Daphne",
+      "slug": "daphne",
+      "extensions": [".daphne"],
+      "exclusive_extensions": [".daphne"],
+      "folder_names": ["Daphne"],
+      "screenscraper_ids": [49]
+    },
+    {
+      "name": "Nintendo WiiWare",
+      "slug": "wiiware",
+      "extensions": [".wad"],
+      "exclusive_extensions": [],
+      "folder_names": ["Nintendo WiiWare", "WIIWARE"],
+      "screenscraper_ids": []
+    },
+    {
+      "name": "Taito F3",
+      "slug": "taitof3",
+      "extensions": [],
+      "exclusive_extensions": [],
+      "folder_names": ["Taito F3", "TAITOF3"],
+      "archive_as_rom": true,
+      "screenscraper_ids": []
+    },
+    {
+      "name": "Sega Naomi",
+      "slug": "naomi",
+      "extensions": [],
+      "exclusive_extensions": [],
+      "folder_names": ["Sega Naomi", "NAOMI"],
+      "archive_as_rom": true,
+      "screenscraper_ids": [56]
+    },
+    {
+      "name": "PlayStation",
+      "slug": "ps1",
+      "extensions": [".bin", ".iso", ".chd", ".cue", ".pbp", ".ecm"],
+      "exclusive_extensions": [".pbp"],
+      "folder_names": ["PS1", "PSX", "PlayStation", "PS", "PSOne", "Sony PlayStation", "SonyPlayStation"],
+      "screenscraper_ids": [57]
+    },
+    {
+      "name": "PlayStation 2",
+      "slug": "ps2",
+      "extensions": [".iso", ".bin", ".chd", ".cso"],
+      "exclusive_extensions": [],
+      "folder_names": ["PlayStation 2", "PS2"],
+      "screenscraper_ids": [58]
+    },
+    {
+      "name": "PlayStation 3",
+      "slug": "ps3",
+      "extensions": [".iso", ".pkg"],
+      "exclusive_extensions": [],
+      "folder_names": ["PlayStation 3", "PS3"],
+      "screenscraper_ids": [59]
+    },
+    {
+      "name": "PSP",
+      "slug": "psp",
+      "extensions": [".iso", ".cso", ".chd"],
+      "exclusive_extensions": [".cso"],
+      "folder_names": ["PSP", "PPSSPP", "PlayStation Portable", "PlayStationPortable"],
+      "screenscraper_ids": [61]
+    },
+    {
+      "name": "Commodore Amiga",
+      "slug": "amiga",
+      "extensions": [".adf", ".hdf", ".ipf", ".lha", ".zip", ".uae", ".adz", ".dms", ".fdi", ".hdz", ".slave", ".info", ".cue", ".ccd", ".nrg", ".mds", ".iso", ".chd", ".m3u", ".7z", ".rp9"],
+      "exclusive_extensions": [".adf", ".hdf", ".ipf"],
+      "folder_names": ["Amiga"],
+      "screenscraper_ids": [64]
+    },
+    {
+      "name": "Amstrad CPC",
+      "slug": "cpc",
+      "extensions": [".cdt", ".dsk", ".sna", ".kcr"],
+      "exclusive_extensions": [],
+      "folder_names": ["CPC", "Amstrad CPC"],
+      "screenscraper_ids": [65]
+    },
+    {
+      "name": "Commodore 64",
+      "slug": "c64",
+      "extensions": [".d64", ".t64", ".prg", ".crt", ".d71", ".d80", ".d81", ".d82", ".g64", ".g41", ".x64", ".p00", ".bin", ".zip", ".gz", ".cmd", ".m3u", ".vfl", ".vsf", ".nib", ".nbz", ".d2m", ".d4m"],
+      "exclusive_extensions": [".d64", ".t64"],
+      "folder_names": ["C64", "Commodore 64", "COMMODORE"],
+      "screenscraper_ids": [66]
+    },
+    {
+      "name": "Neo Geo CD",
+      "slug": "neocd",
+      "extensions": [".iso", ".bin", ".chd", ".cue"],
+      "exclusive_extensions": [],
+      "folder_names": ["Neo Geo CD", "NeoGeoCD"],
+      "screenscraper_ids": [70]
+    },
+    {
+      "name": "Commodore VIC-20",
+      "slug": "vic20",
+      "extensions": [".20", ".prg", ".crt"],
+      "exclusive_extensions": [".20"],
+      "folder_names": ["VIC-20", "VIC20"],
+      "screenscraper_ids": [73]
+    },
+    {
+      "name": "Arcade",
+      "slug": "arcade",
+      "extensions": [],
+      "exclusive_extensions": [],
+      "folder_names": ["Arcade", "MAME", "FBNeo"],
+      "archive_as_rom": true,
+      "screenscraper_ids": [75, 158]
+    },
+    {
+      "name": "ZX Spectrum",
+      "slug": "spectrum",
+      "extensions": [".z80", ".tzx", ".tap", ".sna", ".rzx", ".scl", ".trd", ".dsk", ".zip"],
+      "exclusive_extensions": [".tzx", ".tap"],
+      "folder_names": ["ZX Spectrum", "Spectrum", "ZXS", "Sinclair ZX Spectrum"],
+      "screenscraper_ids": [76]
+    },
+    {
+      "name": "Microsoft Windows",
+      "slug": "windows",
+      "extensions": [".exe", ".msi"],
+      "exclusive_extensions": [],
+      "folder_names": ["Microsoft Windows", "WINDOWS"],
+      "screenscraper_ids": [138]
+    },
+    {
+      "name": "Vectrex",
+      "slug": "vectrex",
+      "extensions": [".vec"],
+      "exclusive_extensions": [".vec"],
+      "folder_names": ["Vectrex"],
+      "screenscraper_ids": [102]
+    },
+    {
+      "name": "Famicom Disk System",
+      "slug": "fds",
+      "extensions": [".fds"],
+      "exclusive_extensions": [".fds"],
+      "folder_names": ["FDS", "Famicom Disk System"],
+      "screenscraper_ids": [106]
+    },
+    {
+      "name": "Sega SG-1000",
+      "slug": "sg1000",
+      "extensions": [".sg", ".sc"],
+      "exclusive_extensions": [".sg", ".sc"],
+      "folder_names": ["SG-1000", "SG1000"],
+      "screenscraper_ids": [109]
+    },
+    {
+      "name": "MSX",
+      "slug": "msx",
+      "extensions": [".mx1", ".mx2", ".rom", ".dsk", ".fdi", ".cas", ".m3u"],
+      "exclusive_extensions": [".mx1", ".mx2"],
+      "folder_names": ["MSX", "MSX2", "Microsoft MSX"],
+      "screenscraper_ids": [113]
+    },
+    {
+      "name": "NEC PC Engine CD",
+      "slug": "pcecd",
+      "extensions": [".pce", ".cue", ".ccd", ".chd", ".toc", ".m3u"],
+      "exclusive_extensions": [],
+      "folder_names": ["PCE-CD", "TurboGrafx-CD"],
+      "screenscraper_ids": [114]
+    },
+    {
+      "name": "Intellivision",
+      "slug": "intv",
+      "extensions": [".int", ".itv", ".bin", ".rom"],
+      "exclusive_extensions": [".itv"],
+      "folder_names": ["Intellivision", "INTV"],
+      "screenscraper_ids": [115]
+    },
+    {
+      "name": "iOS",
+      "slug": "ios",
+      "extensions": [".ipa"],
+      "exclusive_extensions": [".ipa"],
+      "folder_names": ["iOS", "IOS"],
+      "screenscraper_ids": []
+    },
+    {
+      "name": "Amiga CD32",
+      "slug": "cd32",
+      "extensions": [".iso", ".bin", ".chd", ".cue"],
+      "exclusive_extensions": [],
+      "folder_names": ["CD32", "Amiga CD32"],
+      "screenscraper_ids": [130]
+    },
+    {
+      "name": "Microsoft MS-DOS",
+      "slug": "dos",
+      "extensions": [],
+      "exclusive_extensions": [],
+      "folder_names": ["Microsoft MS-DOS", "DOS"],
+      "archive_as_rom": true,
+      "screenscraper_ids": [135]
+    },
+    {
+      "name": "Android",
+      "slug": "android",
+      "extensions": [".apk"],
+      "exclusive_extensions": [".apk"],
+      "folder_names": ["Android", "ANDROID"],
+      "screenscraper_ids": [139]
+    },
+    {
+      "name": "Neo Geo",
+      "slug": "neogeo",
+      "extensions": [],
+      "exclusive_extensions": [],
+      "folder_names": ["Neo Geo", "NeoGeo", "MVS", "AES"],
+      "archive_as_rom": true,
+      "screenscraper_ids": [142]
+    },
+    {
+      "name": "Watara Supervision",
+      "slug": "supervision",
+      "extensions": [".sv"],
+      "exclusive_extensions": [".sv"],
+      "folder_names": ["Supervision"],
+      "screenscraper_ids": [207]
+    },
+    {
+      "name": "Pokemon Mini",
+      "slug": "pokemini",
+      "extensions": [".min"],
+      "exclusive_extensions": [".min"],
+      "folder_names": ["Pokemon Mini", "PokeMini"],
+      "screenscraper_ids": [211]
+    },
+    {
+      "name": "TIC-80",
+      "slug": "tic80",
+      "extensions": [".tic"],
+      "exclusive_extensions": [".tic"],
+      "folder_names": ["TIC-80", "TIC80"],
+      "screenscraper_ids": [222]
+    },
+    {
+      "name": "PICO-8",
+      "slug": "pico8",
+      "extensions": [".p8", ".p8.png"],
+      "exclusive_extensions": [".p8", ".p8.png"],
+      "folder_names": ["PICO-8", "Pico8", "P8"],
+      "screenscraper_ids": [234]
+    },
+    {
+      "name": "Arduboy",
+      "slug": "arduboy",
+      "extensions": [".hex", ".arduboy"],
+      "exclusive_extensions": [".hex", ".arduboy"],
+      "folder_names": ["Arduboy", "ARDUBOY"],
+      "screenscraper_ids": [263]
+    },
+    {
+      "name": "Commodore 128",
+      "slug": "c128",
+      "extensions": [".d64", ".d71", ".d80", ".d81", ".d82", ".g64", ".g41", ".x64", ".t64", ".tap", ".prg", ".p00", ".crt", ".bin"],
+      "exclusive_extensions": [".d71", ".d80", ".d81", ".d82"],
+      "folder_names": ["C128", "Commodore 128"],
+      "screenscraper_ids": []
+    },
+    {
+      "name": "Commodore CBM-II",
+      "slug": "cbm2",
+      "extensions": [".d64", ".d71", ".d80", ".d81", ".d82", ".g64", ".g41", ".x64", ".t64", ".tap", ".prg", ".p00", ".crt", ".bin"],
+      "exclusive_extensions": [".d71", ".d80", ".d81", ".d82"],
+      "folder_names": ["CBM-II", "Commodore CBM-II"],
+      "screenscraper_ids": []
+    },
+    {
+      "name": "Commodore PET",
+      "slug": "pet",
+      "extensions": [".d64", ".d71", ".d80", ".d81", ".d82", ".g64", ".g41", ".x64", ".t64", ".tap", ".prg", ".p00", ".crt", ".bin", ".20", ".40", ".60", ".a0", ".b0", ".rom"],
+      "exclusive_extensions": [".20", ".40", ".60", ".a0", ".b0"],
+      "folder_names": ["PET", "Commodore PET"],
+      "screenscraper_ids": [240]
+    },
+    {
+      "name": "Mega Duck",
+      "slug": "megaduck",
+      "extensions": [".bin"],
+      "exclusive_extensions": [],
+      "folder_names": ["Mega Duck", "Cougar Boy"],
+      "screenscraper_ids": [90]
+    },
+    {
+      "name": "Texas Instruments TI-83",
+      "slug": "ti83",
+      "extensions": [".8xp", ".8xk", ".8xg"],
+      "exclusive_extensions": [".8xp", ".8xk", ".8xg"],
+      "folder_names": ["TI-83", "TI83"],
+      "screenscraper_ids": []
+    },
+    {
+      "name": "Vircon32",
+      "slug": "vircon32",
+      "extensions": [".v32", ".V32"],
+      "exclusive_extensions": [".v32", ".V32"],
+      "folder_names": ["Vircon32", "VIRCON32"],
+      "screenscraper_ids": [272]
+    },
+    {
+      "name": "WASM-4",
+      "slug": "wasm4",
+      "extensions": [".wasm"],
+      "exclusive_extensions": [".wasm"],
+      "folder_names": ["WASM-4", "WASM4"],
+      "screenscraper_ids": [262]
+    },
+    {
+      "name": "Fairchild Channel F",
+      "slug": "channelf",
+      "extensions": [".bin", ".chf"],
+      "exclusive_extensions": [".chf"],
+      "folder_names": ["Fairchild Channel F", "FAIRCHILD", "Channel F"],
+      "screenscraper_ids": [80]
+    },
+    {
+      "name": "Magnavox Odyssey 2",
+      "slug": "odyssey2",
+      "extensions": [".bin"],
+      "exclusive_extensions": [],
+      "folder_names": ["Magnavox Odyssey 2", "ODYSSEY", "Videopac", "VIDEOPAC", "Odyssey2"],
+      "screenscraper_ids": [104]
+    },
+    {
+      "name": "Game & Watch",
+      "slug": "gameandwatch",
+      "extensions": [".mgw"],
+      "exclusive_extensions": [".mgw"],
+      "folder_names": ["Game & Watch", "GW", "Game and Watch", "GameAndWatch"],
+      "screenscraper_ids": [52]
+    },
+    {
+      "name": "Satellaview",
+      "slug": "satellaview",
+      "extensions": [".bs", ".sfc"],
+      "exclusive_extensions": [".bs"],
+      "folder_names": ["Satellaview", "SATELLAVIEW", "BS-X"],
+      "screenscraper_ids": [107]
+    },
+    {
+      "name": "Sufami Turbo",
+      "slug": "sufami",
+      "extensions": [".st", ".sfc"],
+      "exclusive_extensions": [],
+      "folder_names": ["Sufami Turbo", "SUFAMI", "SuFami"],
+      "screenscraper_ids": [108]
+    },
+    {
+      "name": "Super Game Boy",
+      "slug": "sgb",
+      "extensions": [".gb", ".gbc", ".sgb"],
+      "exclusive_extensions": [".sgb"],
+      "folder_names": ["Super Game Boy", "SGB", "SuperGameBoy"],
+      "screenscraper_ids": [127, 9, 10]
+    },
+    {
+      "name": "ScummVM",
+      "slug": "scummvm",
+      "extensions": [],
+      "exclusive_extensions": [],
+      "folder_names": ["ScummVM", "SCUMMVM"],
+      "screenscraper_ids": [123]
+    },
+    {
+      "name": "Nintendo Switch",
+      "slug": "switch",
+      "extensions": [".nsp", ".xci", ".nsz", ".xcz"],
+      "exclusive_extensions": [".nsp", ".xci", ".nsz", ".xcz"],
+      "folder_names": ["Switch", "Nintendo Switch", "NintendoSwitch"],
+      "screenscraper_ids": [225]
+    }
+  ]
+}

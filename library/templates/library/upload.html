@@ -1,0 +1,602 @@
+{% extends "base.html" %}
+{% load retro_components %}
+
+{% block title %}Add Games - RomHoard{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="mb-8">
+    <h1 class="retro-heading retro-heading-lg">Add Games</h1>
+    <p class="text-[var(--color-text-muted)] mt-1">Upload ROM files to add them to your library</p>
+</div>
+
+{% if not library_root %}
+<div class="retro-system-card retro-system-card-static mb-8">
+    <div class="retro-system-card-header retro-header-orange flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+        </svg>
+        <h3>Configuration Required</h3>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start">
+        <p class="text-[var(--color-text)] mb-4">
+            Please configure the Library Root Path before uploading games.
+            This is where uploaded files will be stored.
+        </p>
+        <a href="{% url 'library:metadata' %}" class="retro-btn retro-btn-primary">
+            Go to Settings
+        </a>
+    </div>
+</div>
+{% else %}
+
+<div x-data="uploadManager()" class="space-y-6">
+    <!-- Drop Zone -->
+    <div class="retro-system-card retro-system-card-static">
+        <div class="retro-system-card-header retro-header-purple flex items-center gap-2 !text-left">
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            <h3>Select Files</h3>
+        </div>
+        <div class="retro-system-card-body !text-left !items-start">
+            <div
+                @drop.prevent="handleDrop($event)"
+                @dragover.prevent="dragOver = true"
+                @dragleave="dragOver = false"
+                :class="{ 'border-[var(--color-primary)]': dragOver }"
+                class="border-2 border-dashed border-[var(--color-border)] rounded-lg p-12 text-center transition-colors"
+            >
+                <svg class="mx-auto h-16 w-16 text-[var(--color-text-muted)] mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                </svg>
+
+                <p class="text-lg text-[var(--color-text)] mb-2">
+                    Drag and drop ROM files here
+                </p>
+                <p class="text-base text-[var(--color-text-muted)] mb-4">
+                    or
+                </p>
+
+                <input
+                    type="file"
+                    @change="handleFileSelect($event)"
+                    multiple
+                    class="hidden"
+                    x-ref="fileInput"
+                >
+                <button
+                    @click="$refs.fileInput.click()"
+                    class="retro-btn retro-btn-primary"
+                >
+                    Select Files
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Library Settings -->
+    <div class="retro-system-card retro-system-card-static">
+        <div class="retro-system-card-header retro-header-blue flex items-center gap-2 !text-left">
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"/>
+            </svg>
+            <h3>Library Settings</h3>
+        </div>
+        <div class="retro-system-card-body !text-left !items-start">
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="save_library_settings" value="1">
+
+                <div class="mb-4">
+                    <label for="library_root" class="block text-base font-medium text-[var(--color-text)] mb-1">
+                        Library Root Path
+                    </label>
+                    <input
+                        type="text"
+                        name="library_root"
+                        id="library_root"
+                        value="{{ library_root }}"
+                        placeholder="Ex: /path/to/roms"
+                        class="retro-input"
+                    >
+                    <p class="mt-1 text-base text-[var(--color-text-muted)]">Base directory where uploaded games will be stored. Games are organized by system: <code>{library_root}/{system_slug}/{filename}</code></p>
+                </div>
+
+                <button type="submit" class="retro-btn retro-btn-primary">
+                    Save Settings
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- File Queue -->
+    <div x-show="files.length > 0" x-cloak class="retro-system-card retro-system-card-static">
+        <div class="retro-system-card-header retro-header-blue flex items-center justify-between !text-left">
+            <div class="flex items-center gap-2">
+                <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                </svg>
+                <h3>Selected Files</h3>
+            </div>
+            <span class="text-lg font-medium">
+                <span x-text="`${uploadableFiles.length} file${uploadableFiles.length !== 1 ? 's' : ''} (${formatBytes(uploadableSize)})`"></span>
+                <span x-show="duplicateCount > 0" class="text-[var(--color-warning)]" x-text="` - ${duplicateCount} already in library`"></span>
+            </span>
+        </div>
+        <div class="retro-system-card-body !items-start !text-left max-h-64 overflow-y-auto">
+            <template x-for="(file, index) in files" :key="index">
+                <div
+                    class="flex items-center justify-between py-2 border-b border-[var(--color-border)] last:border-0"
+                    :class="{ 'opacity-50': file.duplicateOf }"
+                >
+                    <div class="flex items-center gap-3 min-w-0">
+                        <span
+                            class="text-base px-2 py-0.5 rounded font-mono shrink-0"
+                            :class="file.detectedSystem ? 'bg-[var(--color-success)]/20 text-[var(--color-success)]' : 'bg-[var(--color-warning)]/20 text-[var(--color-warning)]'"
+                            x-text="file.detectedSystem || '?'"
+                        ></span>
+                        <template x-if="file.duplicateOf">
+                            <a
+                                :href="`/games/${file.duplicateOf.game_id}/`"
+                                class="inline-flex items-center gap-1.5 text-base px-2 py-0.5 rounded font-mono bg-[var(--color-danger)]/20 text-[var(--color-danger)] hover:bg-[var(--color-danger)]/30 shrink-0"
+                                target="_blank"
+                                @click.stop
+                            >
+                                <span>Already in library:</span>
+                                <span class="inline-flex items-center gap-1 text-[var(--color-text)]">
+                                    <template x-if="file.duplicateOf.has_icon">
+                                        <img :src="`/system-icon/${file.duplicateOf.system_slug}/`" class="w-4 h-4 pixelated">
+                                    </template>
+                                    <template x-if="!file.duplicateOf.has_icon">
+                                        <span class="uppercase" x-text="file.duplicateOf.system_slug"></span>
+                                    </template>
+                                    <span x-text="file.duplicateOf.game_name" class="max-w-32 truncate"></span>
+                                </span>
+                            </a>
+                        </template>
+                        <span class="text-[var(--color-text)] truncate" x-text="file.name"></span>
+                        <span class="text-base text-[var(--color-text-muted)] shrink-0" x-text="formatBytes(file.size)"></span>
+                    </div>
+                    <button @click="removeFile(index)" class="text-[var(--color-danger)] hover:opacity-80 p-1 shrink-0">
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            </template>
+        </div>
+        <div class="retro-system-card-body !pt-0 flex flex-wrap justify-between items-center gap-3 border-t-2 border-[var(--color-border)]">
+            <button @click="clearFiles()" class="retro-btn retro-btn-secondary">
+                Clear All
+            </button>
+            <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" x-model="fetchMetadata" class="retro-checkbox">
+                <span class="text-base text-[var(--color-text)]">Fetch metadata</span>
+            </label>
+            <button
+                @click="startUpload()"
+                :disabled="uploading || uploadableFiles.length === 0"
+                class="retro-btn retro-btn-success"
+            >
+                <span x-show="!uploading" x-text="uploadableFiles.length === files.length ? 'Upload Files' : `Upload ${uploadableFiles.length} Files`"></span>
+                <span x-show="uploading" class="flex items-center gap-2">
+                    <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Uploading...
+                </span>
+            </button>
+        </div>
+    </div>
+
+</div>
+
+<!-- Upload Progress Modal -->
+{% retro_modal id="upload-progress" title="Upload Progress" close_btn=False size="lg" %}
+<div class="retro-modal-body">
+    <div id="upload-progress-content">
+        {% include "components/_loading_spinner.html" with message="Preparing upload..." %}
+    </div>
+</div>
+{% endretro_modal %}
+
+<!-- Tips -->
+<div class="retro-system-card retro-system-card-static mt-8">
+    <div class="retro-system-card-header retro-header-teal flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <h3>Tips</h3>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start">
+        <ul class="text-[var(--color-text-muted)] text-base space-y-2">
+            <li>Files are organized by system: <code class="text-[var(--color-primary)]">{{ library_root }}/{system}/{filename}</code></li>
+            <li>Systems are auto-detected from file extensions (e.g., .gba, .nes, .sfc)</li>
+            <li>Files with unknown extensions will be shown for manual system selection</li>
+            <li>Duplicate files (same name and system) will be skipped</li>
+            <li>Archives with multiple games will be extracted automatically</li>
+        </ul>
+    </div>
+</div>
+
+<script>
+function uploadManager() {
+    // 4GB max file size to prevent browser memory issues
+    const MAX_FILE_SIZE = 4 * 1024 * 1024 * 1024;
+
+    // Compound extensions that should be detected as a unit
+    const COMPOUND_EXTENSIONS = ['.chd.zip', '.iso.zip', '.bin.zip', '.cue.zip', '.gdi.zip'];
+
+    return {
+        files: [],
+        totalSize: 0,
+        dragOver: false,
+        uploading: false,
+        jobId: null,
+        fetchMetadata: true,
+
+        // Upload progress tracking
+        uploadPhase: 'idle',  // idle | uploading | finalizing | polling
+        filesToUpload: [],
+        currentFileIndex: 0,
+        currentFileName: '',
+        currentFileProgress: 0,
+        filesUploaded: 0,
+        bytesUploaded: 0,
+        bytesTotal: 0,
+        uploadErrors: [],
+        currentXhr: null,
+        cancelled: false,
+
+        // Speed and ETA tracking
+        uploadStartTime: null,
+        lastProgressTime: null,
+        lastBytesUploaded: 0,
+        speedBytesPerSec: 0,
+
+        // System detection from extension (client-side preview)
+        extensionMap: {{ extension_map|safe }},
+
+        get duplicateCount() {
+            return this.files.filter(f => f.duplicateOf).length;
+        },
+
+        get uploadableFiles() {
+            return this.files.filter(f => !f.duplicateOf);
+        },
+
+        get uploadableSize() {
+            return this.files.filter(f => !f.duplicateOf).reduce((sum, f) => sum + f.size, 0);
+        },
+
+        handleDrop(event) {
+            this.dragOver = false;
+            const droppedFiles = Array.from(event.dataTransfer.files);
+            this.addFiles(droppedFiles);
+        },
+
+        handleFileSelect(event) {
+            const selectedFiles = Array.from(event.target.files);
+            this.addFiles(selectedFiles);
+            event.target.value = ''; // Reset for re-selection
+        },
+
+        getExtension(filename) {
+            const lower = filename.toLowerCase();
+            // Check compound extensions first
+            for (const ext of COMPOUND_EXTENSIONS) {
+                if (lower.endsWith(ext)) return ext;
+            }
+            // Fall back to last extension
+            const parts = filename.split('.');
+            return parts.length > 1 ? '.' + parts.pop().toLowerCase() : '';
+        },
+
+        addFiles(newFiles) {
+            const addedFiles = [];
+            for (const file of newFiles) {
+                // Check file size
+                if (file.size > MAX_FILE_SIZE) {
+                    alert(`File "${file.name}" exceeds 4GB limit and will be skipped`);
+                    continue;
+                }
+
+                const ext = this.getExtension(file.name);
+                const detectedSystem = this.extensionMap[ext] || null;
+
+                const fileInfo = {
+                    file: file,
+                    name: file.name,
+                    size: file.size,
+                    detectedSystem: detectedSystem,
+                    duplicateOf: null,  // {game_id, game_name} if duplicate
+                };
+                this.files.push(fileInfo);
+                addedFiles.push(fileInfo);
+                this.totalSize += file.size;
+            }
+
+            // Check for duplicates after adding files
+            if (addedFiles.length > 0) {
+                this.checkDuplicates(addedFiles);
+            }
+        },
+
+        async checkDuplicates(filesToCheck) {
+            const payload = filesToCheck.map(f => ({ name: f.name, size: f.size }));
+
+            try {
+                const response = await fetch('{% url "library:check_duplicates" %}', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': RomHoard.getCsrfToken(),
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload),
+                });
+
+                const data = await response.json();
+                if (data.duplicates) {
+                    // Replace objects to trigger Alpine reactivity
+                    for (const fileInfo of filesToCheck) {
+                        const dupInfo = data.duplicates[fileInfo.name];
+                        if (dupInfo) {
+                            const idx = this.files.indexOf(fileInfo);
+                            if (idx !== -1) {
+                                this.files[idx] = { ...this.files[idx], duplicateOf: dupInfo };
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.warn('Failed to check duplicates:', error);
+            }
+        },
+
+        removeFile(index) {
+            this.totalSize -= this.files[index].size;
+            this.files.splice(index, 1);
+        },
+
+        clearFiles() {
+            this.files = [];
+            this.totalSize = 0;
+        },
+
+        formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        },
+
+        formatETA(seconds) {
+            if (!seconds || !isFinite(seconds) || seconds <= 0) return '--';
+            if (seconds < 60) return `${Math.round(seconds)}s`;
+            if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+            return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+        },
+
+        uploadFileWithProgress(file, jobId) {
+            return new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                this.currentXhr = xhr;
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        this.currentFileProgress = Math.round((e.loaded / e.total) * 100);
+
+                        // Calculate speed with smoothing
+                        const now = Date.now();
+                        const effectiveBytes = this.bytesUploaded + e.loaded;
+                        const timeDelta = (now - this.lastProgressTime) / 1000;
+
+                        if (timeDelta > 0.5) {  // Update speed every 500ms for stability
+                            const bytesDelta = effectiveBytes - this.lastBytesUploaded;
+                            const instantSpeed = bytesDelta / timeDelta;
+                            // Exponential moving average for smoothing
+                            this.speedBytesPerSec = this.speedBytesPerSec === 0
+                                ? instantSpeed
+                                : (this.speedBytesPerSec * 0.7) + (instantSpeed * 0.3);
+                            this.lastProgressTime = now;
+                            this.lastBytesUploaded = effectiveBytes;
+                        }
+
+                        this.updateProgressUI();
+                    }
+                };
+
+                xhr.onload = () => {
+                    this.currentXhr = null;
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        this.filesUploaded++;
+                        this.bytesUploaded += file.size;
+                        try {
+                            resolve(JSON.parse(xhr.responseText));
+                        } catch {
+                            resolve({});
+                        }
+                    } else {
+                        let errorMsg = `Upload failed: ${xhr.status}`;
+                        try {
+                            const resp = JSON.parse(xhr.responseText);
+                            if (resp.error) errorMsg = resp.error;
+                        } catch {}
+                        reject(new Error(errorMsg));
+                    }
+                };
+
+                xhr.onerror = () => {
+                    this.currentXhr = null;
+                    reject(new Error('Network error'));
+                };
+
+                xhr.onabort = () => {
+                    this.currentXhr = null;
+                    reject(new Error('Upload cancelled'));
+                };
+
+                xhr.open('POST', `/upload/${jobId}/file/`);
+                xhr.setRequestHeader('X-CSRFToken', RomHoard.getCsrfToken());
+                xhr.send(formData);
+            });
+        },
+
+        updateProgressUI() {
+            const content = document.getElementById('upload-progress-content');
+            if (!content) return;
+
+            // Calculate combined progress: completed files + current file progress
+            const currentFileSize = this.filesToUpload[this.currentFileIndex]?.size || 0;
+            const currentBytes = (this.currentFileProgress / 100) * currentFileSize;
+            const effectiveBytes = this.bytesUploaded + currentBytes;
+            const effectivePercent = this.bytesTotal > 0
+                ? Math.round((effectiveBytes / this.bytesTotal) * 100)
+                : 0;
+
+            // Calculate ETA
+            const remainingBytes = this.bytesTotal - effectiveBytes;
+            const etaSeconds = this.speedBytesPerSec > 0 ? remainingBytes / this.speedBytesPerSec : 0;
+
+            content.innerHTML = `
+                <h3 class="text-lg font-semibold text-[var(--color-text)] mb-4">
+                    Uploading files...
+                </h3>
+                <div class="mb-4">
+                    <div class="flex justify-between text-base text-[var(--color-text-muted)] mb-1">
+                        <span>${this.filesUploaded} of ${this.filesToUpload.length} files uploaded</span>
+                        <span>${effectivePercent}%</span>
+                    </div>
+                    <div class="retro-progress">
+                        <div class="retro-progress-bar retro-progress-animated"
+                             style="width: ${effectivePercent}%"></div>
+                    </div>
+                </div>
+                <p class="text-base text-[var(--color-text-muted)] truncate">
+                    <span class="text-[var(--color-text)]">Current:</span> ${this.currentFileName}
+                </p>
+                <div class="flex justify-between text-base text-[var(--color-text-muted)] mt-2">
+                    <span>${this.formatBytes(effectiveBytes)} of ${this.formatBytes(this.bytesTotal)}</span>
+                    <span>${this.formatBytes(this.speedBytesPerSec)}/s • ETA: ${this.formatETA(etaSeconds)}</span>
+                </div>
+                <div class="mt-4 text-center">
+                    <button onclick="window._uploadManager?.cancelUpload()"
+                            class="retro-btn retro-btn-secondary text-base">
+                        Cancel Upload
+                    </button>
+                </div>
+            `;
+        },
+
+        cancelUpload() {
+            this.cancelled = true;
+            if (this.currentXhr) {
+                this.currentXhr.abort();
+            }
+            window._uploadManager = null;
+            Alpine.store('modals').close('upload-progress');
+        },
+
+        async startUpload() {
+            const filesToUploadNow = this.uploadableFiles;
+            if (filesToUploadNow.length === 0) return;
+
+            // Initialize progress tracking state
+            this.uploading = true;
+            this.uploadPhase = 'uploading';
+            this.cancelled = false;
+            this.filesToUpload = [...filesToUploadNow];
+            this.bytesTotal = this.filesToUpload.reduce((sum, f) => sum + f.size, 0);
+            this.filesUploaded = 0;
+            this.bytesUploaded = 0;
+            this.currentFileIndex = 0;
+            this.currentFileProgress = 0;
+            this.uploadErrors = [];
+
+            // Initialize speed/ETA tracking
+            window._uploadManager = this;
+            this.uploadStartTime = Date.now();
+            this.lastProgressTime = Date.now();
+            this.lastBytesUploaded = 0;
+            this.speedBytesPerSec = 0;
+
+            Alpine.store('modals').open('upload-progress');
+            Alpine.store('modals').lock('upload-progress');
+            this.clearFiles();
+
+            try {
+                // Create upload job
+                const initResponse = await fetch('{% url "library:start_upload" %}', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': RomHoard.getCsrfToken(),
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `file_count=${this.filesToUpload.length}&total_size=${this.bytesTotal}&fetch_metadata=${this.fetchMetadata ? '1' : '0'}`
+                });
+
+                const initData = await initResponse.json();
+                if (initData.error) {
+                    throw new Error(initData.error);
+                }
+
+                this.jobId = initData.job_id;
+
+                // Upload each file with progress
+                for (let i = 0; i < this.filesToUpload.length; i++) {
+                    if (this.cancelled) break;
+
+                    const fileInfo = this.filesToUpload[i];
+                    this.currentFileIndex = i;
+                    this.currentFileName = fileInfo.name;
+                    this.currentFileProgress = 0;
+                    this.updateProgressUI();
+
+                    try {
+                        await this.uploadFileWithProgress(fileInfo.file, this.jobId);
+                    } catch (error) {
+                        if (this.cancelled) break;
+                        this.uploadErrors.push(`${fileInfo.name}: ${error.message}`);
+                    }
+                }
+
+                if (this.cancelled) {
+                    return;
+                }
+
+                // Log errors but continue - backend will handle partial uploads
+                if (this.uploadErrors.length > 0) {
+                    console.warn('Some files failed to upload:', this.uploadErrors);
+                }
+
+                // Finalize upload
+                this.uploadPhase = 'finalizing';
+                await fetch(`/upload/${this.jobId}/finalize/`, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': RomHoard.getCsrfToken() }
+                });
+
+                // Start polling for status via HTMX
+                this.uploadPhase = 'polling';
+                htmx.ajax('GET', `/upload/${this.jobId}/status/`, { target: '#upload-progress-content', swap: 'innerHTML' });
+                window._uploadManager = null;
+
+            } catch (error) {
+                alert('Upload failed: ' + error.message);
+                window._uploadManager = null;
+                Alpine.store('modals').close('upload-progress');
+            }
+
+            this.uploading = false;
+        }
+    };
+}
+</script>
+{% endif %}
+{% endblock %}

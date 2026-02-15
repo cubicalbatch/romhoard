@@ -1,0 +1,64 @@
+{# Desktop: Table layout #}
+<div class="hidden sm:block retro-card overflow-hidden">
+    <table class="min-w-full divide-y divide-[var(--color-border)]">
+        <thead class="retro-table-header retro-header-teal">
+            <tr>
+                <th scope="col" class="w-12 px-4 py-3">
+                    <!-- Checkbox column header -->
+                </th>
+                <th scope="col" class="w-32 px-2 py-3">
+                    <!-- Wheel image column header -->
+                </th>
+                <th scope="col" class="px-6 py-3 text-left">
+                    <a href="?sort=name&order={% if current_sort == 'name' and current_order == 'asc' %}desc{% else %}asc{% endif %}&page_size={{ current_page_size }}"
+                       class="flex items-center gap-1">
+                        Game
+                        {% if current_sort == 'name' %}
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            {% if current_order == 'asc' %}
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+                            {% else %}
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            {% endif %}
+                        </svg>
+                        {% endif %}
+                    </a>
+                </th>
+                <th scope="col" class="px-4 py-3 text-right">
+                    Genre
+                </th>
+                <th scope="col" class="px-4 py-3 text-center w-20">
+                    <a href="?sort=rating&order={% if current_sort == 'rating' and current_order == 'desc' %}asc{% else %}desc{% endif %}&page_size={{ current_page_size }}"
+                       class="flex items-center justify-center gap-1">
+                        Rating
+                        {% if current_sort == 'rating' %}
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            {% if current_order == 'asc' %}
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+                            {% else %}
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            {% endif %}
+                        </svg>
+                        {% endif %}
+                    </a>
+                </th>
+                <th scope="col" class="px-6 py-3 text-right w-16">
+                </th>
+            </tr>
+        </thead>
+        {% include "library/_game_table.html" %}
+    </table>
+</div>
+
+{# Mobile: Card layout #}
+<div class="sm:hidden space-y-3">
+    {% for game in games %}
+    {% include "library/_game_card.html" %}
+    {% empty %}
+    <div class="retro-card">
+        <div class="retro-card-body text-center text-[var(--color-text-muted)]">
+            No games found
+        </div>
+    </div>
+    {% endfor %}
+</div>

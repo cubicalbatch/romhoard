@@ -1,0 +1,58 @@
+{% load retro_components %}
+<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+    {% for system in systems %}
+    <a href="{% url 'library:game_list' system.slug %}" class="retro-system-card block">
+        <div class="retro-system-card-header {{ system.slug|header_color }}">
+            <h3>{{ system.name }}</h3>
+        </div>
+        <div class="retro-system-card-body">
+            {% if system.icon_path %}
+            <img src="{% url 'library:serve_system_icon' system.slug %}" alt="" class="retro-system-card-icon">
+            {% else %}
+            <div class="retro-system-card-icon flex items-center justify-center text-[var(--color-text-muted)]">
+                <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                </svg>
+            </div>
+            {% endif %}
+            <div class="retro-system-card-games">{{ system.game_count }} game{{ system.game_count|pluralize }}</div>
+        </div>
+    </a>
+    {% empty %}
+    <div class="col-span-full retro-card">
+        <div class="retro-card-body text-center py-8">
+            <p class="text-[var(--color-text-muted)] mb-4">No systems found. Start by scanning a ROM directory.</p>
+            <a href="{% url 'library:scan' %}" class="retro-btn retro-btn-primary mb-4">
+                Scan ROMs
+            </a>
+
+            {% if not has_screenscraper_credentials %}
+            <div class="mt-6 pt-6 border-t border-[var(--color-border)]">
+                <p class="text-[var(--color-text)] font-medium mb-2">Enhance your library with metadata</p>
+                <p class="text-[var(--color-text-muted)] text-base max-w-lg mx-auto mb-4">
+                    While ScreenScraper credentials aren't required, adding them enriches your library with
+                    game descriptions, cover art, screenshots, and more. Create a free account at
+                    <a href="https://www.screenscraper.fr/membreinscription.php" target="_blank"
+                       class="text-[var(--color-primary)] hover:underline">screenscraper.fr</a>
+                    (only takes a minute) and enter your credentials in metadata settings.
+                </p>
+                <a href="{% url 'library:metadata' %}" class="retro-btn retro-btn-sm">
+                    Configure ScreenScraper
+                </a>
+            </div>
+            {% elif screenscraper_credentials_valid == False %}
+            <div class="mt-6 pt-6 border-t border-[var(--color-border)]">
+                <p class="text-[var(--color-error)] font-medium mb-2">ScreenScraper credentials invalid</p>
+                <p class="text-[var(--color-text-muted)] text-base max-w-lg mx-auto mb-4">
+                    Your ScreenScraper credentials could not be verified. Please check your username
+                    and password in metadata settings.
+                </p>
+                <a href="{% url 'library:metadata' %}" class="retro-btn retro-btn-sm retro-btn-danger">
+                    Update Credentials
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>

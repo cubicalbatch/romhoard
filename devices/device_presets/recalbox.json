@@ -1,0 +1,76 @@
+{
+  "slug": "recalbox",
+  "name": "Recalbox",
+  "description": "Configuration for Recalbox retro gaming distribution on Raspberry Pi, PC, and Odroid devices",
+  "tags": ["recalbox", "emulationstation", "raspberry-pi", "pc", "odroid"],
+
+  "folders": {
+    "root_path": "roms/",
+    "system_paths": {
+      "3do": {"folder": "3do"},
+      "amiga": {"folder": "amiga600"},
+      "amstradcpc": {"folder": "amstradcpc"},
+      "apple2": {"folder": "apple2"},
+      "arcade": {"folder": "mame"},
+      "atari2600": {"folder": "atari2600"},
+      "atari5200": {"folder": "atari5200"},
+      "atari7800": {"folder": "atari7800"},
+      "atarist": {"folder": "atarist"},
+      "c64": {"folder": "c64"},
+      "coleco": {"folder": "colecovision"},
+      "dreamcast": {"folder": "dreamcast"},
+      "fds": {"folder": "fds"},
+      "gamecube": {"folder": "gamecube"},
+      "gb": {"folder": "gb"},
+      "gba": {"folder": "gba"},
+      "gbc": {"folder": "gbc"},
+      "genesis": {"folder": "megadrive"},
+      "gg": {"folder": "gamegear"},
+      "jaguar": {"folder": "jaguar"},
+      "lynx": {"folder": "lynx"},
+      "msx": {"folder": "msx"},
+      "n64": {"folder": "n64"},
+      "nds": {"folder": "nds"},
+      "neogeo": {"folder": "neogeo"},
+      "nes": {"folder": "nes"},
+      "ngp": {"folder": "ngp"},
+      "ngpc": {"folder": "ngpc"},
+      "pcengine": {"folder": "pcengine"},
+      "pcenginecd": {"folder": "pcenginecd"},
+      "psp": {"folder": "psp"},
+      "psx": {"folder": "psx"},
+      "saturn": {"folder": "saturn"},
+      "scummvm": {"folder": "scummvm"},
+      "sega32x": {"folder": "sega32x"},
+      "segacd": {"folder": "segacd"},
+      "sg1000": {"folder": "sg1000"},
+      "sms": {"folder": "mastersystem"},
+      "snes": {"folder": "snes"},
+      "vectrex": {"folder": "vectrex"},
+      "virtualboy": {"folder": "virtualboy"},
+      "wii": {"folder": "wii"},
+      "wonderswan": {"folder": "wswan"},
+      "wonderswancolor": {"folder": "wswanc"},
+      "zxspectrum": {"folder": "zxspectrum"},
+      "dos": {"folder": "dos"},
+      "supergrafx": {"folder": "supergrafx"},
+      "fbneo": {"folder": "fba_libretro"},
+      "gameandwatch": {"folder": "gw"},
+      "odyssey2": {"folder": "o2em"}
+    }
+  },
+
+  "images": {
+    "path_template": "{root_path}/{system}/downloaded_images/{romname}-image.png",
+    "max_width": null,
+    "image_type": "cover"
+  },
+
+  "transfer": {
+    "protocol": "sftp",
+    "port": 22,
+    "user": "root",
+    "password": "recalboxroot",
+    "path_prefix": "/recalbox/share"
+  }
+}

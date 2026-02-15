@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% load retro_components %}
+
+{% block title %}Library - RomHoard{% endblock %}
+
+
+{% block content %}
+<div x-data="{
+    singleGameSend: null,
+
+    getSystemSlugForSelection() {
+        const ids = $store.selection.getIds();
+        if (ids.length === 0) return null;
+
+        const slugs = new Set(ids.map(id => $store.selection.getMeta(id)?.systemSlug));
+        if (slugs.size > 1) {
+            alert('Selected games are from different systems. Please select games from only one system at a time.');
+            return null;
+        }
+        return $store.selection.getMeta(ids[0])?.systemSlug;
+    },
+
+    openSendModalForGame(gameId, systemSlug) {
+        this.singleGameSend = { gameId, systemSlug };
+        $store.modals.open('send');
+    },
+
+    closeSendModal() {
+        this.singleGameSend = null;
+        $store.modals.close('send');
+    },
+
+    startSend() {
+        // Check if this is a collection send
+        if ($store.downloadManager.collectionSlug) {
+            $store.downloadManager.startSend(`/collections/${$store.downloadManager.collectionCreator}/${$store.downloadManager.collectionSlug}/send/`, {});
+            return;
+        }
+
+        let gameIds, systemSlug;
+
+        if (this.singleGameSend) {
+            gameIds = [this.singleGameSend.gameId];
+            systemSlug = this.singleGameSend.systemSlug;
+        } else {
+            systemSlug = this.getSystemSlugForSelection();
+            if (!systemSlug) return;
+            gameIds = $store.selection.getIds();
+        }
+
+        if (!systemSlug) {
+            alert('Could not determine system for selected games');
+            return;
+        }
+
+        $store.downloadManager.startSend(`/library/${systemSlug}/send/`, { game_ids: gameIds });
+    },
+
+    startDownloadWithDevice() {
+        // Check if this is a collection download or selection-based download
+        if ($store.downloadManager.collectionSlug) {
+            $store.downloadManager.startDownload(`/collections/${$store.downloadManager.collectionCreator}/${$store.downloadManager.collectionSlug}/download/`, {});
+            return;
+        }
+        const systemSlug = this.getSystemSlugForSelection();
+        if (!systemSlug) return;
+
+        $store.downloadManager.startDownload(`/library/${systemSlug}/multi-download/`, { game_ids: $store.selection.getIds() });
+    },
+
+    downloadSelected() {
+        if ($store.selection.size === 0) return;
+        if ($store.selection.size === 1) {
+            $store.gameDownload.handle($store.selection.getIds()[0]);
+            return;
+        }
+        // Set store values for modal display
+        $store.downloadManager.gameIds = $store.selection.getIds();
+        $store.downloadManager.matchedCount = $store.selection.size;
+        $store.downloadManager.collectionCreator = null; $store.downloadManager.collectionSlug = null;
+        $store.downloadManager.resetPreview();
+        $store.modals.open('device-picker');
+    },
+
+    sendSelected() {
+        if ($store.selection.size === 0) return;
+        // Set store values for modal display
+        $store.downloadManager.gameIds = $store.selection.getIds();
+        $store.downloadManager.matchedCount = $store.selection.size;
+        $store.downloadManager.collectionCreator = null; $store.downloadManager.collectionSlug = null;
+        $store.downloadManager.resetPreview();
+        $store.modals.open('send');
+    },
+
+    openAddToCollectionModal(detail) {
+        $store.collectionPicker.reset();
+        $store.collectionPicker.setGame(detail.gameId, detail.gameName, detail.systemSlug);
+        $store.modals.open('add-to-collection');
+        $store.collectionPicker.loadPicker('add-to-collection-content');
+    },
+
+    addToCollection() {
+        const notes = document.getElementById('collection-entry-notes')?.value || '';
+        $store.collectionPicker.addSingle(notes);
+    },
+
+    gatherSelectedGames() {
+        const games = [];
+        document.querySelectorAll('.game-checkbox:checked').forEach(cb => {
+            const row = cb.closest('tr') || cb.closest('.retro-card');
+            const nameEl = row?.querySelector('a.text-\\[var\\(--color-primary\\)\\]');
+            if (nameEl) {
+                games.push({
+                    game_name: nameEl.textContent.trim(),
+                    system_slug: cb.dataset.systemSlug
+                });
+            }
+        });
+        return games;
+    },
+
+    addSelectedToCollection() {
+        if ($store.selection.size === 0) return;
+        $store.collectionPicker.reset();
+        const games = this.gatherSelectedGames();
+        $store.modals.open('bulk-add-to-collection');
+        $store.collectionPicker.loadPicker('bulk-add-collection-content', games);
+    },
+
+    bulkAddToCollection() {
+        const games = this.gatherSelectedGames();
+        $store.collectionPicker.addBulk(games);
+    }
+}"
+@open-send-for-game.window="openSendModalForGame($event.detail.gameId, $event.detail.systemSlug)"
+@add-to-collection.window="openAddToCollectionModal($event.detail)">
+<!-- Header Section -->
+<div class="mb-4">
+    <h1 class="retro-heading retro-heading-lg">Library</h1>
+    {% if not is_search_results %}
+    <p class="text-[var(--color-text-muted)] mt-1">{{ total_systems }} system{{ total_systems|pluralize }} · {{ total_games }} game{{ total_games|pluralize }} · {{ total_romsets }} ROM{{ total_romsets|pluralize }}</p>
+    {% endif %}
+</div>
+
+<!-- Search and Filter Bar -->
+{% include "library/_search_filter_bar.html" %}
+
+<!-- System Grid / Search Results -->
+<div id="system-grid-container">
+    {% if is_search_results %}
+        {% include "library/_global_search_results.html" %}
+    {% else %}
+        {% include "library/_system_grid.html" %}
+    {% endif %}
+</div>
+
+<!-- Selection toolbar (fixed at bottom) -->
+{% include "components/_selection_toolbar.html" with extra_buttons_template="components/_collection_toolbar_button.html" %}
+
+{% include "library/_send_modal.html" %}
+
+{% include "components/_download_modals.html" %}
+
+{% include "components/_add_to_collection_modal.html" %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Configure Alpine stores (must happen during alpine:init)
+document.addEventListener('alpine:init', () => {
+    // Configure search filters for global mode (reset from single-system mode)
+    Alpine.store('searchFilters').configure({});
+
+    // Configure selection store
+    Alpine.store('selection').configure({
+        itemType: 'game',
+        toolbarId: 'selection-toolbar',
+        countId: 'selection-count',
+        checkboxClass: 'game-checkbox',
+        clearBtnId: 'clear-selection',
+        containerIdForSwap: 'system-grid-container'
+    });
+});
+</script>
+{% endblock %}

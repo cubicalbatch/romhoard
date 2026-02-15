@@ -1,0 +1,703 @@
+{% extends "base.html" %}
+{% load retro_components %}
+
+{% block title %}{{ game.name }} - RomHoard{% endblock %}
+
+{% block content %}
+<div x-data="{
+    sendRomId: null,
+    isFavorite: {{ is_favorite|yesno:'true,false' }},
+    showFavoriteConfirm: false,
+    openSendModal() {
+        this.sendRomId = null;
+        $store.modals.open('send');
+    },
+    openSendRomModal(romId) {
+        this.sendRomId = romId;
+        $store.modals.open('send');
+    },
+    startSend() {
+        const body = this.sendRomId
+            ? { rom_ids: [this.sendRomId] }
+            : { game_ids: [{{ game.pk }}] };
+        $store.downloadManager.startSend('{% url "library:start_send" game.system.slug %}', body);
+    },
+    openAddToCollectionModal() {
+        $store.collectionPicker.reset();
+        $store.collectionPicker.setGame({{ game.pk }}, '{{ game.name|escapejs }}', '{{ game.system.slug }}');
+        $store.modals.open('add-to-collection');
+        $store.collectionPicker.loadPicker('add-to-collection-content');
+    },
+    addToCollection() {
+        const notes = document.getElementById('collection-entry-notes')?.value || '';
+        $store.collectionPicker.addSingle(notes, () => window.location.reload());
+    },
+    toggleFavorite() {
+        if (this.isFavorite) {
+            this.showFavoriteConfirm = true;
+            return;
+        }
+        this.doToggleFavorite();
+    },
+    async doToggleFavorite() {
+        this.showFavoriteConfirm = false;
+        try {
+            const response = await fetch('{% url "romcollections:toggle_favorite" game.pk %}', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCsrfToken() }
+            });
+            const data = await response.json();
+            this.isFavorite = data.is_favorite;
+            $store.toast.show(
+                data.is_favorite ? 'Added to Favorites' : 'Removed from Favorites',
+                'success'
+            );
+        } catch (error) {
+            $store.toast.show('Failed to update favorite', 'error');
+        }
+    }
+}">
+
+<!-- Breadcrumb -->
+<nav class="text-base text-[var(--color-text-muted)] mb-6">
+    {% if from_collection %}
+    <a href="{% url 'romcollections:collection_list' %}" class="hover:text-[var(--color-primary)]">Collections</a>
+    <span class="mx-2">/</span>
+    <a href="{% url 'romcollections:collection_detail' from_collection.creator from_collection.slug %}" class="hover:text-[var(--color-primary)]">{{ from_collection.name }}</a>
+    {% else %}
+    <a href="{% url 'library:system_list' %}" class="hover:text-[var(--color-primary)]">Library</a>
+    <span class="mx-2">/</span>
+    <a href="{% url 'library:game_list' game.system.slug %}" class="hover:text-[var(--color-primary)]">{{ game.system.name }}</a>
+    {% endif %}
+    <span class="mx-2">/</span>
+    <span class="text-[var(--color-text)]">{{ game.name }}</span>
+</nav>
+
+<!-- Hero Section: Two-column on desktop, stacked on mobile -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+    <!-- Cover/Mix Image Column -->
+    {% if hero_image %}
+    <div class="lg:col-span-1">
+        <a href="{% url 'library:serve_image' hero_image.pk %}" class="glightbox block" data-gallery="hero" data-type="image">
+            <div class="retro-image-frame retro-hero-image retro-cover">
+                <img src="{% url 'library:serve_image' hero_image.pk %}"
+                     alt="{{ game.name }}"
+                     class="w-full h-auto">
+            </div>
+        </a>
+
+        {% if rom_sets %}
+        <!-- Action Buttons Card -->
+        <div class="retro-system-card retro-system-card-static mt-6">
+            <div class="retro-system-card-body">
+                <div class="flex flex-wrap justify-center gap-3">
+                    {% if game.default_rom_set %}
+                    {% if game.default_rom_set.is_multi_disc %}
+                    <button @click="$store.romsetPicker.open({{ game.default_rom_set.pk }})"
+                            class="retro-btn retro-btn-success flex items-center gap-2 py-3 text-lg">
+                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Download
+                    </button>
+                    {% else %}
+                    <a href="{% url 'library:download_romset' game.default_rom_set.pk %}" class="retro-btn retro-btn-success flex items-center gap-2 py-3 text-lg">
+                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Download
+                    </a>
+                    {% endif %}
+                    {% endif %}
+                    <button @click="openSendModal()" class="retro-btn retro-btn-purple flex items-center gap-2 py-3 text-lg">
+                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        Send
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <!-- No ROMs Card -->
+        <div class="retro-system-card retro-system-card-static mt-6">
+            <div class="retro-system-card-body">
+                <p class="text-[var(--color-text-muted)]">Game not in library</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% else %}
+    {% if rom_sets %}
+    <!-- Action Buttons Card (when no hero image) -->
+    <div class="lg:col-span-3">
+        <div class="retro-system-card retro-system-card-static mb-6">
+            <div class="retro-system-card-body">
+                <div class="flex flex-wrap justify-center gap-3">
+                    {% if game.default_rom_set %}
+                    {% if game.default_rom_set.is_multi_disc %}
+                    <button @click="$store.romsetPicker.open({{ game.default_rom_set.pk }})"
+                            class="retro-btn retro-btn-success flex items-center gap-2 py-3 text-lg">
+                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Download
+                    </button>
+                    {% else %}
+                    <a href="{% url 'library:download_romset' game.default_rom_set.pk %}" class="retro-btn retro-btn-success flex items-center gap-2 py-3 text-lg">
+                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Download
+                    </a>
+                    {% endif %}
+                    {% endif %}
+                    <button @click="openSendModal()" class="retro-btn retro-btn-purple flex items-center gap-2 py-3 text-lg">
+                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        Send
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <!-- No ROMs Card (when no hero image) -->
+    <div class="lg:col-span-3">
+        <div class="retro-system-card retro-system-card-static mb-6">
+            <div class="retro-system-card-body">
+                <p class="text-[var(--color-text-muted)]">Game not in library</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    <!-- Info Panel Column -->
+    <div class="lg:col-span-{% if hero_image %}2{% else %}3{% endif %}">
+        <div class="retro-system-card retro-system-card-static h-full bg-[#e8e8f0] relative">
+            <!-- Favorite Star Button - Top Right -->
+            <button @click="toggleFavorite()"
+                    class="absolute top-3 right-3 text-[var(--color-gold)] hover:scale-110 transition-transform z-10"
+                    :title="isFavorite ? 'Remove from Favorites' : 'Add to Favorites'">
+                <svg class="h-7 w-7"
+                     :fill="isFavorite ? 'currentColor' : 'none'"
+                     viewBox="0 0 24 24"
+                     stroke="currentColor"
+                     stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                          d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+                </svg>
+            </button>
+            <div class="retro-system-card-body !items-start !text-left p-4 sm:p-6">
+            <h1 class="retro-heading retro-heading-lg mb-4 w-full text-center">{{ game.name }}</h1>
+
+            <!-- Description -->
+            {% if game.description %}
+            <p class="text-[var(--color-text)] leading-relaxed mb-4 text-justify">{{ game.description|unescape }}</p>
+            {% endif %}
+
+            <!-- Metadata Grid -->
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3 mb-6 text-base">
+                {% if game.genres.exists %}
+                <div class="col-span-2 sm:col-span-3">
+                    <span class="text-[var(--color-text-muted)] uppercase text-base">Genres</span>
+                    <div class="flex flex-wrap gap-1 mt-1">
+                        {% for genre in game.display_genres %}
+                        {% if genre.parent %}
+                        <span class="retro-badge">{{ genre.parent.name }}</span>
+                        {% endif %}
+                        <span class="retro-badge">{{ genre.short_name }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if game.developer %}
+                <div>
+                    <span class="text-[var(--color-text-muted)] uppercase text-base">Developer</span>
+                    <p class="text-[var(--color-text)] font-medium">{{ game.developer }}</p>
+                </div>
+                {% endif %}
+
+                {% if game.publisher %}
+                <div>
+                    <span class="text-[var(--color-text-muted)] uppercase text-base">Publisher</span>
+                    <p class="text-[var(--color-text)] font-medium">{{ game.publisher }}</p>
+                </div>
+                {% endif %}
+
+                {% if game.release_date %}
+                <div>
+                    <span class="text-[var(--color-text-muted)] uppercase text-base">Released</span>
+                    <p class="text-[var(--color-text)] font-medium">{{ game.release_date|date:"Y" }}</p>
+                </div>
+                {% endif %}
+
+                {% if game.players %}
+                <div>
+                    <span class="text-[var(--color-text-muted)] uppercase text-base">Players</span>
+                    <p class="text-[var(--color-text)] font-medium">{{ game.players }}</p>
+                </div>
+                {% endif %}
+
+                {% if game.rating %}
+                <div>
+                    <span class="text-[var(--color-text-muted)] uppercase text-base">Rating</span>
+                    <div class="mt-1">
+                        <span class="retro-rating {% if game.rating >= 81 %}retro-rating-great{% elif game.rating >= 61 %}retro-rating-good{% elif game.rating >= 41 %}retro-rating-mixed{% elif game.rating >= 21 %}retro-rating-poor{% else %}retro-rating-bad{% endif %}">
+                            {{ game.rating }}/100
+                        </span>
+                        {% if game.rating_source %}
+                        <span class="text-base text-[var(--color-text-muted)] ml-1">{{ game.rating_source }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <div>
+                    <span class="text-[var(--color-text-muted)] uppercase text-base">System</span>
+                    <div class="flex items-center gap-2 mt-1">
+                        {% if game.system.icon_path %}
+                        <img src="{% url 'library:serve_system_icon' game.system.slug %}" alt="" class="w-5 h-5 pixelated">
+                        {% endif %}
+                        <span class="text-[var(--color-text)] font-medium">{{ game.system.name }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons (moved to separate card) -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Screenshots Gallery -->
+{% if screenshots or game.screenshot_title_image %}
+<div class="retro-system-card retro-system-card-static mb-8">
+    <div class="retro-system-card-header retro-header-purple !text-left">
+        <h3>Screenshots</h3>
+    </div>
+    <div class="retro-system-card-body !items-start">
+        <div class="retro-gallery">
+            {% if game.screenshot_title_image %}
+            <a href="{% url 'library:serve_image' game.screenshot_title_image.pk %}"
+               class="glightbox retro-gallery-item"
+               data-gallery="screenshots"
+               data-type="image">
+                <div class="retro-image-frame retro-cover w-48 sm:w-56">
+                    <img src="{% url 'library:serve_image' game.screenshot_title_image.pk %}"
+                         alt="Title Screen"
+                         class="w-full h-auto">
+                </div>
+            </a>
+            {% endif %}
+            {% for screenshot in screenshots %}
+            <a href="{% url 'library:serve_image' screenshot.pk %}"
+               class="glightbox retro-gallery-item"
+               data-gallery="screenshots"
+               data-type="image">
+                <div class="retro-image-frame retro-cover w-48 sm:w-56">
+                    <img src="{% url 'library:serve_image' screenshot.pk %}"
+                         alt="Screenshot {{ forloop.counter }}"
+                         class="w-full h-auto">
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- ROM Variants -->
+<div class="retro-system-card retro-system-card-static mb-8">
+    <div class="retro-system-card-header retro-header-teal !text-left">
+        <div class="flex items-center justify-between w-full">
+            <h3>ROM Variants</h3>
+            <span class="text-base opacity-70">{{ rom_sets|length }} version{{ rom_sets|length|pluralize }}</span>
+        </div>
+    </div>
+    <div class="retro-system-card-body !items-start">
+        <!-- ROM Files - Desktop Table -->
+        <div class="hidden md:block overflow-x-auto w-full">
+            <table class="min-w-full border-2 border-[var(--color-border)]">
+                <thead class="bg-[var(--color-surface-alt)]">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-base font-bold text-[var(--color-text)] uppercase border-b-2 border-[var(--color-border)]">File</th>
+                        <th class="px-4 py-2 text-left text-base font-bold text-[var(--color-text)] uppercase border-b-2 border-[var(--color-border)]">Disc</th>
+                        <th class="px-4 py-2 text-left text-base font-bold text-[var(--color-text)] uppercase border-b-2 border-[var(--color-border)]">Size</th>
+                        <th class="px-4 py-2 text-left text-base font-bold text-[var(--color-text)] uppercase border-b-2 border-[var(--color-border)]">Status</th>
+                        <th class="px-4 py-2 text-right text-base font-bold text-[var(--color-text)] uppercase border-b-2 border-[var(--color-border)]">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-[var(--color-surface)]">
+                    {% for rom_set in rom_sets %}
+                    {% for rom in rom_set.roms.all %}
+                    <tr class="{% if forloop.parentloop.counter|divisibleby:2 %}romset-group-even{% endif %}{% if forloop.first and not forloop.parentloop.first %} romset-group-start{% endif %}{% if rom_set.rom_count > 1 %} romset-multi-rom{% endif %}"{% if game.default_rom_set == rom_set %} style="background-color: rgba(0, 128, 128, 0.15);"{% endif %}>
+                        <td class="px-4 py-3">
+                            <div class="text-base font-medium text-[var(--color-text)] flex items-center gap-2">
+                                {{ rom_set.region|region_flag }}
+                                <span>{{ rom.file_name }}</span>
+                                {% if game.default_rom_set == rom_set %}
+                                <span class="retro-badge text-base bg-[var(--color-teal)] text-white">Default</span>
+                                {% endif %}
+                                {% if rom.is_archived %}
+                                <span class="retro-badge text-base bg-[var(--color-purple)] text-white">Archived</span>
+                                {% endif %}
+                                {% if rom.content_type == "base" %}
+                                <span class="retro-badge text-base retro-badge-success">Base</span>
+                                {% elif rom.content_type == "update" %}
+                                <span class="retro-badge text-base bg-[var(--color-gold)] text-black">Update</span>
+                                {% elif rom.content_type == "dlc" %}
+                                <span class="retro-badge text-base bg-[var(--color-purple)] text-white">DLC</span>
+                                {% endif %}
+                                {% if game.name_source == "NoIntros" %}
+                                <span class="retro-badge text-base border border-[var(--color-primary)] text-[var(--color-primary)] bg-transparent">No-Intro</span>
+                                {% elif game.name_source == "Redump" %}
+                                <span class="retro-badge retro-badge-success text-base">Redump</span>
+                                {% elif game.name_source == "hasheous" %}
+                                <span class="retro-badge text-base border border-[var(--color-gold)] text-[var(--color-gold)] bg-transparent">Hasheous</span>
+                                {% elif game.name_source not in "filename,screenscraper,manual" %}
+                                <span class="retro-badge text-base border border-[var(--color-teal)] text-[var(--color-teal)] bg-transparent">{{ game.name_source }}</span>
+                                {% endif %}
+                            </div>
+                            <div class="text-base text-[var(--color-text-muted)] truncate max-w-md" title="{{ rom.file_path }}">
+                                {% if rom.is_archived %}{{ rom.archive_path }} / {{ rom.path_in_archive }}{% else %}{{ rom.file_path }}{% endif %}
+                            </div>
+                        </td>
+                        <td class="px-4 py-3 text-base text-[var(--color-text-muted)]">
+                            {% if rom.disc %}Disc {{ rom.disc }}{% else %}-{% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-base text-[var(--color-text-muted)]">
+                            {% if rom.file_size < 1048576 %}{% widthratio rom.file_size 1024 1 %} KB{% else %}{% widthratio rom.file_size 1048576 1 %} MB{% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-base">
+                            <span class="retro-badge retro-badge-success">Available</span>
+                        </td>
+                        <td class="px-4 py-3 text-right">
+                            <div class="flex items-center justify-end gap-2">
+                                <a href="{% url 'library:download_rom' rom.pk %}" class="text-[var(--color-text-muted)] hover:text-[var(--color-primary)]" title="Download">
+                                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                </a>
+                                {% if rom.is_archived %}
+                                <a href="{% url 'library:download_rom' rom.pk %}?mode=extract" class="text-[var(--color-text-muted)] hover:text-[var(--color-success)]" title="Extract & Download">
+                                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-3 5l-4-4m0 0l-4 4m4-4v9" />
+                                    </svg>
+                                </a>
+                                {% endif %}
+                                <button @click="openSendRomModal({{ rom.pk }})"
+                                        class="text-[var(--color-text-muted)] hover:text-[var(--color-teal)]"
+                                        title="Send to device">
+                                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="px-4 py-8 text-center text-[var(--color-text-muted)]">No ROM files found for this game.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ROM Files - Mobile Cards -->
+        <div class="md:hidden space-y-3 w-full">
+            {% for rom_set in rom_sets %}
+            <div class="{% if rom_set.rom_count > 1 %}border-l-4 border-[var(--color-teal)] pl-2{% endif %} {% if forloop.counter|divisibleby:2 %}bg-[var(--color-surface-alt)]/20 -mx-2 px-2 py-1 rounded{% endif %}">
+                {% for rom in rom_set.roms.all %}
+                <div class="retro-rom-card {% if game.default_rom_set == rom_set %}border-[var(--color-teal)]{% endif %} {% if not forloop.first %}mt-2{% endif %}"{% if game.default_rom_set == rom_set %} style="background-color: rgba(0, 128, 128, 0.1);"{% endif %}>
+                    <div class="retro-rom-card-header flex-wrap">
+                        <div class="flex items-center gap-2 min-w-0 flex-1">
+                            {{ rom_set.region|region_flag }}
+                            <span class="text-base font-medium text-[var(--color-text)] break-all">{{ rom.file_name }}</span>
+                        </div>
+                        <span class="text-base text-[var(--color-text-muted)] whitespace-nowrap ml-auto">
+                            {% if rom.file_size < 1048576 %}{% widthratio rom.file_size 1024 1 %} KB{% else %}{% widthratio rom.file_size 1048576 1 %} MB{% endif %}
+                        </span>
+                    </div>
+                    <div class="p-3">
+                        <div class="flex flex-wrap gap-1 mb-3">
+                            {% if game.default_rom_set == rom_set %}
+                            <span class="retro-badge text-base bg-[var(--color-teal)] text-white">Default</span>
+                            {% endif %}
+                            <span class="retro-badge text-base retro-badge-success">Available</span>
+                            {% if rom.is_archived %}
+                            <span class="retro-badge text-base bg-[var(--color-purple)] text-white">Archived</span>
+                            {% endif %}
+                            {% if rom.content_type == "base" %}
+                            <span class="retro-badge text-base retro-badge-success">Base</span>
+                            {% elif rom.content_type == "update" %}
+                            <span class="retro-badge text-base bg-[var(--color-gold)] text-black">Update</span>
+                            {% elif rom.content_type == "dlc" %}
+                            <span class="retro-badge text-base bg-[var(--color-purple)] text-white">DLC</span>
+                            {% endif %}
+                            {% if rom.disc %}
+                            <span class="retro-badge text-base bg-[var(--color-surface-alt)] text-[var(--color-text)]">Disc {{ rom.disc }}</span>
+                            {% endif %}
+                            {% if game.name_source == "NoIntros" %}
+                            <span class="retro-badge text-base border border-[var(--color-primary)] text-[var(--color-primary)] bg-transparent">No-Intro</span>
+                            {% elif game.name_source == "Redump" %}
+                            <span class="retro-badge text-base retro-badge-success">Redump</span>
+                            {% elif game.name_source == "hasheous" %}
+                            <span class="retro-badge text-base border border-[var(--color-gold)] text-[var(--color-gold)] bg-transparent">Hasheous</span>
+                            {% elif game.name_source not in "filename,screenscraper,manual" %}
+                            <span class="retro-badge text-base border border-[var(--color-teal)] text-[var(--color-teal)] bg-transparent">{{ game.name_source }}</span>
+                            {% endif %}
+                        </div>
+                        <div class="flex gap-2">
+                            <a href="{% url 'library:download_rom' rom.pk %}" class="retro-btn retro-btn-sm retro-btn-success flex-1 text-center">Download</a>
+                            {% if rom.is_archived %}
+                            <a href="{% url 'library:download_rom' rom.pk %}?mode=extract" class="retro-btn retro-btn-sm retro-btn-teal flex-1 text-center">Extract</a>
+                            {% endif %}
+                            <button @click="openSendRomModal({{ rom.pk }})"
+                                    class="retro-btn retro-btn-sm retro-btn-purple flex-1">Send</button>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% empty %}
+            <p class="text-[var(--color-text-muted)] text-center py-8">No ROM files found for this game.</p>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- Tags Section -->
+{% if rom_sets %}
+{% with first_rom=rom_sets.0.roms.first %}
+{% if first_rom.tags %}
+<div class="retro-system-card retro-system-card-static mb-8">
+    <div class="retro-system-card-header retro-header-gold !text-left">
+        <h3>Tags</h3>
+    </div>
+    <div class="retro-system-card-body !items-start">
+        <div class="flex flex-wrap gap-2">
+            {% for tag in first_rom.tags %}
+            <span class="retro-badge">{{ tag }}</span>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endwith %}
+{% endif %}
+
+<!-- Collections -->
+<div class="retro-system-card retro-system-card-static mb-8">
+    <div class="retro-system-card-header retro-header-green !text-left">
+        <div class="flex items-center justify-between w-full">
+            <h3>Collections</h3>
+            <button @click="openAddToCollectionModal()" class="retro-btn retro-btn-sm flex items-center gap-1 whitespace-nowrap">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Add to Collection
+            </button>
+        </div>
+    </div>
+    <div class="retro-system-card-body !items-start p-6">
+        {% if collection_entries %}
+        <div class="flex flex-wrap gap-3">
+            {% for entry in collection_entries %}
+            <a href="{% url 'romcollections:collection_detail' entry.collection.creator entry.collection.slug %}"
+               class="retro-badge text-base px-4 py-2 hover:bg-[var(--color-primary)] transition-colors">
+                {{ entry.collection.name }}
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-[var(--color-text-muted)]">Not in any collections yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Metadata Actions -->
+<div class="retro-card mb-8 bg-[var(--color-surface-alt)]/60 border-[var(--color-border)]/60">
+    <div class="retro-card-body">
+        <div class="flex flex-wrap items-center gap-4">
+            {% if screenscraper_configured %}
+            <form method="post" action="{% url 'library:fetch_game_metadata' game.pk %}" class="inline">
+                {% csrf_token %}
+                <button type="submit" class="px-4 py-2 text-base border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-text-muted)] transition-colors">
+                    {% if game.screenscraper_id %}Refresh{% else %}Fetch{% endif %} Metadata
+                </button>
+            </form>
+            {% else %}
+            <span class="px-4 py-2 text-base border border-[var(--color-border)] text-[var(--color-text-muted)] opacity-50 cursor-not-allowed"
+                  title="Configure ScreenScraper credentials in Settings > Metadata">
+                {% if game.screenscraper_id %}Refresh{% else %}Fetch{% endif %} Metadata
+            </span>
+            {% endif %}
+            {% if game.name_source == game.SOURCE_FILENAME or game.name_source == game.SOURCE_MANUAL %}
+            <form method="post" action="{% url 'library:hash_lookup' game.pk %}" class="inline">
+                {% csrf_token %}
+                <button type="submit" class="px-4 py-2 text-base border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-text-muted)] transition-colors">
+                    Identify via Hash
+                </button>
+            </form>
+            {% endif %}
+            {% if game.screenscraper_id %}
+            <span class="text-base text-[var(--color-text-muted)] flex items-center gap-1">
+                SS ID: <span class="font-mono">{{ game.screenscraper_id }}</span>
+                <a href="https://www.screenscraper.fr/gameinfos.php?gameid={{ game.screenscraper_id }}"
+                   target="_blank"
+                   class="text-[var(--color-primary)] hover:underline ml-1">view</a>
+            </span>
+            {% endif %}
+            <button @click="$store.modals.open('edit-game')"
+                    class="px-4 py-2 text-base border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-text-muted)] transition-colors flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                </svg>
+                Edit Game
+            </button>
+            <button @click="$store.modals.open('delete-game')"
+                    class="px-4 py-2 text-base border border-[var(--color-danger)] text-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white transition-colors">
+                Remove from Library
+            </button>
+            {% if game.metadata_updated_at %}
+            <div class="ml-auto text-base text-[var(--color-text-muted)]">
+                Updated {{ game.metadata_updated_at|timesince }} ago
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Delete Game Confirmation Modal -->
+{% retro_modal id="delete-game" title="Remove Game" %}
+<form method="post"
+      action="{% url 'library:delete_game' game.pk %}"
+      hx-post="{% url 'library:delete_game' game.pk %}"
+      hx-swap="none">
+    {% csrf_token %}
+    <div class="retro-modal-body">
+        <p class="text-[var(--color-text)]">Are you sure you want to remove <strong>{{ game.name }}</strong> from your library?</p>
+        <p class="text-base text-[var(--color-text-muted)] mt-2">
+            This will delete the game entry and its metadata images. ROM files will NOT be deleted.
+        </p>
+    </div>
+    <div class="retro-modal-footer">
+        <button type="button" @click="$store.modals.close('delete-game')" class="retro-btn">Cancel</button>
+        <button type="submit" class="retro-btn retro-btn-danger">Remove</button>
+    </div>
+</form>
+{% endretro_modal %}
+
+<!-- Edit Game Modal -->
+{% retro_modal id="edit-game" title="Edit Game" size="lg" %}
+<div id="edit-game-form-container"
+     hx-get="{% url 'library:edit_game' game.pk %}"
+     hx-trigger="load"
+     hx-swap="innerHTML">
+    <div class="retro-modal-body">
+        <div class="p-8">
+            {% include "components/_loading_spinner.html" %}
+        </div>
+    </div>
+</div>
+{% endretro_modal %}
+
+<!-- Remove from Favorites Confirmation -->
+<div x-show="showFavoriteConfirm"
+     x-cloak
+     class="fixed inset-0 z-50 flex items-center justify-center"
+     @keydown.escape.window="showFavoriteConfirm = false">
+    <div class="fixed inset-0 bg-black/50" @click="showFavoriteConfirm = false"></div>
+    <div class="retro-modal relative z-10 max-w-sm" @click.stop>
+        <div class="retro-modal-header">
+            <h3 class="retro-modal-title">Remove from Favorites?</h3>
+        </div>
+        <div class="retro-modal-body">
+            <p class="text-[var(--color-text)]">Remove <strong>{{ game.name }}</strong> from your Favorites?</p>
+        </div>
+        <div class="retro-modal-footer">
+            <button @click="showFavoriteConfirm = false" class="retro-btn">Cancel</button>
+            <button @click="doToggleFavorite()" class="retro-btn retro-btn-danger">Remove</button>
+        </div>
+    </div>
+</div>
+
+<!-- Send Modal -->
+{% include "library/_send_modal.html" %}
+
+<!-- ROMSet Download Modal -->
+{% retro_modal id="romset-download" title="" close_btn=False size="2xl" %}
+<div id="romset-download-modal-content">
+    <div class="retro-modal-body">
+        <div class="p-12">
+            {% include "components/_loading_spinner.html" %}
+        </div>
+    </div>
+</div>
+{% endretro_modal %}
+
+<!-- Download Progress Modal -->
+{% retro_modal id="download-progress" title="Download Progress" %}
+<div class="retro-modal-body">
+    <div id="download-progress-content">
+    </div>
+</div>
+{% endretro_modal %}
+
+{% include "components/_add_to_collection_modal.html" %}
+
+<script>
+    // Initialize GLightbox with 2x zoom for screenshots
+    const lightbox = GLightbox({
+        touchNavigation: true,
+        loop: true,
+        closeButton: true,
+        zoomable: true,
+    });
+
+    // Apply 2x zoom to screenshot images (capped at viewport)
+    lightbox.on('slide_after_load', (data) => {
+        const { slideNode } = data;
+        const img = slideNode.querySelector('.gslide-image img');
+        if (!img) return;
+
+        const applyZoom = () => {
+            const naturalWidth = img.naturalWidth;
+            const naturalHeight = img.naturalHeight;
+            if (!naturalWidth || !naturalHeight) return;
+
+            let targetWidth = naturalWidth * 2;
+            let targetHeight = naturalHeight * 2;
+            const maxWidth = window.innerWidth * 0.9;
+            const maxHeight = window.innerHeight * 0.85;
+
+            if (targetWidth > maxWidth || targetHeight > maxHeight) {
+                const scale = Math.min(maxWidth / targetWidth, maxHeight / targetHeight);
+                targetWidth *= scale;
+                targetHeight *= scale;
+            }
+
+            img.style.width = targetWidth + 'px';
+            img.style.height = targetHeight + 'px';
+            img.style.imageRendering = 'pixelated';
+        };
+
+        if (img.complete) applyZoom();
+        else img.addEventListener('load', applyZoom);
+    });
+</script>
+
+</div>
+{% endblock %}

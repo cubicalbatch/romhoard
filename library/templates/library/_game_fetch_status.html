@@ -1,0 +1,11 @@
+<div class="flex items-center justify-between py-2 px-3 bg-[var(--color-surface-alt)] border border-[var(--color-border)] rounded"
+     id="game-row-{{ game.pk }}">
+    <a href="{% url 'library:game_detail' game.pk %}"
+       class="text-base text-[var(--color-text)] hover:text-[var(--color-primary)] truncate flex-1 mr-2">
+        {{ game.name }}
+    </a>
+    <div class="flex items-center gap-2 text-base text-[var(--color-text-muted)]">
+        <div class="animate-spin h-4 w-4 border-2 border-[var(--color-primary)] border-t-transparent rounded-full"></div>
+        <span>Fetching...</span>
+    </div>
+</div>

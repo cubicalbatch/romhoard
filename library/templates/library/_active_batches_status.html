@@ -1,0 +1,97 @@
+{% load duration %}
+<!-- Hidden element for Alpine.js to read active batch state -->
+<div id="active-batch-data"
+     class="hidden"
+     data-fetching-all="{% for batch in active_batches %}{% if not batch.system_slug %}true{% endif %}{% endfor %}"
+     data-active-slugs="{% for batch in active_batches %}{{ batch.system_slug }}{% if not forloop.last %},{% endif %}{% endfor %}"
+     data-active-batch-ids="{% for batch in active_batches %}{{ batch.pk }}{% if not forloop.last %},{% endif %}{% endfor %}">
+</div>
+{% if active_batches %}
+<div class="retro-system-card retro-system-card-static mb-8">
+    <div class="retro-system-card-header retro-header-teal flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+        <h3>Active Metadata Batches</h3>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start w-full">
+        {% for batch in active_batches %}
+        <div class="retro-batch-card retro-pulse-border mb-4 last:mb-0">
+            <!-- Header Row -->
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+                <div class="flex items-center gap-3">
+                    {% if batch.system_slug %}
+                    <span class="retro-badge retro-badge-primary">{{ batch.system_slug|upper }}</span>
+                    {% else %}
+                    <span class="retro-badge">All Systems</span>
+                    {% endif %}
+                    <span class="text-base text-[var(--color-text-muted)]">
+                        Started {{ batch.created_at|timesince }} ago
+                    </span>
+                </div>
+                <form method="post" action="{% url 'library:cancel_metadata_batch' batch.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="retro-btn retro-btn-danger retro-btn-sm">
+                        Cancel
+                    </button>
+                </form>
+            </div>
+
+            {% if batch.status == 'queuing' %}
+            <!-- Queuing state: jobs are being created -->
+            <div class="mb-4">
+                <div class="flex items-center gap-2 text-base text-[var(--color-text-muted)]">
+                    <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                    <span>Queuing games for metadata fetch...</span>
+                </div>
+            </div>
+            {% else %}
+            <!-- Progress Bar with Percentage -->
+            {% with percentage=batch.completed_count|default:0 %}
+            {% widthratio batch.completed_count batch.total_count 100 as progress_percent %}
+            <div class="mb-4">
+                <div class="flex items-center justify-between text-base mb-1">
+                    <span class="font-medium text-[var(--color-text)]">
+                        {{ batch.completed_count }} / {{ batch.total_count }} complete
+                    </span>
+                    <span class="text-[var(--color-primary)] font-semibold">{{ progress_percent|default:0 }}%</span>
+                </div>
+                <div class="retro-progress">
+                    <div class="retro-progress-bar retro-progress-animated" style="width: {{ progress_percent|default:0 }}%"></div>
+                </div>
+                {% if batch.running_duration and batch.completed_count > 0 %}
+                <div class="text-base text-[var(--color-text-muted)] mt-1 text-right">
+                    Running for {{ batch.running_duration|format_duration }}
+                </div>
+                {% endif %}
+            </div>
+            {% endwith %}
+
+            <!-- Stats Grid -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div class="retro-mini-stat">
+                    <div class="retro-mini-stat-value text-yellow-600">{{ batch.pending_count }}</div>
+                    <div class="retro-mini-stat-label">In Queue</div>
+                </div>
+                <div class="retro-mini-stat">
+                    <div class="retro-mini-stat-value text-[var(--color-primary)]">{{ batch.completed_count }}</div>
+                    <div class="retro-mini-stat-label">Processed</div>
+                </div>
+                <div class="retro-mini-stat">
+                    <div class="retro-mini-stat-value text-[var(--color-success)]">{{ batch.matched_count }}</div>
+                    <div class="retro-mini-stat-label">Matched</div>
+                </div>
+                <div class="retro-mini-stat">
+                    <div class="retro-mini-stat-value text-[var(--color-teal)]">{{ batch.images_downloaded }}</div>
+                    <div class="retro-mini-stat-label">Images</div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}

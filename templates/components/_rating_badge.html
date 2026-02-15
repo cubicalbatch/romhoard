@@ -1,0 +1,4 @@
+{# Rating badge: include with rating=game.rating, optional opacity="/60", optional sm=True for small variant #}
+{% if rating %}
+<span class="retro-badge{% if sm %} retro-badge-sm{% endif %} font-medium {% if rating >= 81 %}bg-emerald-700{{ opacity|default:"" }} text-emerald-100{% elif rating >= 61 %}bg-lime-700{{ opacity|default:"" }} text-lime-100{% elif rating >= 41 %}bg-amber-700{{ opacity|default:"" }} text-amber-100{% elif rating >= 21 %}bg-orange-700{{ opacity|default:"" }} text-orange-100{% else %}bg-red-800{{ opacity|default:"" }} text-red-100{% endif %}">{{ rating }}</span>
+{% else %}-{% endif %}

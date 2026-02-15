@@ -1,0 +1,90 @@
+{# Inline ScreenScraper ID input form #}
+{# Variables: game, saved (optional), fetch_triggered (optional), inline (optional for missing list) #}
+{% if inline %}
+{# Compact inline version for missing games list #}
+<form hx-post="{% url 'library:set_screenscraper_id' game.pk %}"
+      hx-target="closest .game-row"
+      hx-swap="outerHTML"
+      class="flex items-center gap-1">
+    {% csrf_token %}
+    <input type="text"
+           name="screenscraper_id"
+           placeholder="SS ID"
+           class="retro-input w-20 text-base py-1 px-2"
+           pattern="[0-9]*"
+           inputmode="numeric">
+    <input type="hidden" name="fetch_metadata" value="1">
+    <button type="submit" class="retro-btn retro-btn-sm retro-btn-secondary whitespace-nowrap">
+        Set ID
+    </button>
+</form>
+{% else %}
+{# Full version for game detail page #}
+<div x-data="{
+         ssid: '{{ game.screenscraper_id|default:'' }}',
+         editing: false,
+         saved: {{ saved|yesno:'true,false' }},
+         fetchTriggered: {{ fetch_triggered|yesno:'true,false' }}
+     }"
+     class="flex flex-wrap items-center gap-2">
+
+    <template x-if="!editing && !ssid">
+        <button @click="editing = true"
+                class="text-base text-[var(--color-text-muted)] hover:text-[var(--color-primary)] underline">
+            Set ScreenScraper ID manually
+        </button>
+    </template>
+
+    <template x-if="ssid && !editing">
+        <div class="flex items-center gap-2">
+            <span class="text-base text-[var(--color-text-muted)]">
+                ScreenScraper ID: <span class="font-mono text-[var(--color-text)]">{{ game.screenscraper_id }}</span>
+            </span>
+            <button @click="editing = true"
+                    class="text-base text-[var(--color-text-muted)] hover:text-[var(--color-primary)] underline">
+                Edit
+            </button>
+        </div>
+    </template>
+
+    <template x-if="editing">
+        <form method="post"
+              action="{% url 'library:set_screenscraper_id' game.pk %}"
+              hx-post="{% url 'library:set_screenscraper_id' game.pk %}"
+              hx-target="closest div[x-data]"
+              hx-swap="outerHTML"
+              class="flex flex-wrap items-center gap-2">
+            {% csrf_token %}
+            <input type="text"
+                   name="screenscraper_id"
+                   x-model="ssid"
+                   placeholder="ScreenScraper Game ID"
+                   class="retro-input w-32 text-base"
+                   pattern="[0-9]*"
+                   inputmode="numeric"
+                   autofocus>
+            <label class="flex items-center gap-1 text-base text-[var(--color-text-muted)]">
+                <input type="checkbox" name="fetch_metadata" value="1" checked class="accent-[var(--color-primary)]">
+                Fetch now
+            </label>
+            <button type="submit"
+                    class="retro-btn retro-btn-sm retro-btn-primary">
+                Save
+            </button>
+            <button type="button"
+                    @click="editing = false; ssid = '{{ game.screenscraper_id|default:'' }}'"
+                    class="text-base text-[var(--color-text-muted)] hover:text-[var(--color-danger)]">
+                Cancel
+            </button>
+        </form>
+    </template>
+
+    <span x-show="saved && !editing"
+          x-transition
+          class="text-base text-[var(--color-success)]"
+          x-init="setTimeout(() => saved = false, 3000)">
+        <template x-if="fetchTriggered">Saved &amp; fetching...</template>
+        <template x-if="!fetchTriggered">Saved!</template>
+    </span>
+</div>
+{% endif %}

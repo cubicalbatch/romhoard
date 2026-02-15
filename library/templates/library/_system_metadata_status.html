@@ -1,0 +1,86 @@
+<!-- Hidden element for Alpine.js to track active system metadata jobs -->
+<div id="system-metadata-data" class="hidden"
+     data-active-job-ids="{% for job in active_jobs %}{{ job.pk }}{% if not forloop.last %},{% endif %}{% endfor %}">
+</div>
+{% if active_jobs %}
+<div class="retro-system-card mb-4">
+    <div class="retro-system-card-header retro-header-teal">
+        <h3>System Metadata Fetch in Progress</h3>
+    </div>
+    <div class="retro-card-body">
+        {% for job in active_jobs %}
+        <div class="border-l-4 border-[var(--color-primary)] bg-[var(--color-bg)] p-4 mt-2">
+            <div class="w-full">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <div class="text-base text-[var(--color-text-muted)]">
+                            Started: {{ job.created_at|timesince }} ago
+                            {% if job.running_duration %}
+                            - Running for {{ job.running_duration }}
+                            {% endif %}
+                        </div>
+                        {% if job.current_system %}
+                        <div class="text-base text-[var(--color-text-muted)] mt-1">
+                            Current: <span class="font-medium">{{ job.current_system }}</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <form method="post" action="{% url 'library:cancel_system_metadata_job' job.pk %}">
+                        {% csrf_token %}
+                        <button type="submit" class="retro-btn retro-btn-danger retro-btn-sm">
+                            Cancel
+                        </button>
+                    </form>
+                </div>
+
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 text-base">
+                    <div class="text-center">
+                        <div class="text-lg font-semibold text-[var(--color-primary)]">{{ job.systems_processed }} / {{ job.systems_total }}</div>
+                        <div class="text-base text-[var(--color-text-muted)]">Systems</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-lg font-semibold text-[var(--color-success)]">{{ job.systems_updated }}</div>
+                        <div class="text-base text-[var(--color-text-muted)]">Updated</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-lg font-semibold text-[var(--color-teal)]">{{ job.icons_downloaded }}</div>
+                        <div class="text-base text-[var(--color-text-muted)]">Icons</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-lg font-semibold text-[var(--color-primary)]">{{ job.progress_percent }}%</div>
+                        <div class="text-base text-[var(--color-text-muted)]">Progress</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if recent_jobs %}
+<div class="mt-2">
+    {% for job in recent_jobs %}
+    <div class="border-l-4 {% if job.status == 'completed' %}border-[var(--color-success)]{% elif job.status == 'cancelled' %}border-yellow-600{% elif job.status == 'failed' %}border-[var(--color-danger)]{% else %}border-yellow-600{% endif %} bg-[var(--color-bg)] p-4 mb-2">
+        <div class="w-full">
+            <div class="flex justify-between items-center">
+                <div class="text-base">
+                    {% if job.status == 'completed' %}
+                    Updated {{ job.systems_updated }} system(s), downloaded {{ job.icons_downloaded }} icon(s)
+                    {% if job.systems_skipped > 0 %} - skipped {{ job.systems_skipped }}{% endif %}
+                    {% elif job.status == 'cancelled' %}
+                    Cancelled
+                    {% elif job.status == 'failed' %}
+                    Error: {{ job.error|truncatewords:10 }}
+                    {% endif %}
+                    <span class="text-base opacity-70">({{ job.completed_at|timesince }} ago)</span>
+                </div>
+                <span class="retro-badge {% if job.status == 'completed' %}retro-badge-success{% elif job.status == 'cancelled' %}retro-badge-primary{% elif job.status == 'failed' %}retro-badge{% else %}retro-badge-primary{% endif %}">
+                    {{ job.get_status_display }}
+                </span>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}

@@ -1,0 +1,40 @@
+<div class="space-y-2">
+    {% for game in games %}
+    <div class="game-row flex items-center justify-between gap-2 py-2 px-3 bg-[var(--color-bg)] border {% if game.metadata_match_failed %}border-[var(--color-danger)] border-l-4{% else %}border-[var(--color-border)]{% endif %} rounded"
+         id="game-row-{{ game.pk }}">
+        <div class="flex items-center gap-2 flex-1 min-w-0">
+            {% if game.metadata_match_failed %}
+            <span class="text-[var(--color-danger)]" title="No match found previously">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                </svg>
+            </span>
+            {% endif %}
+            <a href="{% url 'library:game_detail' game.pk %}"
+               class="text-base text-[var(--color-text)] hover:text-[var(--color-primary)] truncate">
+                {{ game.name }}
+            </a>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+            {% include "library/_screenscraper_id_input.html" with game=game inline=True %}
+            <span class="text-[var(--color-text-muted)] text-base">or</span>
+            <form method="post"
+                  action="{% url 'library:fetch_game_metadata' game.pk %}"
+                  hx-post="{% url 'library:fetch_game_metadata' game.pk %}"
+                  hx-target="#game-row-{{ game.pk }}"
+                  hx-swap="outerHTML">
+                {% csrf_token %}
+                <button type="submit" class="retro-btn retro-btn-sm retro-btn-primary">
+                    {% if game.metadata_match_failed %}Retry{% else %}Auto{% endif %}
+                </button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+
+    {% if total_missing > showing %}
+    <div class="text-base text-[var(--color-text-muted)] text-center py-2">
+        ...and {{ total_missing|add:"-20" }} more games
+    </div>
+    {% endif %}
+</div>

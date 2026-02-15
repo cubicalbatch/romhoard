@@ -1,0 +1,67 @@
+{
+  "slug": "rocknix",
+  "name": "ROCKNIX / JELOS",
+  "description": "Configuration for ROCKNIX (formerly JELOS) - Just Enough Linux Operating System for handhelds",
+  "tags": ["rocknix", "jelos", "emulationstation", "rk3326", "rk3566", "rk3588"],
+
+  "folders": {
+    "root_path": "roms/",
+    "system_paths": {
+      "gba": {"folder": "gba"},
+      "gbc": {"folder": "gbc"},
+      "gb": {"folder": "gb"},
+      "snes": {"folder": "snes"},
+      "nes": {"folder": "nes"},
+      "genesis": {"folder": "megadrive"},
+      "sms": {"folder": "mastersystem"},
+      "gg": {"folder": "gamegear"},
+      "psx": {"folder": "psx"},
+      "n64": {"folder": "n64"},
+      "nds": {"folder": "nds"},
+      "psp": {"folder": "psp"},
+      "arcade": {"folder": "arcade"},
+      "neogeo": {"folder": "neogeo"},
+      "neogeocd": {"folder": "neogeocd"},
+      "atari2600": {"folder": "atari2600"},
+      "atari5200": {"folder": "atari5200"},
+      "atari7800": {"folder": "atari7800"},
+      "lynx": {"folder": "atarilynx"},
+      "ngp": {"folder": "ngp"},
+      "ngpc": {"folder": "ngpc"},
+      "pcengine": {"folder": "pcengine"},
+      "pcenginecd": {"folder": "pcenginecd"},
+      "wonderswan": {"folder": "wswan"},
+      "wonderswancolor": {"folder": "wswanc"},
+      "segacd": {"folder": "segacd"},
+      "sega32x": {"folder": "sega32x"},
+      "saturn": {"folder": "saturn"},
+      "dreamcast": {"folder": "dreamcast"},
+      "virtualboy": {"folder": "virtualboy"},
+      "coleco": {"folder": "colecovision"},
+      "intellivision": {"folder": "intellivision"},
+      "vectrex": {"folder": "vectrex"},
+      "msx": {"folder": "msx"},
+      "dos": {"folder": "dos"},
+      "scummvm": {"folder": "scummvm"},
+      "fds": {"folder": "fds"},
+      "gameandwatch": {"folder": "gameandwatch"},
+      "pokemini": {"folder": "pokemini"},
+      "3do": {"folder": "3do"},
+      "jaguar": {"folder": "atarijaguar"}
+    }
+  },
+
+  "images": {
+    "path_template": "{root_path}/{system}/images/{romname}-image.png",
+    "max_width": null,
+    "image_type": "mixed"
+  },
+
+  "transfer": {
+    "protocol": "sftp",
+    "port": 22,
+    "user": "root",
+    "password": "rocknix",
+    "path_prefix": "/storage/roms"
+  }
+}

@@ -1,0 +1,185 @@
+{% if job.status == 'pending' or job.status == 'testing' or job.status == 'running' %}
+<!-- Still in progress - keep polling -->
+<div hx-get="{% url 'library:send_status' job.pk %}"
+     hx-trigger="load delay:2s"
+     hx-target="this"
+     hx-swap="outerHTML">
+
+    <h3 class="text-lg font-semibold text-[var(--color-text)] mb-4">
+        {% if job.status == 'pending' %}
+            Preparing upload...
+        {% elif job.status == 'testing' %}
+            Testing connection...
+        {% else %}
+            Uploading to {{ job.device.name }}...
+        {% endif %}
+    </h3>
+
+    {% if job.status == 'running' %}
+    <div class="mb-4">
+        <div class="flex justify-between text-base text-[var(--color-text-muted)] mb-1">
+            <span>{{ job.files_processed }} of {{ job.files_total }} files</span>
+            <span>{{ job.progress_percent }}%</span>
+        </div>
+        <div class="retro-progress">
+            <div class="retro-progress-bar" style="width: {{ job.progress_percent }}%"></div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-3 gap-2 text-base mt-3">
+        <div class="text-center">
+            <div class="text-lg font-semibold text-[var(--color-success)]">{{ job.files_uploaded }}</div>
+            <div class="text-base text-[var(--color-text-muted)]">Uploaded</div>
+        </div>
+        <div class="text-center">
+            <div class="text-lg font-semibold text-[var(--color-teal)]">{{ job.files_skipped }}</div>
+            <div class="text-base text-[var(--color-text-muted)]">Skipped</div>
+        </div>
+        <div class="text-center">
+            <div class="text-lg font-semibold text-[var(--color-danger)]">{{ job.files_failed }}</div>
+            <div class="text-base text-[var(--color-text-muted)]">Failed</div>
+        </div>
+    </div>
+
+    {% if job.current_file %}
+    <p class="text-base text-[var(--color-text-muted)] truncate mt-4">Uploading: {{ job.current_file }}</p>
+    {% endif %}
+
+    {% if job.bytes_uploaded > 0 %}
+    <p class="text-base text-[var(--color-text-muted)] mt-2">
+        {% widthratio job.bytes_uploaded 1048576 1 %} MB uploaded
+    </p>
+    {% endif %}
+    {% else %}
+    {% include "components/_loading_spinner.html" %}
+    {% endif %}
+</div>
+
+{% elif job.status == 'completed' %}
+<!-- Complete - show summary -->
+<div>
+    <div class="text-center">
+        <svg class="h-12 w-12 text-[var(--color-success)] mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <h3 class="text-lg font-semibold text-[var(--color-text)] mb-2">Upload Complete!</h3>
+        <p class="text-base text-[var(--color-text-muted)] mb-4">
+            Sent to {{ job.device.name }}
+        </p>
+
+        <div class="grid grid-cols-2 {% if job.files_failed > 0 %}sm:grid-cols-3{% endif %} gap-4 mb-4 p-4 bg-[var(--color-bg)]">
+            <div class="text-center">
+                <div class="text-base text-[var(--color-text-muted)]">Uploaded</div>
+                <div class="text-2xl font-bold text-[var(--color-success)]">{{ job.files_uploaded }}</div>
+            </div>
+            <div class="text-center">
+                <div class="text-base text-[var(--color-text-muted)]">Skipped</div>
+                <div class="text-2xl font-bold text-[var(--color-teal)]">{{ job.files_skipped }}</div>
+            </div>
+            {% if job.files_failed > 0 %}
+            <div class="text-center">
+                <div class="text-base text-[var(--color-text-muted)]">Failed</div>
+                <div class="text-2xl font-bold text-[var(--color-danger)]">{{ job.files_failed }}</div>
+            </div>
+            {% endif %}
+        </div>
+
+        {% if job.bytes_uploaded > 0 %}
+        <p class="text-base text-[var(--color-text-muted)] mb-4">
+            Total: {% widthratio job.bytes_uploaded 1048576 1 %} MB
+        </p>
+        {% endif %}
+
+        <!-- Detailed file list -->
+        {% with total_files=job.files_uploaded|add:job.files_skipped|add:job.files_failed %}
+        {% with total_images=job.uploaded_images|length|add:job.skipped_images|length|add:job.failed_images|length %}
+        {% with total_items=total_files|add:total_images %}
+        {% if total_items > 0 %}
+        <div class="text-left bg-[var(--color-bg)] rounded-lg p-3 mb-4" x-data="{ showAll: false }">
+            <div class="max-h-64 overflow-y-auto">
+                {% for file in job.uploaded_files %}
+                <div x-show="showAll || {{ forloop.counter0 }} < 3" class="flex items-start gap-2 py-1 text-base">
+                    <span class="text-[var(--color-success)] shrink-0">+</span>
+                    <span class="text-[var(--color-text-muted)] break-all font-mono text-base">{{ file.remote_path }}</span>
+                </div>
+                {% endfor %}
+                {% for img in job.uploaded_images %}
+                <div x-show="showAll || {{ job.files_uploaded|add:forloop.counter0 }} < 3" class="flex items-start gap-2 py-1 text-base">
+                    <span class="text-[var(--color-success)] shrink-0">
+                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"/></svg>
+                    </span>
+                    <span class="text-[var(--color-text-muted)] break-all font-mono text-base">{{ img.remote_path }}</span>
+                </div>
+                {% endfor %}
+                {% for file in job.skipped_files %}
+                <div x-show="showAll || {{ job.files_uploaded|add:job.uploaded_images|length|add:forloop.counter0 }} < 3" class="flex items-start gap-2 py-1 text-base">
+                    <span class="text-[var(--color-teal)] shrink-0">-</span>
+                    <span class="text-[var(--color-text-muted)] break-all font-mono text-base">{{ file.remote_path }} - already exists</span>
+                </div>
+                {% endfor %}
+                {% for img in job.skipped_images %}
+                <div x-show="showAll" class="flex items-start gap-2 py-1 text-base">
+                    <span class="text-[var(--color-teal)] shrink-0">
+                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"/></svg>
+                    </span>
+                    <span class="text-[var(--color-text-muted)] break-all font-mono text-base">{{ img.remote_path }} - already exists</span>
+                </div>
+                {% endfor %}
+                {% for file in job.failed_files %}
+                <div x-show="showAll || {{ job.files_uploaded|add:job.files_skipped|add:forloop.counter0 }} < 3" class="flex items-start gap-2 py-1 text-base">
+                    <span class="text-[var(--color-danger)] shrink-0">x</span>
+                    <span class="text-[var(--color-text-muted)] break-all font-mono text-base">{{ file.remote_path|default:file.filename }}</span>
+                    <span class="text-[var(--color-danger)] opacity-70 text-base shrink-0">({{ file.error|truncatechars:30 }})</span>
+                </div>
+                {% endfor %}
+                {% for img in job.failed_images %}
+                <div x-show="showAll" class="flex items-start gap-2 py-1 text-base">
+                    <span class="text-[var(--color-danger)] shrink-0">
+                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"/></svg>
+                    </span>
+                    <span class="text-[var(--color-text-muted)] break-all font-mono text-base">{{ img.remote_path }}</span>
+                    <span class="text-[var(--color-danger)] opacity-70 text-base shrink-0">({{ img.error|truncatechars:30 }})</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% if total_items > 3 %}
+            <button @click="showAll = !showAll" class="text-base text-[var(--color-primary)] hover:opacity-80 mt-2">
+                <span x-show="!showAll">Show all {{ total_items }} items</span>
+                <span x-show="showAll">Show less</span>
+            </button>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% endwith %}
+        {% endwith %}
+        {% endwith %}
+
+        <button x-data @click="$store.modals.close('send-progress')" class="retro-btn retro-btn-primary">
+            Done
+        </button>
+    </div>
+</div>
+
+<!-- toggleSendFileList now in romhoard-utils.js -->
+
+{% elif job.status == 'failed' %}
+<!-- Failed -->
+<div class="text-center">
+    <svg class="h-12 w-12 text-[var(--color-danger)] mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <h3 class="text-lg font-semibold text-[var(--color-danger)] mb-2">Upload Failed</h3>
+
+    {% if job.error %}
+    <div class="bg-[var(--color-danger)]/10 rounded-lg p-4 mb-4">
+        <p class="text-base text-[var(--color-danger)] font-mono">{{ job.error }}</p>
+    </div>
+    {% endif %}
+
+    <button @click="$store.modals.close('send-progress')" class="retro-btn retro-btn-secondary">
+        Close
+    </button>
+</div>
+{% endif %}

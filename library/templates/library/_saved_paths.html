@@ -1,0 +1,205 @@
+<div id="saved-paths-section">
+{% if saved_paths %}
+<div class="retro-system-card retro-system-card-static mb-6">
+    <div class="retro-system-card-header retro-header-blue flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+        </svg>
+        <h3>Saved Scan Paths</h3>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start">
+        <div class="w-full space-y-3">
+            {% for scan_path in saved_paths %}
+            <div class="w-full p-3 bg-[var(--color-bg)]" x-data="{ showScheduleEdit: false }">
+                {# Path info - always full width #}
+                <div class="mb-3">
+                    <div class="font-mono text-base text-[var(--color-text)] break-all">{{ scan_path.path }}</div>
+                    <div class="flex flex-wrap items-center gap-2 mt-2">
+                        {# Count badges #}
+                        <span class="retro-badge retro-badge-info" title="Games">
+                            <svg class="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            {{ scan_path.game_count }} games
+                        </span>
+                        <span class="retro-badge" title="ROMs">
+                            <svg class="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            {{ scan_path.rom_count }} ROMs
+                        </span>
+                        <span class="retro-badge" title="Images">
+                            <svg class="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                            </svg>
+                            {{ scan_path.image_count }} images
+                        </span>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 mt-1">
+                        {% if scan_path.last_scanned %}
+                        <span class="text-base text-[var(--color-text-muted)]">Last scanned: {{ scan_path.last_scanned|date:"Y-m-d H:i" }}</span>
+                        {% else %}
+                        <span class="text-base text-[var(--color-text-muted)]">Not yet scanned</span>
+                        {% endif %}
+                        {% if scan_path.use_hasheous %}
+                        <span class="retro-badge retro-badge-success">Hasheous: ON</span>
+                        {% else %}
+                        <span class="retro-badge">Hasheous: OFF</span>
+                        {% endif %}
+                        {% if scan_path.fetch_metadata %}
+                        <span class="retro-badge retro-badge-success">Fetch Metadata: ON</span>
+                        {% else %}
+                        <span class="retro-badge">Fetch Metadata: OFF</span>
+                        {% endif %}
+                        {% if scan_path.schedule_enabled %}
+                        <span class="retro-badge retro-badge-info">{{ scan_path.get_schedule_interval_display }}</span>
+                        {% with next_scan=scan_path.get_next_scan_time %}
+                            {% if next_scan %}
+                                {% if scan_path.is_due_for_scan %}
+                                <span class="text-base text-[var(--color-warning)]">Due now</span>
+                                {% else %}
+                                <span class="text-base text-[var(--color-text-muted)]">Next: {{ next_scan|date:"Y-m-d H:i" }}</span>
+                                {% endif %}
+                            {% else %}
+                            <span class="text-base text-[var(--color-warning)]">Due now</span>
+                            {% endif %}
+                        {% endwith %}
+                        {% endif %}
+                    </div>
+                </div>
+                {# Action buttons - responsive: stack on mobile, inline on desktop #}
+                <div class="flex flex-wrap gap-2">
+                    <form
+                        method="post"
+                        action="{% url 'library:rescan_path' scan_path.pk %}"
+                    >
+                        {% csrf_token %}
+                        <button
+                            type="submit"
+                            class="retro-btn retro-btn-primary retro-btn-sm"
+                        >
+                            Rescan
+                        </button>
+                    </form>
+                    <form
+                        method="post"
+                        action="{% url 'library:toggle_hasheous_path' scan_path.pk %}"
+                        hx-post="{% url 'library:toggle_hasheous_path' scan_path.pk %}"
+                        hx-target="#saved-paths-section"
+                        hx-swap="outerHTML"
+                    >
+                        {% csrf_token %}
+                        <button
+                            type="submit"
+                            class="retro-btn {% if scan_path.use_hasheous %}retro-btn-primary{% else %}retro-btn-secondary{% endif %} retro-btn-sm"
+                        >
+                            Toggle Hasheous
+                        </button>
+                    </form>
+                    <form
+                        method="post"
+                        action="{% url 'library:toggle_fetch_metadata_path' scan_path.pk %}"
+                        hx-post="{% url 'library:toggle_fetch_metadata_path' scan_path.pk %}"
+                        hx-target="#saved-paths-section"
+                        hx-swap="outerHTML"
+                    >
+                        {% csrf_token %}
+                        <button
+                            type="submit"
+                            class="retro-btn {% if scan_path.fetch_metadata %}retro-btn-primary{% else %}retro-btn-secondary{% endif %} retro-btn-sm"
+                        >
+                            Toggle Metadata
+                        </button>
+                    </form>
+                    <button
+                        type="button"
+                        @click="showScheduleEdit = !showScheduleEdit"
+                        class="retro-btn {% if scan_path.schedule_enabled %}retro-btn-primary{% else %}retro-btn-secondary{% endif %} retro-btn-sm"
+                    >
+                        Schedule
+                    </button>
+                    <button
+                        type="button"
+                        @click="$store.modals.open('delete-scan-path-{{ scan_path.pk }}')"
+                        class="retro-btn retro-btn-danger retro-btn-sm"
+                    >
+                        Delete
+                    </button>
+                </div>
+                {# Delete confirmation modal #}
+                <div id="modal-delete-scan-path-{{ scan_path.pk }}"
+                     x-data
+                     x-show="$store.modals.isOpen('delete-scan-path-{{ scan_path.pk }}')"
+                     x-cloak
+                     class="fixed inset-0 z-50 flex items-center justify-center"
+                     @keydown.escape.window="$store.modals.close('delete-scan-path-{{ scan_path.pk }}')">
+                    <div class="fixed inset-0 bg-black/50" @click="$store.modals.close('delete-scan-path-{{ scan_path.pk }}')"></div>
+                    <div class="retro-modal relative z-10 w-full max-w-lg mx-4"
+                         hx-get="{% url 'library:scan_path_delete_info' scan_path.pk %}"
+                         hx-trigger="intersect once"
+                         hx-swap="innerHTML">
+                        <div class="p-6 text-center">
+                            <div class="retro-spinner mx-auto mb-4"></div>
+                            <p class="text-[var(--color-text-muted)]">Loading...</p>
+                        </div>
+                    </div>
+                </div>
+                {# Schedule inline edit form #}
+                <div x-show="showScheduleEdit" x-cloak class="mt-3 p-3 bg-[var(--color-bg-secondary)] border border-[var(--color-border)]">
+                    <form
+                        method="post"
+                        action="{% url 'library:update_scan_schedule' scan_path.pk %}"
+                        hx-post="{% url 'library:update_scan_schedule' scan_path.pk %}"
+                        hx-target="#saved-paths-section"
+                        hx-swap="outerHTML"
+                        x-data="{ enabled: {{ scan_path.schedule_enabled|yesno:'true,false' }} }"
+                    >
+                        {% csrf_token %}
+                        <div class="flex flex-wrap items-center gap-3">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    name="schedule_enabled"
+                                    x-model="enabled"
+                                    {% if scan_path.schedule_enabled %}checked{% endif %}
+                                    class="retro-checkbox"
+                                >
+                                <span class="text-base text-[var(--color-text)]">Enable scheduled scans</span>
+                            </label>
+                            <div x-show="enabled" class="flex items-center gap-2">
+                                <select
+                                    name="schedule_interval"
+                                    class="retro-input retro-input-sm"
+                                >
+                                    <option value="hourly" {% if scan_path.schedule_interval == 'hourly' %}selected{% endif %}>Every hour</option>
+                                    <option value="daily" {% if scan_path.schedule_interval == 'daily' %}selected{% endif %}>Every day</option>
+                                    <option value="weekly" {% if scan_path.schedule_interval == 'weekly' %}selected{% endif %}>Every week</option>
+                                    <option value="monthly" {% if scan_path.schedule_interval == 'monthly' %}selected{% endif %}>Every month</option>
+                                </select>
+                            </div>
+                            <div class="flex gap-2">
+                                <button
+                                    type="submit"
+                                    class="retro-btn retro-btn-success retro-btn-sm"
+                                >
+                                    Save
+                                </button>
+                                <button
+                                    type="button"
+                                    @click="showScheduleEdit = false"
+                                    class="retro-btn retro-btn-secondary retro-btn-sm"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+</div>

@@ -1,0 +1,179 @@
+<div x-data
+     x-init="$store.transferConfig.type = '{{ device.transfer_type|default:'' }}'{% if not allow_none %} || 'ftp'{% endif %};
+             $store.transferConfig.host = '{{ device.transfer_host|default:'' }}';
+             $store.transferConfig.port = '{{ device.transfer_port|default:'' }}';
+             $store.transferConfig.user = '{{ device.transfer_user|default:'' }}';
+             $store.transferConfig.password = '{{ device.transfer_password|default:'' }}';
+             $store.transferConfig.anonymous = {{ device.transfer_anonymous|yesno:'true,false' }};
+             $store.transferConfig.pathPrefix = '{{ device.transfer_path_prefix|default:'' }}';">
+
+    <!-- Host (Primary Field) -->
+    <div class="mb-4">
+        <label class="block text-base font-medium text-[var(--color-text)] mb-2">
+            Host
+        </label>
+        <input type="text" name="transfer_host" x-model="$store.transferConfig.host"
+               placeholder="e.g., 192.168.1.100 or device.local"
+               class="retro-input w-full lg:w-1/2">
+        <p class="mt-1 text-base text-[var(--color-text-muted)]">IP address or hostname of your device</p>
+    </div>
+
+    {% if expand_details %}
+    <!-- Connection Details (expanded) -->
+    <div class="space-y-4 border-t-2 border-[var(--color-border)] pt-4 mt-4">
+    {% else %}
+    <!-- Connection Details (collapsible) -->
+    <details class="retro-details mt-4">
+        <summary>
+            <span class="flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+                Connection Details
+            </span>
+            <svg class="w-4 h-4 details-arrow" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </summary>
+        <div class="retro-details-body space-y-4">
+    {% endif %}
+
+        <!-- SD Card Mount Path -->
+        <div x-data="{ romFolder: document.querySelector('[name=root_path]')?.value || 'Roms/' }"
+             x-init="$watch('$store.transferConfig.pathPrefix', () => $el.querySelector('.path-preview')?.textContent);
+                     document.querySelector('[name=root_path]')?.addEventListener('input', e => romFolder = e.target.value)">
+            <label class="block text-base font-medium text-[var(--color-text)] mb-2">
+                SD Card Mount Path
+            </label>
+            <input type="text" name="transfer_path_prefix" x-model="$store.transferConfig.pathPrefix"
+                   placeholder="e.g., /mnt/SDCARD"
+                   class="retro-input w-full font-mono text-base">
+            <p class="mt-1 text-base text-[var(--color-text-muted)]">
+                Where your SD card is mounted on the device. Leave empty if FTP root is the SD card.
+            </p>
+            <div class="mt-2 p-2 bg-[var(--color-bg)] border-2 border-[var(--color-border)] text-base">
+                <span class="text-[var(--color-text-muted)]">Full path to ROMs:</span>
+                <code class="path-preview font-mono text-[var(--color-primary)] ml-1"
+                      x-text="($store.transferConfig.pathPrefix || '').replace(/\/$/, '') + '/' + romFolder + 'SYSTEM/game.gba'"></code>
+            </div>
+        </div>
+
+        <!-- Protocol and Port -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+                <label class="block text-base font-medium text-[var(--color-text)] mb-2">
+                    Protocol
+                </label>
+                <select name="transfer_type" x-model="$store.transferConfig.type" class="retro-select w-full">
+                    {% if allow_none %}<option value="">None (local only)</option>{% endif %}
+                    <option value="ftp">FTP</option>
+                    <option value="ftps">FTPS</option>
+                    <option value="sftp">SFTP (SSH)</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-base font-medium text-[var(--color-text)] mb-2">
+                    Port
+                </label>
+                <input type="number" name="transfer_port" x-model="$store.transferConfig.port"
+                       placeholder="21 (FTP) or 22 (SFTP)"
+                       class="retro-input w-full">
+            </div>
+        </div>
+
+        <!-- Anonymous FTP (only for FTP/FTPS) -->
+        <div x-show="$store.transferConfig.type === 'ftp' || $store.transferConfig.type === 'ftps'"
+             x-cloak>
+            <label class="inline-flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" id="transfer_anonymous{% if id_suffix %}_{{ id_suffix }}{% endif %}" name="transfer_anonymous"
+                       x-model="$store.transferConfig.anonymous"
+                       class="retro-checkbox">
+                <span class="text-base font-medium text-[var(--color-text)]">
+                    Anonymous FTP (no credentials)
+                </span>
+            </label>
+        </div>
+
+        <!-- Username and Password in a grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4"
+             :class="{ 'opacity-50': $store.transferConfig.anonymous && ($store.transferConfig.type === 'ftp' || $store.transferConfig.type === 'ftps') }">
+            <div>
+                <label class="block text-base font-medium text-[var(--color-text)] mb-2">
+                    Username
+                </label>
+                <input type="text" name="transfer_user" x-model="$store.transferConfig.user"
+                       placeholder="FTP/SFTP username"
+                       :disabled="$store.transferConfig.anonymous && ($store.transferConfig.type === 'ftp' || $store.transferConfig.type === 'ftps')"
+                       class="retro-input w-full">
+            </div>
+
+            <div x-data="{ showPassword: false }">
+                <label class="block text-base font-medium text-[var(--color-text)] mb-2">
+                    Password
+                </label>
+                <div class="relative">
+                    <input :type="showPassword ? 'text' : 'password'"
+                           name="transfer_password" x-model="$store.transferConfig.password"
+                           placeholder="FTP/SFTP password"
+                           :disabled="$store.transferConfig.anonymous && ($store.transferConfig.type === 'ftp' || $store.transferConfig.type === 'ftps')"
+                           class="retro-input w-full pr-10">
+                    <button type="button"
+                            @click="showPassword = !showPassword"
+                            class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                            title="Toggle password visibility">
+                        <svg x-show="!showPassword" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                        <svg x-show="showPassword" x-cloak class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    {% if expand_details %}
+    </div>
+    {% else %}
+        </div>
+    </details>
+    {% endif %}
+
+    <!-- Test Connection -->
+    <div class="mt-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+        <button type="button"
+                @click="$store.transferConfig.testConnection('{% if id_suffix %}{{ id_suffix }}{% elif device %}{{ device.id }}{% else %}new{% endif %}')"
+                :disabled="$store.transferConfig.testStatus === 'testing'"
+                class="retro-btn retro-btn-secondary flex items-center gap-2">
+            <svg class="w-4 h-4" x-show="$store.transferConfig.testStatus !== 'testing'" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <svg class="w-4 h-4 animate-spin" x-show="$store.transferConfig.testStatus === 'testing'" x-cloak fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span x-text="$store.transferConfig.testStatus === 'testing' ? 'Testing...' : 'Test Connection'"></span>
+        </button>
+
+        <!-- Test Result -->
+        <div class="flex-1 w-full sm:w-auto">
+            <div x-show="$store.transferConfig.testStatus === 'success'" x-cloak
+                 class="retro-result-card retro-result-success text-base flex items-center gap-2">
+                <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                </svg>
+                <span x-text="$store.transferConfig.testMessage"></span>
+            </div>
+            <div x-show="$store.transferConfig.testStatus === 'error'" x-cloak
+                 class="retro-result-card retro-result-error text-base flex items-start gap-2">
+                <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+                <span x-text="$store.transferConfig.testMessage"></span>
+            </div>
+        </div>
+    </div>
+</div>

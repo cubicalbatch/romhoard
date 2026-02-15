@@ -1,0 +1,14 @@
+{
+  "include": ["library", "romhoard"],
+  "exclude": ["**/migrations/**", "**/__pycache__/**", "**/tests/**"],
+  "typeCheckingMode": "basic",
+  "pythonVersion": "3.12",
+  "reportAttributeAccessIssue": "none",
+  "reportFunctionMemberAccess": "none",
+  "reportArgumentType": "warning",
+  "reportAssignmentType": "warning",
+  "reportReturnType": "warning",
+  "reportGeneralTypeIssues": "warning",
+  "reportOptionalMemberAccess": "warning",
+  "reportMissingImports": "warning"
+}

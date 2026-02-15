@@ -1,0 +1,750 @@
+{% extends "base.html" %}
+{% load retro_components %}
+
+{% block title %}Settings - RomHoard{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="mb-8">
+    <h1 class="retro-heading retro-heading-lg">Settings</h1>
+    <p class="text-[var(--color-text-muted)] mt-1">Configure ScreenScraper credentials, storage paths, and manage game metadata</p>
+</div>
+
+<!-- ScreenScraper Credentials -->
+<div class="retro-system-card retro-system-card-static mb-8"
+     x-data="{ showForm: {% if not screenscraper_configured %}true{% else %}false{% endif %}, username: '{% if screenscraper_from_db %}{{ screenscraper_username }}{% endif %}', password: '' }">
+    <div class="retro-system-card-header {% if screenscraper_configured and screenscraper_credentials_valid != False %}retro-header-purple{% elif screenscraper_credentials_valid == False %}retro-header-red{% else %}retro-header-orange{% endif %} flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            {% if screenscraper_configured and screenscraper_credentials_valid != False %}
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            {% elif screenscraper_credentials_valid == False %}
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            {% else %}
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            {% endif %}
+        </svg>
+        <h3>ScreenScraper Credentials</h3>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start">
+        {% if screenscraper_configured %}
+        <!-- Configured state -->
+        <div x-show="!showForm" class="w-full">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <p class="text-[var(--color-text)]">
+                        {% if screenscraper_credentials_valid == False %}
+                        <span class="text-[var(--color-error)] font-medium">Invalid</span>
+                        {% elif screenscraper_credentials_valid == True %}
+                        <span class="text-[var(--color-success)] font-medium">Verified</span>
+                        {% else %}
+                        <span class="text-[var(--color-gold)] font-medium">Not verified</span>
+                        {% endif %}
+                        <span class="text-[var(--color-text-muted)]">as</span>
+                        <span class="font-mono">{{ screenscraper_username }}</span>
+                        {% if not screenscraper_from_db %}
+                        <span class="text-base text-[var(--color-text-muted)]">(from environment)</span>
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="flex items-stretch gap-2">
+                    <form method="post" action="{% url 'library:revalidate_screenscraper' %}" class="flex">
+                        {% csrf_token %}
+                        <button type="submit" class="retro-btn retro-btn-sm" title="Verify credentials work">
+                            Verify
+                        </button>
+                    </form>
+                    <button type="button" @click="showForm = true" class="retro-btn retro-btn-sm">
+                        Change
+                    </button>
+                </div>
+            </div>
+            {% if screenscraper_credentials_valid == False %}
+            <div class="mt-3 p-3 bg-[var(--color-danger-bg)] border border-[var(--color-error)] rounded text-base text-[var(--color-error)]">
+                Your credentials could not be verified. Metadata fetching may fail until you correct your username and password.
+            </div>
+            {% endif %}
+        </div>
+        {% else %}
+        <!-- Not configured state -->
+        <div x-show="!showForm" class="w-full">
+            <p class="text-[var(--color-error)] font-medium mb-2">Not configured</p>
+            <p class="text-[var(--color-text-muted)] text-base mb-4">
+                Enter your ScreenScraper.fr account credentials to enable metadata fetching.
+            </p>
+            <button type="button" @click="showForm = true" class="retro-btn retro-btn-primary">
+                Set Credentials
+            </button>
+        </div>
+        {% endif %}
+
+        <!-- Credentials Form -->
+        <form method="post" x-show="showForm" x-cloak class="w-full">
+            {% csrf_token %}
+            <input type="hidden" name="save_screenscraper_credentials" value="1">
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label for="screenscraper_username" class="block text-base font-medium text-[var(--color-text)] mb-1">
+                        Username
+                    </label>
+                    <input
+                        type="text"
+                        name="screenscraper_username"
+                        id="screenscraper_username"
+                        x-model="username"
+                        placeholder="Your ScreenScraper username"
+                        class="retro-input"
+                        autocomplete="username"
+                    >
+                </div>
+                <div>
+                    <label for="screenscraper_password" class="block text-base font-medium text-[var(--color-text)] mb-1">
+                        Password
+                    </label>
+                    <input
+                        type="password"
+                        name="screenscraper_password"
+                        id="screenscraper_password"
+                        x-model="password"
+                        placeholder="{% if screenscraper_from_db %}Leave blank to keep current{% else %}Your ScreenScraper password{% endif %}"
+                        class="retro-input"
+                        autocomplete="current-password"
+                    >
+                </div>
+            </div>
+
+            <p class="text-base text-[var(--color-text-muted)] mb-4">
+                Don't have an account? <a href="https://www.screenscraper.fr/membreinscription.php" target="_blank" class="text-[var(--color-primary)] hover:underline">Register at ScreenScraper.fr</a>
+            </p>
+
+            <div class="flex gap-2">
+                <button type="submit" class="retro-btn retro-btn-primary">
+                    Save Credentials
+                </button>
+                <button type="button" @click="showForm = false" class="retro-btn">
+                    Cancel
+                </button>
+                {% if screenscraper_from_db %}
+                <button type="submit"
+                        @click="username = ''; password = ''"
+                        class="retro-btn retro-btn-danger ml-auto"
+                        title="Remove stored credentials (will use environment variables if set)">
+                    Clear
+                </button>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Metadata Storage -->
+<div class="retro-system-card retro-system-card-static mb-8">
+    <div class="retro-system-card-header {% if metadata_path_valid %}retro-header-blue{% else %}retro-header-red{% endif %} flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            {% if metadata_path_valid %}
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            {% else %}
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            {% endif %}
+        </svg>
+        <h3>Metadata Storage</h3>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start">
+        {% if not metadata_path_valid %}
+        <div class="mb-4 p-3 bg-[var(--color-danger-bg)] border border-[var(--color-error)] rounded text-base text-[var(--color-error)] w-full">
+            <strong>Path issue:</strong> {{ metadata_path_status }}
+        </div>
+        {% endif %}
+
+        <form method="post" id="image-settings-form" class="w-full">
+            {% csrf_token %}
+            <input type="hidden" name="save_image_settings" value="1">
+            <input type="hidden" name="image_action" id="image_action" value="">
+
+            <div class="mb-4">
+                <label for="image_path" class="block text-base font-medium text-[var(--color-text)] mb-1">
+                    Metadata Storage Path
+                </label>
+                <input
+                    type="text"
+                    name="image_path"
+                    id="image_path"
+                    value="{{ image_path }}"
+                    placeholder="Ex: /path/to/metadata"
+                    class="retro-input"
+                    {% if active_migration_job %}disabled{% endif %}
+                >
+                <p class="mt-1 text-base text-[var(--color-text-muted)]">
+                    Absolute path where downloaded metadata (cover art, screenshots, etc.) will be stored.
+                    {% if effective_metadata_path %}
+                    <br>Currently using: <code class="bg-[var(--color-surface-alt)] px-1 rounded">{{ effective_metadata_path }}</code>
+                    {% endif %}
+                </p>
+            </div>
+
+            <button type="submit" class="retro-btn retro-btn-primary" {% if active_migration_job %}disabled{% endif %}>
+                Save Settings
+            </button>
+        </form>
+
+        <!-- Active Migration Job Status -->
+        {% if active_migration_job %}
+        <div class="mt-4 p-4 bg-[var(--color-surface-alt)] rounded-lg w-full"
+             hx-get="{% url 'library:image_migration_status' %}"
+             hx-trigger="every 2s"
+             hx-swap="outerHTML">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="animate-spin h-5 w-5 border-2 border-[var(--color-primary)] border-t-transparent rounded-full"></div>
+                <span class="font-medium text-[var(--color-text)]">
+                    {% if active_migration_job.action == 'move' %}Moving{% elif active_migration_job.action == 'delete' %}Deleting{% else %}Processing{% endif %} images...
+                </span>
+            </div>
+            <div class="retro-progress mb-2">
+                <div class="retro-progress-bar" style="width: {{ active_migration_job.progress_percent }}%"></div>
+            </div>
+            <div class="text-base text-[var(--color-text-muted)]">
+                {{ active_migration_job.processed_images }} / {{ active_migration_job.total_images }} images processed
+                {% if active_migration_job.skipped_images > 0 %}
+                <span class="text-[var(--color-gold)]">({{ active_migration_job.skipped_images }} skipped)</span>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Recent Migration Job Results -->
+        {% if recent_migration_job and not active_migration_job %}
+        <div class="mt-4 p-4 bg-[var(--color-surface-alt)] rounded-lg w-full">
+            <div class="flex items-center gap-2 mb-2">
+                {% if recent_migration_job.status == 'completed' %}
+                <svg class="w-5 h-5 text-[var(--color-success)]" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                </svg>
+                <span class="font-medium text-[var(--color-success)]">
+                    Image {% if recent_migration_job.action == 'move' %}migration{% elif recent_migration_job.action == 'delete' %}deletion{% else %}update{% endif %} completed
+                </span>
+                {% else %}
+                <svg class="w-5 h-5 text-[var(--color-error)]" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                </svg>
+                <span class="font-medium text-[var(--color-error)]">Image migration failed</span>
+                {% endif %}
+            </div>
+            <div class="text-base text-[var(--color-text-muted)]">
+                {% if recent_migration_job.action == 'move' %}
+                Moved {{ recent_migration_job.processed_images }} images
+                {% if recent_migration_job.skipped_images > 0 %}, {{ recent_migration_job.skipped_images }} skipped (already existed){% endif %}
+                {% if recent_migration_job.failed_images > 0 %}, {{ recent_migration_job.failed_images }} failed{% endif %}
+                {% elif recent_migration_job.action == 'delete' %}
+                Deleted {{ recent_migration_job.processed_images }} images
+                {% if recent_migration_job.failed_images > 0 %}, {{ recent_migration_job.failed_images }} failed{% endif %}
+                {% else %}
+                Processed {{ recent_migration_job.processed_images }} images
+                {% endif %}
+                {% if recent_migration_job.error_message %}
+                <p class="mt-1 text-[var(--color-error)]">{{ recent_migration_job.error_message }}</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Image Migration Confirmation Modal -->
+{% retro_modal id="image-migration" title="Image Storage Path Changed" size="lg" %}
+<div class="retro-modal-body" x-data="{ selectedAction: '{% if migration_new_path %}move{% else %}delete{% endif %}' }">
+    {% if migration_stats %}
+    <div class="mb-4">
+        <p class="text-[var(--color-text)] mb-2">
+            You have <strong>{{ migration_stats.count }} downloaded images</strong>
+            ({{ migration_stats.size_human }}) that will be affected.
+        </p>
+        {% if migration_old_path and migration_new_path %}
+        <div class="text-base text-[var(--color-text-muted)] bg-[var(--color-surface-alt)] p-3 rounded">
+            <div class="mb-1"><strong>From:</strong> <code class="text-base">{{ migration_old_path }}</code></div>
+            <div><strong>To:</strong> <code class="text-base">{{ migration_new_path }}</code></div>
+        </div>
+        {% elif migration_old_path %}
+        <div class="text-base text-[var(--color-text-muted)] bg-[var(--color-surface-alt)] p-3 rounded">
+            <strong>Clearing path:</strong> <code class="text-base">{{ migration_old_path }}</code>
+        </div>
+        {% endif %}
+    </div>
+
+    <p class="text-base text-[var(--color-text)] mb-4">What would you like to do with the existing images?</p>
+
+    <div class="space-y-3">
+        {% if migration_new_path %}
+        <label class="flex items-start gap-3 p-3 rounded-lg cursor-pointer hover:bg-[var(--color-surface-alt)] transition-colors"
+               :class="selectedAction === 'move' ? 'bg-[var(--color-surface-alt)] ring-2 ring-[var(--color-primary)]' : ''">
+            <input type="radio" name="action_choice" value="move" x-model="selectedAction" class="mt-1">
+            <div>
+                <div class="font-medium text-[var(--color-text)]">Move images to new location</div>
+                <div class="text-base text-[var(--color-text-muted)]">Files will be moved preserving directory structure. No re-download needed.</div>
+            </div>
+        </label>
+        {% endif %}
+
+        <label class="flex items-start gap-3 p-3 rounded-lg cursor-pointer hover:bg-[var(--color-surface-alt)] transition-colors"
+               :class="selectedAction === 'delete' ? 'bg-[var(--color-surface-alt)] ring-2 ring-[var(--color-primary)]' : ''">
+            <input type="radio" name="action_choice" value="delete" x-model="selectedAction" class="mt-1">
+            <div>
+                <div class="font-medium text-[var(--color-text)]">Delete images from disk</div>
+                <div class="text-base text-[var(--color-text-muted)]">Files will be permanently deleted. You can re-download them later.</div>
+            </div>
+        </label>
+
+        <label class="flex items-start gap-3 p-3 rounded-lg cursor-pointer hover:bg-[var(--color-surface-alt)] transition-colors"
+               :class="selectedAction === 'orphan' ? 'bg-[var(--color-surface-alt)] ring-2 ring-[var(--color-primary)]' : ''">
+            <input type="radio" name="action_choice" value="orphan" x-model="selectedAction" class="mt-1">
+            <div>
+                <div class="font-medium text-[var(--color-text)]">Leave files in place</div>
+                <div class="text-base text-[var(--color-text-muted)]">Files will remain at old location (orphaned). You can delete them manually later.</div>
+            </div>
+        </label>
+    </div>
+    {% endif %}
+</div>
+<div class="retro-modal-footer">
+    <button type="button" class="retro-btn"
+            @click="document.getElementById('image_action').value = 'cancel'; document.getElementById('image-settings-form').submit();">
+        Cancel
+    </button>
+    <button type="button" class="retro-btn retro-btn-primary"
+            @click="document.getElementById('image_action').value = document.querySelector('[name=action_choice]:checked')?.value || 'cancel'; document.getElementById('image-settings-form').submit();">
+        Confirm
+    </button>
+</div>
+{% endretro_modal %}
+
+{% if show_migration_modal %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    Alpine.store('modals').open('image-migration');
+});
+</script>
+{% endif %}
+
+<!-- Active Batches Status -->
+<div id="metadata-status-container"
+     hx-get="{% url 'library:metadata_status' %}?type=active"
+     hx-trigger="load, every 3s"
+     hx-target="#metadata-status-container"
+     x-data="{
+         prevBatchIds: null,
+         checkForCompletion() {
+             const data = document.getElementById('active-batch-data');
+             const currentIds = data ? data.dataset.activeBatchIds : '';
+             if (this.prevBatchIds !== null && this.prevBatchIds !== '' && currentIds === '') {
+                 location.reload();
+             }
+             this.prevBatchIds = currentIds;
+         }
+     }"
+     x-init="document.addEventListener('htmx:afterSwap', (e) => { if (e.detail.target.id === 'metadata-status-container') checkForCompletion(); })">
+    {% include "library/_active_batches_status.html" %}
+</div>
+
+{% if pause_until %}
+<div class="retro-system-card retro-system-card-static mb-6">
+    <div class="retro-system-card-header retro-header-orange flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <h3>ScreenScraper API Paused</h3>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 w-full">
+            <div class="text-base text-[var(--color-text)]">Rate limit reached. API calls paused until {{ pause_until|date:"H:i" }} ({{ pause_until|timesince }} remaining). Jobs will automatically resume.</div>
+            <form method="post" action="{% url 'library:clear_screenscraper_pause' %}">
+                {% csrf_token %}
+                <button type="submit" class="retro-btn retro-btn-sm retro-btn-yellow">Resume Now</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Library Root Path Settings -->
+<div class="retro-system-card retro-system-card-static mb-8">
+    <div class="retro-system-card-header retro-header-magenta flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+        </svg>
+        <h3>Library Storage</h3>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start">
+        <form method="post" class="w-full">
+            {% csrf_token %}
+            <input type="hidden" name="save_library_settings" value="1">
+
+            <div class="mb-4">
+                <label for="library_root" class="block text-base font-medium text-[var(--color-text)] mb-1">
+                    Library Root Path
+                </label>
+                <input
+                    type="text"
+                    name="library_root"
+                    id="library_root"
+                    value="{{ library_root }}"
+                    placeholder="Ex: /path/to/roms"
+                    class="retro-input"
+                >
+                <p class="mt-1 text-base text-[var(--color-text-muted)]">
+                    Absolute path where uploaded ROM files will be stored.
+                    {% if library_root %}
+                    <br>Currently using: <code class="bg-[var(--color-surface-alt)] px-1 rounded">{{ library_root }}</code>
+                    {% endif %}
+                </p>
+            </div>
+
+            <button type="submit" class="retro-btn retro-btn-primary">
+                Save Settings
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Hero Stats Dashboard -->
+<div class="retro-system-card retro-system-card-static mb-8">
+    <div class="retro-system-card-header retro-header-teal flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+        </svg>
+        <h3>Metadata Coverage</h3>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start w-full">
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6 w-full">
+            <div class="retro-stat retro-stat-navy">
+                <div class="retro-stat-value">{{ total_games }}</div>
+                <div class="retro-stat-label">Total Games</div>
+            </div>
+            <div class="retro-stat retro-stat-teal">
+                <div class="retro-stat-value">{{ games_with_metadata }}</div>
+                <div class="retro-stat-label">With Metadata</div>
+                <div class="retro-stat-desc">{{ coverage_percentage }}%</div>
+            </div>
+            <div class="retro-stat" style="--stat-color: var(--color-danger);">
+                <div class="retro-stat-value">{{ games_match_failed }}</div>
+                <div class="retro-stat-label">No Match Found</div>
+                {% if games_match_failed > 0 %}
+                <div class="retro-stat-desc">{{ failed_percentage }}%</div>
+                {% endif %}
+            </div>
+            <div class="retro-stat retro-stat-gold">
+                <div class="retro-stat-value">{{ games_not_tried }}</div>
+                <div class="retro-stat-label">Not Tried</div>
+                {% if games_not_tried > 0 %}
+                <div class="retro-stat-desc">Need fetch</div>
+                {% else %}
+                <div class="retro-stat-desc text-[var(--color-success)]">All tried!</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Overall Progress Bar - Three State -->
+        <div class="retro-progress-labeled mb-6 w-full">
+            <div class="retro-progress w-full relative">
+                <!-- Blue: has metadata -->
+                <div class="retro-progress-bar absolute left-0 top-0 bottom-0" style="width: {{ coverage_percentage }}%; z-index: 2;"></div>
+                <!-- Red: tried but failed -->
+                <div class="absolute left-0 top-0 bottom-0 bg-[var(--color-danger)]" style="width: {{ coverage_percentage|add:failed_percentage }}%; z-index: 1;"></div>
+                <!-- White: not tried (background of progress bar) -->
+            </div>
+            <div class="flex justify-center gap-4 mt-2 text-base text-[var(--color-text-muted)]">
+                <span class="flex items-center gap-1">
+                    <span class="w-3 h-3 bg-[var(--color-primary)] rounded"></span> Has Metadata ({{ games_with_metadata }})
+                </span>
+                <span class="flex items-center gap-1">
+                    <span class="w-3 h-3 bg-[var(--color-danger)] rounded"></span> No Match ({{ games_match_failed }})
+                </span>
+                <span class="flex items-center gap-1">
+                    <span class="w-3 h-3 bg-[var(--color-surface-alt)] border border-[var(--color-border)] rounded"></span> Not Tried ({{ games_not_tried }})
+                </span>
+            </div>
+        </div>
+
+        <!-- Fetch All Button with Force Failed Option -->
+        {% if games_not_tried > 0 or games_match_failed > 0 %}
+        <div class="flex flex-col items-center gap-3">
+            {% if screenscraper_configured %}
+            <form method="post" action="{% url 'library:start_metadata_job' %}"
+                  x-data="{
+                      submitting: false,
+                      fetching: {{ fetching_all|yesno:'true,false' }},
+                      forceFailed: false,
+                      checkStatus() {
+                          const data = document.getElementById('active-batch-data');
+                          this.fetching = data && data.dataset.fetchingAll === 'true';
+                      }
+                  }"
+                  x-init="document.addEventListener('htmx:afterSwap', (e) => { if (e.detail.target.id === 'metadata-status-container') checkStatus(); })"
+                  @submit="submitting = true">
+                {% csrf_token %}
+                <input type="hidden" name="system_slug" value="">
+                <input type="hidden" name="force_failed" :value="forceFailed ? '1' : '0'">
+                {% if games_match_failed > 0 %}
+                <label class="flex items-center gap-2 mb-3 cursor-pointer text-base">
+                    <input type="checkbox" x-model="forceFailed" class="retro-checkbox">
+                    <span class="text-[var(--color-text)]">Include {{ games_match_failed }} games with no previous match</span>
+                </label>
+                {% endif %}
+                <button type="submit"
+                        class="retro-btn retro-btn-primary retro-btn-lg"
+                        :disabled="submitting || fetching || (!forceFailed && {{ games_not_tried }} === 0)"
+                        x-text="(submitting || fetching) ? 'Fetching...' : (forceFailed ? 'Fetch All {{ games_not_tried|add:games_match_failed }} Missing' : 'Fetch {{ games_not_tried }} Not Tried')">
+                    Fetch {{ games_not_tried }} Not Tried
+                </button>
+            </form>
+            {% else %}
+            <p class="text-[var(--color-text-muted)] text-base">Configure ScreenScraper credentials above to fetch metadata.</p>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Recent Batches (Collapsible) -->
+<div class="retro-system-card retro-system-card-static mb-8"
+     x-data="{
+         open: localStorage.getItem('recentBatchesOpen') === 'true',
+         toggle() {
+             this.open = !this.open;
+             localStorage.setItem('recentBatchesOpen', this.open);
+         }
+     }">
+    <div class="retro-system-card-header retro-header-navy flex items-center justify-between gap-2 !text-left cursor-pointer select-none"
+         @click="toggle()">
+        <div class="flex items-center gap-2">
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <h3>Recent Batches</h3>
+        </div>
+        <svg class="w-4 h-4 text-white transition-transform duration-200" :class="open ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start w-full" x-show="open" x-collapse x-cloak>
+        <div id="recent-batches-container" hx-get="{% url 'library:metadata_status' %}?type=recent" hx-trigger="load, every 5s" hx-target="#recent-batches-container">
+            {% include "library/_recent_batches_status.html" %}
+        </div>
+    </div>
+</div>
+
+<!-- System Coverage Grid -->
+{% if systems_with_stats %}
+<div class="retro-system-card retro-system-card-static mb-8"
+     x-data="{
+         expanded: {},
+         open: localStorage.getItem('coverageBySystemOpen') === 'true',
+         toggle() {
+             this.open = !this.open;
+             localStorage.setItem('coverageBySystemOpen', this.open);
+         }
+     }">
+    <div class="retro-system-card-header retro-header-blue flex items-center justify-between gap-2 !text-left cursor-pointer select-none"
+         @click="toggle()">
+        <div class="flex items-center gap-2">
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+            </svg>
+            <h3>Coverage by System</h3>
+        </div>
+        <svg class="w-4 h-4 text-white transition-transform duration-200" :class="open ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start w-full" x-show="open" x-collapse x-cloak>
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {% for item in systems_with_stats %}
+            <div class="retro-coverage-card {% if item.is_complete %}is-complete{% else %}has-missing{% endif %}">
+                <!-- Card Header -->
+                <div class="flex items-center gap-3 mb-3">
+                    {% if item.system.icon_path %}
+                    <img src="{% url 'library:serve_system_icon' item.system.slug %}" alt="" class="w-8 h-8 pixelated flex-shrink-0">
+                    {% else %}
+                    <div class="w-8 h-8 bg-[var(--color-surface-alt)] flex items-center justify-center rounded flex-shrink-0">
+                        <svg class="w-5 h-5 text-[var(--color-text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/>
+                        </svg>
+                    </div>
+                    {% endif %}
+                    <div class="flex-1 min-w-0">
+                        <div class="font-medium text-[var(--color-text)] truncate">{{ item.system.name }}</div>
+                        <div class="text-base text-[var(--color-text-muted)]">{{ item.with_metadata }}/{{ item.total }} games</div>
+                    </div>
+                    {% if item.is_complete %}
+                    <svg class="w-5 h-5 text-[var(--color-success)] flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                    </svg>
+                    {% endif %}
+                </div>
+
+                <!-- Progress Bar - Three State -->
+                <div class="retro-progress mb-3 relative">
+                    <!-- Blue: has metadata -->
+                    <div class="retro-progress-bar absolute left-0 top-0 bottom-0 {% if item.is_complete %}bg-[var(--color-success)]{% endif %}" style="width: {{ item.percentage }}%; z-index: 2;"></div>
+                    <!-- Red: tried but failed -->
+                    {% if item.match_failed > 0 %}
+                    <div class="absolute left-0 top-0 bottom-0 bg-[var(--color-danger)]" style="width: {{ item.percentage|add:item.failed_percentage }}%; z-index: 1;"></div>
+                    {% endif %}
+                </div>
+
+                <!-- Stats Row -->
+                <div class="flex items-center justify-between text-base mb-3">
+                    <span class="text-[var(--color-text-muted)]">{{ item.percentage }}% matched</span>
+                    {% if item.match_failed > 0 and item.not_tried > 0 %}
+                    <span class="text-base">
+                        <span class="text-[var(--color-danger)]">{{ item.match_failed }} failed</span> ·
+                        <span class="text-[var(--color-gold)]">{{ item.not_tried }} not tried</span>
+                    </span>
+                    {% elif item.match_failed > 0 %}
+                    <span class="text-[var(--color-danger)] font-medium">{{ item.match_failed }} no match</span>
+                    {% elif item.not_tried > 0 %}
+                    <span class="text-[var(--color-gold)] font-medium">{{ item.not_tried }} not tried</span>
+                    {% endif %}
+                </div>
+
+                <!-- Action Buttons -->
+                {% if not item.is_complete %}
+                <div x-data="{
+                         forceFailed: false,
+                         submitting: false,
+                         fetching: {{ item.has_active_batch|yesno:'true,false' }},
+                         slug: '{{ item.system.slug }}',
+                         checkStatus() {
+                             const data = document.getElementById('active-batch-data');
+                             if (data) {
+                                 const slugs = data.dataset.activeSlugs.split(',').filter(s => s);
+                                 this.fetching = slugs.includes(this.slug);
+                             }
+                         }
+                     }"
+                     x-init="document.addEventListener('htmx:afterSwap', (e) => { if (e.detail.target.id === 'metadata-status-container') checkStatus(); })">
+                    <div class="flex gap-2">
+                        <button type="button"
+                                class="retro-btn retro-btn-sm flex-1"
+                                @click="expanded['{{ item.system.slug }}'] = !expanded['{{ item.system.slug }}']"
+                                x-text="expanded['{{ item.system.slug }}'] ? 'Hide' : 'Show'">
+                            Show
+                        </button>
+                        {% if screenscraper_configured %}
+                        <form method="post" action="{% url 'library:start_metadata_job' %}" class="flex-1"
+                              @submit="submitting = true">
+                            {% csrf_token %}
+                            <input type="hidden" name="system_slug" value="{{ item.system.slug }}">
+                            <input type="hidden" name="force_failed" :value="forceFailed ? '1' : '0'">
+                            <button type="submit"
+                                    class="retro-btn retro-btn-primary retro-btn-sm w-full"
+                                    :disabled="submitting || fetching"
+                                    x-text="(submitting || fetching) ? 'Fetching...' : (forceFailed ? 'Fetch All {{ item.not_tried|add:item.match_failed }}' : 'Fetch {{ item.not_tried }}')">
+                                Fetch {{ item.not_tried }}
+                            </button>
+                        </form>
+                        {% else %}
+                        <span class="retro-btn retro-btn-sm flex-1 opacity-50 cursor-not-allowed text-center" title="Configure ScreenScraper credentials to fetch metadata">
+                            Fetch
+                        </span>
+                        {% endif %}
+                    </div>
+                    {% if item.match_failed > 0 and screenscraper_configured %}
+                    <label class="flex items-center gap-2 mt-2 cursor-pointer text-base">
+                        <input type="checkbox" x-model="forceFailed" class="retro-checkbox">
+                        <span class="text-[var(--color-text-muted)]">Include {{ item.match_failed }} with no match</span>
+                    </label>
+                    {% endif %}
+                </div>
+
+                <!-- Expandable Game List -->
+                <div x-show="expanded['{{ item.system.slug }}']"
+                     x-cloak
+                     x-transition:enter="transition ease-out duration-200"
+                     x-transition:enter-start="opacity-0 -translate-y-2"
+                     x-transition:enter-end="opacity-100 translate-y-0"
+                     class="mt-4 pt-4 border-t border-[var(--color-border)]"
+                     id="games-list-{{ item.system.slug }}"
+                     hx-get="{% url 'library:games_missing_metadata' item.system.slug %}"
+                     hx-trigger="intersect once"
+                     hx-swap="innerHTML">
+                    <div class="flex justify-center py-4">
+                        <div class="animate-spin h-6 w-6 border-2 border-[var(--color-primary)] border-t-transparent rounded-full"></div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="text-center text-base text-[var(--color-success)] font-medium">
+                    All games have metadata!
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- System Metadata Card -->
+<div class="retro-system-card retro-system-card-static mb-8">
+    <div class="retro-system-card-header retro-header-magenta flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+        </svg>
+        <h3>System Metadata</h3>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <p class="text-[var(--color-text-muted)]">Fetch icons (32x32) and release years for systems with games in your library</p>
+            {% if screenscraper_configured %}
+            <form method="post" action="{% url 'library:fetch_system_metadata' %}">
+                {% csrf_token %}
+                <button type="submit" class="retro-btn retro-btn-secondary whitespace-nowrap">
+                    Fetch System Icons
+                </button>
+            </form>
+            {% else %}
+            <span class="retro-btn retro-btn-secondary whitespace-nowrap opacity-50 cursor-not-allowed" title="Configure ScreenScraper credentials to fetch metadata">
+                Fetch System Icons
+            </span>
+            {% endif %}
+        </div>
+
+        <div id="system-metadata-status"
+             hx-get="{% url 'library:system_metadata_status' %}"
+             hx-trigger="load, every 3s"
+             hx-target="#system-metadata-status"
+             x-data="{
+                 prevJobIds: null,
+                 checkForCompletion() {
+                     const data = document.getElementById('system-metadata-data');
+                     const currentIds = data ? data.dataset.activeJobIds : '';
+                     if (this.prevJobIds !== null && this.prevJobIds !== '' && currentIds === '') {
+                         location.reload();
+                     }
+                     this.prevJobIds = currentIds;
+                 }
+             }"
+             x-init="document.addEventListener('htmx:afterSwap', (e) => { if (e.detail.target.id === 'system-metadata-status') checkForCompletion(); })">
+            {% include "library/_system_metadata_status.html" %}
+        </div>
+    </div>
+</div>
+
+<!-- Tips -->
+<div class="retro-system-card retro-system-card-static">
+    <div class="retro-system-card-header retro-header-purple flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <h3>Tips</h3>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start">
+        <ul class="text-base text-[var(--color-text-muted)] space-y-2">
+            <li>Configure your ScreenScraper.fr credentials above to enable metadata fetching (or set SCREENSCRAPER_USER and SCREENSCRAPER_PASSWORD environment variables)</li>
+            <li>Systems with incomplete coverage are shown first, sorted by most missing games</li>
+            <li>Click "Show" to see which games are missing metadata for each system</li>
+            <li>Individual game fetches use high priority and run immediately</li>
+            <li>Jobs run in the background - you can leave this page and check back later</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}

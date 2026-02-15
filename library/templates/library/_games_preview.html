@@ -1,0 +1,13 @@
+<div class="max-h-48 overflow-y-auto border border-[var(--color-border)] bg-[var(--color-bg)]">
+    {% for game in games %}
+    <div class="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] last:border-0">
+        {% if game.system.icon_path %}
+        <img src="{% url 'library:serve_system_icon' game.system.slug %}" alt="" class="w-4 h-4 shrink-0">
+        {% endif %}
+        <span class="text-base truncate flex-1">{{ game.name }}</span>
+        <span class="text-base text-[var(--color-text-muted)] shrink-0">{{ game.system.name }}</span>
+    </div>
+    {% empty %}
+    <p class="text-[var(--color-text-muted)] text-base text-center py-4">No games</p>
+    {% endfor %}
+</div>

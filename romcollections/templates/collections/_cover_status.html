@@ -1,0 +1,37 @@
+{% if job.status == 'pending' or job.status == 'running' %}
+<div class="p-3 bg-[var(--color-surface-alt)] border border-[var(--color-border)] mb-4">
+    <div class="flex items-center gap-2">
+        <svg class="animate-spin h-5 w-5 text-[var(--color-primary)]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span class="text-base">
+            {% if job.job_type == 'upload' %}
+            Processing upload...
+            {% else %}
+            Generating cover...
+            {% endif %}
+        </span>
+    </div>
+</div>
+{% elif job.status == 'completed' %}
+<div class="p-3 bg-green-900/30 border border-green-700 mb-4"
+     x-init="$nextTick(() => { stopPolling(); uploading = false; generating = false; window.location.reload(); })">
+    <div class="flex items-center gap-2 text-green-400">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+        </svg>
+        <span class="text-base">Cover updated! Refreshing...</span>
+    </div>
+</div>
+{% elif job.status == 'failed' %}
+<div class="p-3 bg-red-900/30 border border-red-700 mb-4"
+     x-init="$nextTick(() => { stopPolling(); uploading = false; generating = false; })">
+    <div class="flex items-center gap-2 text-red-400">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+        <span class="text-base">Failed: {{ job.error|default:"Unknown error" }}</span>
+    </div>
+</div>
+{% endif %}

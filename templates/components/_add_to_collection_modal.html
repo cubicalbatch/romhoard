@@ -1,0 +1,52 @@
+{% load retro_components %}
+
+<!-- Add to Collection Modal (Single Game) -->
+{% retro_modal id="add-to-collection" title="Add to Collection" %}
+<div class="retro-modal-body">
+    <div id="add-to-collection-content">
+        {% include "components/_loading_spinner.html" %}
+    </div>
+
+    <!-- Notes field (shown for single game add) -->
+    <div class="mt-4">
+        <label class="block text-base font-medium text-[var(--color-text)] mb-2">Notes (optional)</label>
+        <textarea id="collection-entry-notes"
+                  class="retro-input w-full"
+                  rows="3"
+                  maxlength="1000"
+                  placeholder="Add notes about this game..."></textarea>
+    </div>
+</div>
+<div class="retro-modal-footer flex justify-end gap-3">
+    <button @click="$store.modals.close('add-to-collection')" class="retro-btn">
+        Cancel
+    </button>
+    <button @click="addToCollection()" class="retro-btn retro-btn-teal flex items-center gap-2">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        Add
+    </button>
+</div>
+{% endretro_modal %}
+
+<!-- Add to Collection Modal (Bulk/Multi-select) -->
+{% retro_modal id="bulk-add-to-collection" title="Add to Collection" %}
+<div class="retro-modal-body">
+    <p class="text-base text-[var(--color-text-muted)] mb-4" x-text="`Adding ${$store.selection.size} game${$store.selection.size === 1 ? '' : 's'} to collection`"></p>
+    <div id="bulk-add-collection-content">
+        {% include "components/_loading_spinner.html" %}
+    </div>
+</div>
+<div class="retro-modal-footer flex justify-end gap-3">
+    <button @click="$store.modals.close('bulk-add-to-collection')" class="retro-btn">
+        Cancel
+    </button>
+    <button @click="bulkAddToCollection()" class="retro-btn retro-btn-teal flex items-center gap-2">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        Add All
+    </button>
+</div>
+{% endretro_modal %}

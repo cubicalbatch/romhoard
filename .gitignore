@@ -1,0 +1,60 @@
+# Pytho
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Django
+*.log
+db.sqlite3
+data/
+staticfiles/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+.claude/
+.opencode/
+.crush/
+conductor/
+prompts/
+docs/
+plans/
+build.sh
+start.sh
+start_hub.sh
+reset_db.sh
+start_workers.sh
+worker.sh
+docker-compose.dev.yml
+ftp/
+collectionhub/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.worker_started
+
+# Testing/Coverage
+.coverage
+.pytest_cache/
+.ruff_cache/

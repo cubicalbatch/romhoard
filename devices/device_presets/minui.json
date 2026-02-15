@@ -1,0 +1,44 @@
+{
+  "slug": "minui",
+  "name": "MinUI",
+  "description": "Configuration for MinUI - minimalist launcher with tag-based folder naming (archived project)",
+  "tags": ["minui", "miyoo", "trimui", "rgb30", "rg35xx", "minimalist"],
+
+  "folders": {
+    "root_path": "Roms/",
+    "system_paths": {
+      "gba": {"folder": "Game Boy Advance (GBA)"},
+      "gbc": {"folder": "Game Boy Color (GBC)"},
+      "gb": {"folder": "Game Boy (GB)"},
+      "snes": {"folder": "Super Nintendo (SFC)"},
+      "nes": {"folder": "Nintendo (FC)"},
+      "genesis": {"folder": "Sega Genesis (MD)"},
+      "sms": {"folder": "Sega Master System (SMS)"},
+      "gg": {"folder": "Sega Game Gear (GG)"},
+      "psx": {"folder": "Sony PlayStation (PS)"},
+      "arcade": {"folder": "Arcade (MAME)"},
+      "pcengine": {"folder": "TurboGrafx-16 (PCE)"},
+      "ngp": {"folder": "Neo Geo Pocket (NGP)"},
+      "ngpc": {"folder": "Neo Geo Pocket Color (NGPC)"},
+      "virtualboy": {"folder": "Virtual Boy (VB)"},
+      "pokemini": {"folder": "Pokemon mini (PKM)"},
+      "sgb": {"folder": "Super Game Boy (SGB)"},
+      "pico8": {"folder": "Pico-8 (P8)"}
+    }
+  },
+
+  "images": {
+    "path_template": "{root_path}/{system}/.res/{romname_ext}.png",
+    "max_width": 300,
+    "image_type": "cover"
+  },
+
+  "transfer": {
+    "protocol": null,
+    "port": null,
+    "user": null,
+    "password": null,
+    "path_prefix": null,
+    "note": "MinUI does not have built-in WiFi transfer - use SD card"
+  }
+}

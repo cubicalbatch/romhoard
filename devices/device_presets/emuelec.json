@@ -1,0 +1,75 @@
+{
+  "slug": "emuelec",
+  "name": "EmuELEC",
+  "description": "Configuration for EmuELEC on Amlogic-based devices (S905, S912, S922 TV boxes and handhelds)",
+  "tags": ["emuelec", "emulationstation", "amlogic", "s905", "s912", "s922"],
+
+  "folders": {
+    "root_path": "roms/",
+    "system_paths": {
+      "gba": {"folder": "gba"},
+      "gbc": {"folder": "gbc"},
+      "gb": {"folder": "gb"},
+      "snes": {"folder": "snes"},
+      "nes": {"folder": "nes"},
+      "genesis": {"folder": "genesis"},
+      "sms": {"folder": "mastersystem"},
+      "gg": {"folder": "gamegear"},
+      "psx": {"folder": "psx"},
+      "n64": {"folder": "n64"},
+      "nds": {"folder": "nds"},
+      "psp": {"folder": "psp"},
+      "arcade": {"folder": "arcade"},
+      "mame": {"folder": "mame"},
+      "fbneo": {"folder": "fbneo"},
+      "neogeo": {"folder": "neogeo"},
+      "neogeocd": {"folder": "neocd"},
+      "atari2600": {"folder": "atari2600"},
+      "atari5200": {"folder": "atari5200"},
+      "atari7800": {"folder": "atari7800"},
+      "lynx": {"folder": "atarilynx"},
+      "ngp": {"folder": "ngp"},
+      "ngpc": {"folder": "ngpc"},
+      "pcengine": {"folder": "pcengine"},
+      "pcenginecd": {"folder": "pcenginecd"},
+      "supergrafx": {"folder": "supergrafx"},
+      "wonderswan": {"folder": "wonderswan"},
+      "wonderswancolor": {"folder": "wonderswancolor"},
+      "segacd": {"folder": "segacd"},
+      "sega32x": {"folder": "sega32x"},
+      "saturn": {"folder": "saturn"},
+      "dreamcast": {"folder": "dreamcast"},
+      "virtualboy": {"folder": "virtualboy"},
+      "coleco": {"folder": "coleco"},
+      "intellivision": {"folder": "intellivision"},
+      "vectrex": {"folder": "vectrex"},
+      "msx": {"folder": "msx"},
+      "dos": {"folder": "dos"},
+      "scummvm": {"folder": "scummvm"},
+      "fds": {"folder": "fds"},
+      "pokemini": {"folder": "pokemini"},
+      "gameandwatch": {"folder": "gameandwatch"},
+      "3do": {"folder": "3do"},
+      "jaguar": {"folder": "atarijaguar"},
+      "amstradcpc": {"folder": "amstradcpc"},
+      "c64": {"folder": "c64"},
+      "amiga": {"folder": "amiga"},
+      "atomiswave": {"folder": "atomiswave"},
+      "naomi": {"folder": "naomi"}
+    }
+  },
+
+  "images": {
+    "path_template": "{root_path}/{system}/downloaded_images/{romname}-image.png",
+    "max_width": null,
+    "image_type": "mixed"
+  },
+
+  "transfer": {
+    "protocol": "sftp",
+    "port": 22,
+    "user": "root",
+    "password": "emuelec",
+    "path_prefix": "/storage/roms"
+  }
+}

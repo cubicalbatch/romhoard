@@ -1,0 +1,228 @@
+{% if job.status == 'uploading' or job.status == 'processing' %}
+<div hx-get="{% url 'library:upload_status' job.pk %}"
+     hx-trigger="load delay:1s"
+     hx-target="this"
+     hx-swap="outerHTML">
+
+    <h3 class="text-lg font-semibold text-[var(--color-text)] mb-4">
+        {% if job.status == 'uploading' %}Receiving files...{% else %}Processing uploads...{% endif %}
+    </h3>
+
+    <div class="mb-4">
+        <div class="flex justify-between text-base text-[var(--color-text-muted)] mb-1">
+            <span>
+                {% if job.status == 'uploading' %}
+                    {{ job.files_uploaded }} of {{ job.files_total }} files received
+                {% else %}
+                    {{ job.files_processed }} of {{ job.files_total }} files processed
+                {% endif %}
+            </span>
+            <span>{{ job.progress_percent }}%</span>
+        </div>
+        <div class="retro-progress">
+            <div class="retro-progress-bar retro-progress-animated" style="width: {{ job.progress_percent }}%"></div>
+        </div>
+    </div>
+
+    {% if job.current_file %}
+    <p class="text-base text-[var(--color-text-muted)] truncate">
+        <span class="text-[var(--color-text)]">Current:</span> {{ job.current_file }}
+    </p>
+    {% endif %}
+
+    {% if job.games_added > 0 or job.games_skipped > 0 %}
+    <div class="mt-4 grid grid-cols-3 gap-4 text-center text-base">
+        <div>
+            <div class="text-lg font-bold text-[var(--color-success)]">{{ job.games_added }}</div>
+            <div class="text-base text-[var(--color-text-muted)]">Added</div>
+        </div>
+        <div>
+            <div class="text-lg font-bold text-[var(--color-text-muted)]">{{ job.games_skipped }}</div>
+            <div class="text-base text-[var(--color-text-muted)]">Skipped</div>
+        </div>
+        <div>
+            <div class="text-lg font-bold text-[var(--color-danger)]">{{ job.games_failed }}</div>
+            <div class="text-base text-[var(--color-text-muted)]">Failed</div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% elif job.status == 'awaiting' %}
+<!-- User needs to resolve unidentified games -->
+<div>
+    <h3 class="text-lg font-semibold text-[var(--color-text)] mb-2">
+        Some files need attention
+    </h3>
+    <p class="text-base text-[var(--color-text-muted)] mb-4">
+        {{ job.unidentified_files|length }} file(s) could not be automatically identified.
+        Please select a system for each:
+    </p>
+
+    <div x-data="{
+        assignments: {},
+        submitting: false,
+        totalFiles: {{ job.unidentified_files|length }},
+
+        get unassignedCount() {
+            const assigned = Object.values(this.assignments).filter(v => v && v !== '').length;
+            return this.totalFiles - assigned;
+        },
+
+        async submitResolutions() {
+            if (this.submitting) return;
+            this.submitting = true;
+
+            try {
+                await fetch('{% url "library:resolve_unidentified" job.pk %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': RomHoard.getCsrfToken()
+                    },
+                    body: JSON.stringify({ assignments: this.assignments })
+                });
+                htmx.ajax('GET', '{% url "library:upload_status" job.pk %}', { target: '#upload-progress-content', swap: 'innerHTML' });
+            } catch (error) {
+                console.error('Failed to submit resolutions:', error);
+                this.submitting = false;
+            }
+        }
+    }" id="unidentified-resolver">
+        <div class="space-y-3 mb-4 max-h-64 overflow-y-auto">
+            {% for item in job.unidentified_files %}
+            <div class="flex items-center gap-3 py-2 px-3 bg-[var(--color-surface-alt)] rounded">
+                <span class="flex-1 text-[var(--color-text)] text-base truncate" title="{{ item.filename }}">{{ item.filename }}</span>
+                <select
+                    x-model="assignments['{{ item.temp_path }}']"
+                    class="retro-select text-base"
+                >
+                    <option value="">-- Select System --</option>
+                    {% for system in systems %}
+                    <option value="{{ system.slug }}">{{ system.name }}</option>
+                    {% endfor %}
+                    <option value="skip">Skip this file</option>
+                </select>
+            </div>
+            {% endfor %}
+        </div>
+
+        <template x-if="unassignedCount > 0">
+            <p class="text-base text-[var(--color-warning)] mb-3">
+                <span x-text="unassignedCount"></span> file(s) without system selection will be skipped
+            </p>
+        </template>
+
+        <div class="flex justify-end">
+            <button
+                @click="submitResolutions()"
+                :disabled="submitting"
+                class="retro-btn retro-btn-success"
+            >
+                <span x-show="!submitting">Continue Processing</span>
+                <span x-show="submitting" class="flex items-center gap-2">
+                    <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Processing...
+                </span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Show current stats -->
+    {% if job.games_added > 0 or job.games_skipped > 0 %}
+    <div class="mt-4 pt-4 border-t border-[var(--color-border)] grid grid-cols-3 gap-4 text-center text-base">
+        <div>
+            <div class="text-lg font-bold text-[var(--color-success)]">{{ job.games_added }}</div>
+            <div class="text-base text-[var(--color-text-muted)]">Added</div>
+        </div>
+        <div>
+            <div class="text-lg font-bold text-[var(--color-text-muted)]">{{ job.games_skipped }}</div>
+            <div class="text-base text-[var(--color-text-muted)]">Skipped</div>
+        </div>
+        <div>
+            <div class="text-lg font-bold text-[var(--color-danger)]">{{ job.games_failed }}</div>
+            <div class="text-base text-[var(--color-text-muted)]">Failed</div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% elif job.status == 'completed' %}
+<div class="text-center">
+    <svg class="h-12 w-12 text-[var(--color-success)] mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <h3 class="text-lg font-semibold text-[var(--color-text)] mb-2">Upload Complete!</h3>
+
+    <div class="grid grid-cols-3 gap-4 mt-4 mb-6">
+        <div class="text-center">
+            <div class="text-2xl font-bold text-[var(--color-success)]">{{ job.games_added }}</div>
+            <div class="text-base text-[var(--color-text-muted)]">Added</div>
+        </div>
+        <div class="text-center">
+            <div class="text-2xl font-bold text-[var(--color-text-muted)]">{{ job.games_skipped }}</div>
+            <div class="text-base text-[var(--color-text-muted)]">Skipped</div>
+        </div>
+        <div class="text-center">
+            <div class="text-2xl font-bold text-[var(--color-danger)]">{{ job.games_failed }}</div>
+            <div class="text-base text-[var(--color-text-muted)]">Failed</div>
+        </div>
+    </div>
+
+    {% if job.errors %}
+    <details class="text-left mb-4">
+        <summary class="text-base text-[var(--color-danger)] cursor-pointer">
+            Show {{ job.errors|length }} error(s)
+        </summary>
+        <ul class="mt-2 text-base text-[var(--color-text-muted)] space-y-1 max-h-32 overflow-y-auto">
+            {% for error in job.errors %}
+            <li class="truncate" title="{{ error }}">{{ error }}</li>
+            {% endfor %}
+        </ul>
+    </details>
+    {% endif %}
+
+    <a href="{% url 'library:system_list' %}" class="retro-btn retro-btn-primary">
+        View Library
+    </a>
+</div>
+
+{% elif job.status == 'failed' %}
+<div class="text-center">
+    <svg class="h-12 w-12 text-[var(--color-danger)] mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <h3 class="text-lg font-semibold text-[var(--color-danger)] mb-2">Upload Failed</h3>
+    {% if job.errors %}
+    <p class="text-base text-[var(--color-text-muted)] mb-4">{{ job.errors.0 }}</p>
+    {% endif %}
+
+    <a href="{% url 'library:upload' %}" class="retro-btn retro-btn-secondary">
+        Try Again
+    </a>
+</div>
+
+{% elif job.status == 'cancelled' %}
+<div class="text-center">
+    <svg class="h-12 w-12 text-[var(--color-warning)] mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <h3 class="text-lg font-semibold text-[var(--color-warning)] mb-2">Upload Cancelled</h3>
+
+    {% if job.games_added > 0 %}
+    <p class="text-base text-[var(--color-text-muted)] mb-4">
+        {{ job.games_added }} game(s) were added before cancellation.
+    </p>
+    {% endif %}
+
+    <a href="{% url 'library:upload' %}" class="retro-btn retro-btn-secondary">
+        Start New Upload
+    </a>
+</div>
+{% endif %}

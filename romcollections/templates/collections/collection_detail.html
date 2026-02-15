@@ -1,0 +1,686 @@
+{% extends "base.html" %}
+{% load retro_components %}
+
+{% block title %}{{ collection.name }} - Collections - RomHoard{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div id="collection-container"
+     x-data="{
+         editMode: false,
+         editNotesEntry: null,
+         notesCharCount: 0,
+         singleGameSend: null,
+
+         toggleEditMode() {
+             this.editMode = !this.editMode;
+             if (!this.editMode) {
+                 $store.selection.updateUI();
+             }
+         },
+
+         openSendModalForGame(gameId, systemSlug) {
+             this.singleGameSend = { gameId, systemSlug };
+             $store.modals.open('send-single-game');
+         },
+
+         closeSendModal() {
+             this.singleGameSend = null;
+             $store.modals.close('send-single-game');
+         },
+
+         startSendForGame() {
+             if (!this.singleGameSend) return;
+             const { gameId, systemSlug } = this.singleGameSend;
+             $store.downloadManager.startSend(`/library/${systemSlug}/send/`, { game_ids: [gameId] });
+         },
+
+         openDeleteSelected() {
+             if ($store.selection.size === 0) return;
+             document.getElementById('bulk-delete-count').textContent = $store.selection.size;
+             $store.modals.open('bulk-delete');
+         },
+
+         async confirmBulkDelete() {
+             $store.modals.close('bulk-delete');
+             try {
+                 const response = await fetch('{% url "romcollections:bulk_remove_entries" collection.creator collection.slug %}', {
+                     method: 'POST',
+                     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                     body: JSON.stringify({ entry_ids: $store.selection.getIds() }),
+                 });
+                 if (!response.ok) throw new Error('Failed to delete entries');
+
+                 $store.selection.getIds().forEach(entryId => {
+                     const card = document.querySelector(`[data-entry-id='${entryId}']`);
+                     if (card) card.remove();
+                 });
+                 $store.selection.clear();
+             } catch (error) {
+                 alert('Error: ' + error.message);
+             }
+         },
+
+         sendSelected() {
+             const hasMatched = $store.selection.getIds().some(id => $store.selection.getMeta(id)?.isMatched);
+             if (hasMatched) $store.modals.open('send-picker');
+         },
+
+         downloadSelected() {
+             const hasMatched = $store.selection.getIds().some(id => $store.selection.getMeta(id)?.isMatched);
+             if (hasMatched) $store.modals.open('device-picker');
+         },
+
+         startDownloadWithDevice() {
+             $store.downloadManager.startDownload('{% url "romcollections:download_collection" collection.creator collection.slug %}', {});
+         },
+
+         openEditNotes(entryId, gameName, notes, updateUrl) {
+             this.editNotesEntry = { entryId, gameName, notes, updateUrl };
+             this.notesCharCount = notes.length;
+             document.getElementById('edit-notes-game-name').textContent = gameName;
+             document.getElementById('edit-notes-textarea').value = notes;
+
+             const form = document.getElementById('edit-notes-form');
+             form.setAttribute('hx-post', updateUrl);
+             form.setAttribute('hx-target', `.entry-card[data-entry-id='${entryId}']`);
+             htmx.process(form);
+
+             $store.modals.open('edit-notes');
+             setTimeout(() => document.getElementById('edit-notes-textarea').focus(), 100);
+         },
+
+         startExportWithImages() {
+             startCollectionExportWithImages();
+         }
+     }"
+     @open-edit-notes.window="openEditNotes($event.detail.entryId, $event.detail.gameName, $event.detail.notes, $event.detail.updateUrl)"
+     @open-send-for-game.window="openSendModalForGame($event.detail.gameId, $event.detail.systemSlug)"
+     @htmx:after-swap.window="if ($event.detail.target.matches('.entry-card[data-entry-id]') && $event.detail.requestConfig?.elt?.id === 'edit-notes-form') $store.modals.close('edit-notes')">
+
+<!-- Hero Banner -->
+{% if collection.has_cover %}
+<div class="relative -mx-4 sm:-mx-6 lg:-mx-8 mb-6">
+    <img src="{% url 'romcollections:serve_cover' collection.creator collection.slug %}"
+         alt="{{ collection.name }} banner"
+         class="w-full h-40 sm:h-48 lg:h-56 object-cover object-top"
+         loading="eager">
+    <div class="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[var(--color-bg)] to-transparent"></div>
+</div>
+{% endif %}
+
+<!-- Breadcrumb -->
+<nav class="text-base text-[var(--color-text-muted)] mb-6">
+    <a href="{% url 'romcollections:collection_list' %}" class="hover:text-[var(--color-primary)]">Collections</a>
+    <span class="mx-2">/</span>
+    <span class="text-[var(--color-text)]">{{ collection.name }}</span>
+</nav>
+
+<!-- Header Section -->
+<div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+    <div>
+        <div class="flex items-center gap-3">
+            <h1 class="retro-heading retro-heading-lg">{{ collection.name }}</h1>
+            <!-- Favorite Star -->
+            {% if collection.is_community %}
+            <form method="post" action="{% url 'romcollections:adopt_collection' collection.creator collection.slug %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{% url 'romcollections:collection_detail' collection.creator collection.slug %}">
+                <button type="submit" class="text-[var(--color-text-muted)] hover:text-yellow-400 transition-colors" title="Add to Favorites">
+                    <svg class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+                    </svg>
+                </button>
+            </form>
+            {% else %}
+            <button @click="$store.modals.open('unfavorite-collection')"
+                    class="text-yellow-400 hover:text-yellow-500 transition-colors"
+                    title="Remove from Favorites">
+                <svg class="h-7 w-7" fill="currentColor" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+                </svg>
+            </button>
+            {% endif %}
+        </div>
+        <p class="text-[var(--color-text-muted)] mt-1">
+            {{ total_count }} game{{ total_count|pluralize }} · {{ matched_count }} in library
+        </p>
+    </div>
+    <!-- Desktop action buttons -->
+    <div class="hidden sm:flex flex-wrap gap-2">
+        <button id="download-btn"
+                @click="$store.downloadManager.collectionCreator = '{{ collection.creator }}'; $store.downloadManager.collectionSlug = '{{ collection.slug }}'; $store.downloadManager.matchedCount = {{ matched_count }}; $store.downloadManager.gameIds = []; $store.downloadManager.resetPreview(); $store.modals.open('device-picker')"
+                class="retro-btn retro-btn-success flex items-center gap-2{% if matched_count == 0 %} opacity-50 cursor-not-allowed{% endif %}"
+                {% if matched_count == 0 %}disabled{% endif %}>
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+            </svg>
+            Download
+        </button>
+        <button id="send-btn"
+                @click="$store.downloadManager.collectionCreator = '{{ collection.creator }}'; $store.downloadManager.collectionSlug = '{{ collection.slug }}'; $store.downloadManager.matchedCount = {{ matched_count }}; $store.downloadManager.gameIds = []; $store.downloadManager.resetPreview(); $store.modals.open('send-picker')"
+                class="retro-btn retro-btn-purple flex items-center gap-2{% if matched_count == 0 %} opacity-50 cursor-not-allowed{% endif %}"
+                {% if matched_count == 0 %}disabled{% endif %}>
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            Send
+        </button>
+        <button @click="startExportWithImages()"
+                class="retro-btn retro-btn-primary flex items-center gap-2">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            Export
+        </button>
+        <a href="{% url 'romcollections:collection_edit' collection.creator collection.slug %}"
+           class="retro-btn flex items-center gap-2">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+            Settings
+        </a>
+        <button data-modal-open="delete-collection"
+                class="retro-btn retro-btn-danger flex items-center gap-2">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            Delete
+        </button>
+    </div>
+</div>
+
+<!-- Metadata Section -->
+{% if collection.description or collection.creator or collection.tags %}
+<div class="mb-6">
+    {% if collection.description %}
+    <p class="text-[var(--color-text)] mb-3">{{ collection.description|linebreaksbr }}</p>
+    {% endif %}
+    {% if collection.creator %}
+    <p class="text-base text-[var(--color-text-muted)] mb-2">Created by <a href="{% url 'romcollections:creator_page' collection.creator %}" class="text-[var(--color-text)] font-bold hover:text-[var(--color-primary)] hover:underline">{{ collection.creator }}</a> · {{ collection.created_at|date:"Y/m/d" }}</p>
+    {% else %}
+    <p class="text-base text-[var(--color-text-muted)] mb-2">{{ collection.created_at|date:"Y/m/d" }}</p>
+    {% endif %}
+    {% if collection.tags %}
+    <div class="flex flex-wrap gap-1">
+        {% for tag in collection.tags %}
+        <span class="retro-badge">{{ tag }}</span>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Search/Filter Bar -->
+{% include "collections/_collection_search_filter_bar.html" %}
+
+<!-- Mobile action buttons -->
+<div class="flex flex-wrap gap-2 mb-6 sm:hidden">
+    <button id="download-btn-mobile"
+            @click="$store.downloadManager.collectionCreator = '{{ collection.creator }}'; $store.downloadManager.collectionSlug = '{{ collection.slug }}'; $store.downloadManager.matchedCount = {{ matched_count }}; $store.downloadManager.gameIds = []; $store.downloadManager.resetPreview(); $store.modals.open('device-picker')"
+            class="retro-btn retro-btn-success flex-1 flex items-center gap-2 justify-center{% if matched_count == 0 %} opacity-50 cursor-not-allowed{% endif %}"
+            {% if matched_count == 0 %}disabled{% endif %}>
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+        </svg>
+        Download
+    </button>
+    <button id="send-btn-mobile"
+            @click="$store.downloadManager.collectionCreator = '{{ collection.creator }}'; $store.downloadManager.collectionSlug = '{{ collection.slug }}'; $store.downloadManager.matchedCount = {{ matched_count }}; $store.downloadManager.gameIds = []; $store.downloadManager.resetPreview(); $store.modals.open('send-picker')"
+            class="retro-btn retro-btn-purple flex-1 flex items-center gap-2 justify-center{% if matched_count == 0 %} opacity-50 cursor-not-allowed{% endif %}"
+            {% if matched_count == 0 %}disabled{% endif %}>
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+        </svg>
+        Send
+    </button>
+    <button @click="startExportWithImages()"
+            class="retro-btn retro-btn-primary flex items-center gap-2 justify-center">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+        </svg>
+        Export
+    </button>
+    <a href="{% url 'romcollections:collection_edit' collection.creator collection.slug %}"
+       class="retro-btn flex items-center gap-2 justify-center">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        Settings
+    </a>
+    <button data-modal-open="delete-collection"
+            class="retro-btn retro-btn-danger flex items-center gap-2 justify-center">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+        </svg>
+        Delete
+    </button>
+</div>
+
+<!-- Toolbar: Edit Mode Toggle, Sort, View Toggle -->
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+    <!-- Left: Edit Mode -->
+    <div class="flex items-center gap-2">
+        <button @click="toggleEditMode()"
+                class="retro-btn flex items-center gap-2"
+                :class="editMode ? 'retro-btn-primary' : ''">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+            </svg>
+            <span x-text="editMode ? 'Done Editing' : 'Edit Mode'"></span>
+        </button>
+        <span x-show="editMode && $store.searchFilters.hasActiveFilters()"
+              x-cloak
+              class="text-base text-[var(--color-text-muted)] italic">
+            (Clear filters to drag/reorder)
+        </span>
+    </div>
+
+    <!-- Right: Sort -->
+    <div class="flex items-center gap-3">
+        <!-- Sort Button Group -->
+        <div class="retro-sort-group hidden sm:flex">
+            <button @click="$store.searchFilters.setSort('position', 'asc')"
+                    class="retro-sort-btn"
+                    :class="{ 'active': $store.searchFilters.sort === 'position' }">Manual</button>
+            <button @click="$store.searchFilters.setSort('name', 'asc')"
+                    class="retro-sort-btn"
+                    :class="{ 'active': $store.searchFilters.sort === 'name' }">Name</button>
+            <button @click="$store.searchFilters.setSort('system', 'asc')"
+                    class="retro-sort-btn"
+                    :class="{ 'active': $store.searchFilters.sort === 'system' }">System</button>
+            <button @click="$store.searchFilters.setSort('rating', 'desc')"
+                    class="retro-sort-btn"
+                    :class="{ 'active': $store.searchFilters.sort === 'rating' }">Rating</button>
+            <button @click="$store.searchFilters.setSort('status', 'desc')"
+                    class="retro-sort-btn"
+                    :class="{ 'active': $store.searchFilters.sort === 'status' }">Status</button>
+        </div>
+        <!-- Sort Buttons (mobile) -->
+        <div class="flex flex-wrap items-center gap-2 sm:hidden">
+            <span class="text-base text-[var(--color-text-muted)]">Sort:</span>
+            <button @click="$store.searchFilters.setSort('position', 'asc')"
+                    class="retro-btn retro-btn-sm"
+                    :class="$store.searchFilters.sort === 'position' ? 'retro-btn-primary' : 'retro-btn-secondary'">
+                Manual
+            </button>
+            <button @click="$store.searchFilters.setSort('name', 'asc')"
+                    class="retro-btn retro-btn-sm"
+                    :class="$store.searchFilters.sort === 'name' ? 'retro-btn-primary' : 'retro-btn-secondary'">
+                Name <span x-show="$store.searchFilters.sort === 'name'" x-text="$store.searchFilters.order === 'asc' ? '▲' : '▼'"></span>
+            </button>
+            <button @click="$store.searchFilters.setSort('system', 'asc')"
+                    class="retro-btn retro-btn-sm"
+                    :class="$store.searchFilters.sort === 'system' ? 'retro-btn-primary' : 'retro-btn-secondary'">
+                System <span x-show="$store.searchFilters.sort === 'system'" x-text="$store.searchFilters.order === 'asc' ? '▲' : '▼'"></span>
+            </button>
+            <button @click="$store.searchFilters.setSort('rating', 'desc')"
+                    class="retro-btn retro-btn-sm"
+                    :class="$store.searchFilters.sort === 'rating' ? 'retro-btn-primary' : 'retro-btn-secondary'">
+                Rating <span x-show="$store.searchFilters.sort === 'rating'" x-text="$store.searchFilters.order === 'desc' ? '▼' : '▲'"></span>
+            </button>
+            <button @click="$store.searchFilters.setSort('status', 'desc')"
+                    class="retro-btn retro-btn-sm"
+                    :class="$store.searchFilters.sort === 'status' ? 'retro-btn-primary' : 'retro-btn-secondary'">
+                Status <span x-show="$store.searchFilters.sort === 'status'" x-text="$store.searchFilters.order === 'desc' ? '▼' : '▲'"></span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Entries Container (for HTMX swapping) -->
+<div id="collection-entries-container">
+    <!-- Entries List -->
+    <div class="space-y-4" id="entries-list">
+        {% for item in entries %}
+        {% include "collections/_entry_card.html" with entry=item.entry matched_game=item.matched_game is_matched=item.is_matched has_roms=item.has_roms system=item.system %}
+        {% empty %}
+        <div class="retro-system-card">
+            <div class="retro-empty-state">
+                <div class="retro-empty-state-icon">
+                    <svg class="h-16 w-16 mx-auto text-[var(--color-text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                    </svg>
+                </div>
+                <h3 class="retro-empty-state-title">No Entries Yet</h3>
+                <p class="retro-empty-state-text">Add games from the Library using the "+" button on each game.</p>
+                <a href="{% url 'library:system_list' %}" class="retro-btn retro-btn-success">
+                    Browse Library
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if page_obj.has_other_pages %}
+    <div class="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-[var(--color-bg)] border border-[var(--color-border)]">
+        <div class="text-base text-[var(--color-text-muted)]">
+            Showing {{ page_obj.start_index }} - {{ page_obj.end_index }} of {{ total_count }}
+        </div>
+        <div class="flex gap-2 items-center">
+            <div class="flex gap-1">
+                {% if page_obj.has_previous %}
+                <a href="?page=1&page_size={{ current_page_size }}&sort={{ current_sort }}&order={{ current_order }}" class="retro-btn retro-btn-sm">&laquo;</a>
+                <a href="?page={{ page_obj.previous_page_number }}&page_size={{ current_page_size }}&sort={{ current_sort }}&order={{ current_order }}" class="retro-btn retro-btn-sm">Prev</a>
+                {% endif %}
+                <span class="retro-btn retro-btn-sm retro-btn-primary">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+                {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}&page_size={{ current_page_size }}&sort={{ current_sort }}&order={{ current_order }}" class="retro-btn retro-btn-sm">Next</a>
+                <a href="?page={{ page_obj.paginator.num_pages }}&page_size={{ current_page_size }}&sort={{ current_sort }}&order={{ current_order }}" class="retro-btn retro-btn-sm">&raquo;</a>
+                {% endif %}
+            </div>
+            <span class="text-[var(--color-text-muted)] mx-2">|</span>
+            <select id="page-size-select"
+                    @change="(() => { const url = new URL(window.location); url.searchParams.set('page_size', $el.value); url.searchParams.set('page', 1); window.location.href = url.toString(); })()"
+                    class="retro-input py-1 px-2 text-base w-20">
+                <option value="25" {% if current_page_size == 25 %}selected{% endif %}>25</option>
+                <option value="50" {% if current_page_size == 50 %}selected{% endif %}>50</option>
+                <option value="100" {% if current_page_size == 100 %}selected{% endif %}>100</option>
+                <option value="200" {% if current_page_size == 200 %}selected{% endif %}>200</option>
+            </select>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Selection toolbar (fixed at bottom) -->
+{% include "components/_selection_toolbar.html" with initial_count_text="0 entries selected" actions_classes="flex flex-wrap items-center gap-3" send_btn_id="send-selected-btn" download_btn_id="download-selected-btn" extra_buttons_template="collections/_selection_toolbar_delete_button.html" %}
+
+<!-- Bulk delete confirmation modal -->
+{% retro_modal id="bulk-delete" title="Delete Selected Entries?" %}
+<div class="retro-modal-body">
+    <p>Are you sure you want to delete <span id="bulk-delete-count">0</span> entries from this collection? This cannot be undone.</p>
+</div>
+<div class="retro-modal-footer">
+    <button @click="$store.modals.close('bulk-delete')" class="retro-btn">Cancel</button>
+    <button @click="confirmBulkDelete()" class="retro-btn retro-btn-danger">Delete</button>
+</div>
+{% endretro_modal %}
+
+<!-- Delete confirmation modal -->
+{% retro_modal id="delete-collection" title="Delete Collection?" %}
+<div class="retro-modal-body">
+    <p>Are you sure you want to delete "{{ collection.name }}"? This cannot be undone.</p>
+</div>
+<div class="retro-modal-footer">
+    <button @click="$store.modals.close('delete-collection')" class="retro-btn">Cancel</button>
+    <form hx-post="{% url 'romcollections:collection_delete' collection.creator collection.slug %}" class="inline">
+        {% csrf_token %}
+        <button type="submit" class="retro-btn retro-btn-danger">Delete</button>
+    </form>
+</div>
+{% endretro_modal %}
+
+<!-- Unfavorite confirmation modal -->
+{% if not collection.is_community %}
+{% retro_modal id="unfavorite-collection" title="Remove from Favorites?" %}
+<div class="retro-modal-body">
+    <p>Are you sure you want to remove "{{ collection.name }}" from your favorites?</p>
+</div>
+<div class="retro-modal-footer">
+    <button @click="$store.modals.close('unfavorite-collection')" class="retro-btn">Cancel</button>
+    <form method="post" action="{% url 'romcollections:unadopt_collection' collection.creator collection.slug %}" class="inline">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'romcollections:collection_detail' collection.creator collection.slug %}">
+        <button type="submit" class="retro-btn retro-btn-danger">Remove</button>
+    </form>
+</div>
+{% endretro_modal %}
+{% endif %}
+
+{% include "components/_download_modals.html" with download_progress_title="" download_progress_close_btn=False %}
+
+<!-- Send picker modal -->
+{% retro_modal id="send-picker" title="Send to Device" %}
+<div class="retro-modal-body" x-data="{ showGames: false }"
+     @modal-opened.window="if($event.detail.id === 'send-picker') showGames = false"
+     @modal-closed.window="if($event.detail.id === 'send-picker') showGames = false">
+    <!-- Game count + expandable list -->
+    <div class="mb-4 pb-3 border-b border-[var(--color-border)]"
+         x-show="$store.downloadManager.matchedCount > 0">
+        <p class="text-[var(--color-text)]">
+            <span class="font-bold" x-text="$store.downloadManager.matchedCount"></span>
+            <span x-text="$store.downloadManager.matchedCount === 1 ? 'game' : 'games'"></span>
+            will be sent.
+        </p>
+        <button @click="showGames = !showGames; if(showGames) $store.downloadManager.loadGamePreview('send-picker-games-preview')"
+                class="text-base text-[var(--color-primary)] hover:underline mt-2 flex items-center gap-1">
+            <svg class="h-4 w-4 transition-transform" :class="showGames && 'rotate-90'" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+            </svg>
+            <span x-text="showGames ? 'Hide games' : 'Show games'"></span>
+        </button>
+        <div x-show="showGames" x-collapse class="mt-2" id="send-picker-games-preview"></div>
+    </div>
+
+    <!-- Device picker -->
+    <div hx-get="{% url 'devices:device_picker' %}?transfer_only=1"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+    </div>
+</div>
+<div class="retro-modal-footer">
+    <button @click="$store.modals.close('send-picker')" class="retro-btn">Cancel</button>
+    <button @click="$store.modals.close('send-picker'); $store.downloadManager.startSend('{% url "romcollections:send_collection" collection.creator collection.slug %}', {})" class="retro-btn retro-btn-purple">Send</button>
+</div>
+{% endretro_modal %}
+
+<!-- Send progress modal -->
+{% retro_modal id="send-progress" title="" close_btn=False %}
+<div class="retro-modal-body">
+    <div id="send-progress-content"></div>
+</div>
+{% endretro_modal %}
+
+<!-- Edit Notes Modal -->
+{% retro_modal id="edit-notes" title="Edit Notes" %}
+<form id="edit-notes-form"
+      hx-post=""
+      hx-target="#edit-notes-target"
+      hx-swap="outerHTML">
+    {% csrf_token %}
+    <div class="retro-modal-body">
+        <div class="mb-4">
+            <label class="block text-base font-medium mb-2">
+                Game: <span id="edit-notes-game-name" class="text-[var(--color-primary)]"></span>
+            </label>
+        </div>
+        <textarea
+            id="edit-notes-textarea"
+            name="notes"
+            rows="8"
+            maxlength="1000"
+            @input="notesCharCount = $el.value.length"
+            class="retro-input w-full"
+            placeholder="Add notes about this game..."
+            autofocus></textarea>
+        <p class="text-base text-[var(--color-text-muted)] mt-1">
+            <span x-text="notesCharCount"></span>/1000 characters
+        </p>
+    </div>
+    <div class="retro-modal-footer">
+        <button type="button" @click="$store.modals.close('edit-notes')" class="retro-btn">Cancel</button>
+        <button type="submit" class="retro-btn retro-btn-primary">Save</button>
+    </div>
+</form>
+{% endretro_modal %}
+
+<!-- Send single game modal -->
+{% retro_modal id="send-single-game" title="Send to Device" %}
+<div class="retro-modal-body">
+    <div hx-get="{% url 'devices:device_picker' %}?transfer_only=1"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+    </div>
+</div>
+<div class="retro-modal-footer">
+    <button @click="closeSendModal()" class="retro-btn">Cancel</button>
+    <button @click="startSendForGame()" class="retro-btn retro-btn-purple">Send</button>
+</div>
+{% endretro_modal %}
+
+<!-- Export picker modal (kept for potential future use, but main Export button now goes directly to ZIP) -->
+{% retro_modal id="export-picker" title="Export Collection" %}
+<div class="retro-modal-body">
+    <p class="mb-4 text-[var(--color-text-muted)]">Choose how to export "{{ collection.name }}":</p>
+    <div class="space-y-3">
+        <button @click="$store.modals.close('export-picker'); startExportWithImages()"
+                class="block w-full text-left p-4 border-2 border-[var(--color-primary)] bg-[var(--color-primary)]/10 hover:bg-[var(--color-primary)]/20 transition-colors rounded">
+            <div class="flex items-start gap-3">
+                <svg class="h-6 w-6 flex-shrink-0 text-[var(--color-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+                <div>
+                    <span class="font-medium block">ZIP with Images</span>
+                    <span class="text-base text-[var(--color-text-muted)]">Collection data + game metadata + all images (covers, screenshots, etc.)</span>
+                </div>
+            </div>
+        </button>
+        <a href="{% url 'romcollections:export_collection' collection.creator collection.slug %}"
+           @click="$store.modals.close('export-picker')"
+           class="block p-4 border-2 border-[var(--color-border)] hover:border-[var(--color-text-muted)] transition-colors rounded">
+            <div class="flex items-start gap-3">
+                <svg class="h-6 w-6 flex-shrink-0 text-[var(--color-text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                <div>
+                    <span class="font-medium block">JSON Only</span>
+                    <span class="text-base text-[var(--color-text-muted)]">Just the collection data (game names, systems, notes)</span>
+                </div>
+            </div>
+        </a>
+    </div>
+</div>
+<div class="retro-modal-footer">
+    <button @click="$store.modals.close('export-picker')" class="retro-btn">Cancel</button>
+</div>
+{% endretro_modal %}
+
+<!-- Export progress modal -->
+{% retro_modal id="export-progress" title="Exporting Collection" close_btn=False %}
+<div class="retro-modal-body" id="export-progress-content">
+    <div class="text-center py-4">
+        <svg class="animate-spin h-8 w-8 mx-auto text-[var(--color-primary)]" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <p class="mt-2 text-[var(--color-text-muted)]">Starting export...</p>
+    </div>
+</div>
+{% endretro_modal %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Export with images function
+async function startCollectionExportWithImages() {
+    Alpine.store('modals').open('export-progress');
+    Alpine.store('modals').lock('export-progress');
+    try {
+        const response = await fetch('{% url "romcollections:start_export_with_images" collection.creator collection.slug %}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+        });
+        if (!response.ok) throw new Error('Failed to start export');
+        const data = await response.json();
+        htmx.ajax('GET', '{% url "romcollections:export_status" collection.creator collection.slug %}?job_id=' + data.job_id, {
+            target: '#export-progress-content',
+            swap: 'innerHTML'
+        });
+    } catch (err) {
+        Alpine.store('modals').unlock('export-progress');
+        document.getElementById('export-progress-content').innerHTML = '<div class="text-center py-4"><p class="text-[var(--color-danger)]">Export failed. Please try again.</p><button class="retro-btn mt-4" onclick="Alpine.store(\'modals\').close(\'export-progress\')">Close</button></div>';
+    }
+}
+
+// Configure Alpine stores (must happen during alpine:init)
+document.addEventListener('alpine:init', () => {
+    // Configure search filters store for collection mode
+    Alpine.store('searchFilters').configure({
+        collection: '{{ collection.slug }}',
+        creator: '{{ collection.creator }}',
+        target: '#collection-entries-container'
+    });
+    // Set initial sort from page context
+    Alpine.store('searchFilters').sort = '{{ current_sort|default:"position" }}';
+    Alpine.store('searchFilters').order = '{{ current_order|default:"asc" }}';
+
+    // Configure selection store
+    Alpine.store('selection').configure({
+        itemType: 'entry',
+        toolbarId: 'selection-toolbar',
+        countId: 'selection-count',
+        checkboxClass: 'entry-checkbox',
+        clearBtnId: 'clear-selection',
+        containerIdForSwap: 'entries-list',
+        onUpdate: function(sel) {
+            // Count matched entries
+            let matchedCount = 0;
+            sel.getIds().forEach(id => {
+                const meta = sel.getMeta(id);
+                if (meta?.isMatched) matchedCount++;
+            });
+
+            const sendBtn = document.getElementById('send-selected-btn');
+            const downloadBtn = document.getElementById('download-selected-btn');
+            const count = sel.size;
+
+            if (matchedCount < count) {
+                sendBtn.innerHTML = `<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg> Send ${matchedCount} Matched`;
+                downloadBtn.innerHTML = `<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> Download ${matchedCount} Matched`;
+            } else {
+                sendBtn.innerHTML = `<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg> Send Selected`;
+                downloadBtn.innerHTML = `<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> Download Selected`;
+            }
+
+            const noMatches = matchedCount === 0;
+            sendBtn.disabled = noMatches;
+            downloadBtn.disabled = noMatches;
+            sendBtn.classList.toggle('opacity-50', noMatches);
+            sendBtn.classList.toggle('cursor-not-allowed', noMatches);
+            downloadBtn.classList.toggle('opacity-50', noMatches);
+            downloadBtn.classList.toggle('cursor-not-allowed', noMatches);
+        }
+    });
+});
+
+// Initialize Sortable.js for drag-and-drop reordering (third-party library)
+document.addEventListener('DOMContentLoaded', function() {
+    const entriesList = document.getElementById('entries-list');
+    if (entriesList) {
+        const sortable = new Sortable(entriesList, {
+            handle: '.drag-handle',
+            animation: 150,
+            filter: function() {
+                // Disable sorting when filters are active
+                return Alpine.store('searchFilters').hasActiveFilters();
+            },
+            onEnd: function() {
+                // Don't save order if filters are active
+                if (Alpine.store('searchFilters').hasActiveFilters()) return;
+                const order = Array.from(entriesList.querySelectorAll('[data-entry-id]'))
+                    .map(card => parseInt(card.dataset.entryId));
+                fetch('{% url "romcollections:reorder_entries" collection.creator collection.slug %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                    body: JSON.stringify({ order: order }),
+                });
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

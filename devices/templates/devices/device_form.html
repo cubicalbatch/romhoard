@@ -1,0 +1,365 @@
+{% extends "base.html" %}
+
+{% block title %}{% if device %}Edit{% else %}New{% endif %} Device - RomHoard{% endblock %}
+
+{% block content %}
+<!-- Header -->
+    <div class="mb-8">
+        <h1 class="retro-heading retro-heading-lg">{% if device %}Edit Device{% else %}New Device{% endif %}</h1>
+        <p class="text-[var(--color-text-muted)] mt-1">
+            {% if device %}Update device settings{% else %}Configure a new retro gaming device{% endif %}
+        </p>
+    </div>
+
+    {% if error %}
+    <div class="retro-system-card retro-system-card-static mb-6">
+        <div class="retro-system-card-header retro-header-red flex items-center gap-2 !text-left">
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <h3>Error</h3>
+        </div>
+        <div class="retro-system-card-body !text-left !items-start">
+            <p class="text-[var(--color-danger)]">{{ error }}</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <form method="post" x-data="{
+        hasWifi: {% if device %}{{ device.has_wifi|yesno:'true,false' }}{% else %}true{% endif %},
+        presets: [],
+        selectedPreset: '',
+        showSystems: false,
+        async init() {
+            try {
+                const resp = await fetch('{% url 'devices:preset_list' %}');
+                const data = await resp.json();
+                this.presets = data.presets;
+            } catch (e) {
+                console.error('Failed to load presets:', e);
+            }
+        },
+        async loadPreset() {
+            if (!this.selectedPreset) return;
+            try {
+                const resp = await fetch(`{% url 'devices:preset_list' %}`.replace(/\/$/, '') + '/' + this.selectedPreset + '/');
+                const data = await resp.json();
+
+                // Apply folder config
+                if (data.folders) {
+                    if (data.folders.root_path) {
+                        document.querySelector('[name=root_path]').value = data.folders.root_path;
+                    }
+                    if (data.folders.system_paths) {
+                        document.querySelector('[name=system_paths]').value = JSON.stringify(data.folders.system_paths, null, 2);
+                    }
+                }
+
+                // Apply image config - use $nextTick since fields are in conditional template
+                if (data.images) {
+                    this.includeImages = true;
+                    this.$nextTick(() => {
+                        document.querySelector('[name=include_images]').checked = true;
+                        if (data.images.path_template) {
+                            document.querySelector('[name=image_path_template]').value = data.images.path_template;
+                        }
+                        if (data.images.max_width !== null && data.images.max_width !== undefined) {
+                            document.querySelector('[name=image_max_width]').value = data.images.max_width;
+                        } else {
+                            document.querySelector('[name=image_max_width]').value = '';
+                        }
+                        if (data.images.image_type) {
+                            document.querySelector('[name=image_type]').value = data.images.image_type;
+                        }
+                    });
+                }
+
+                // Apply transfer config - use $nextTick since fields are in conditional template
+                if (data.transfer && this.hasWifi) {
+                    this.$nextTick(() => {
+                        if (data.transfer.protocol) {
+                            document.querySelector('[name=transfer_type]').value = data.transfer.protocol;
+                        }
+                        if (data.transfer.port) {
+                            document.querySelector('[name=transfer_port]').value = data.transfer.port;
+                        }
+                        if (data.transfer.user) {
+                            document.querySelector('[name=transfer_user]').value = data.transfer.user;
+                        }
+                        if (data.transfer.password) {
+                            document.querySelector('[name=transfer_password]').value = data.transfer.password;
+                        }
+                        if (data.transfer.path_prefix) {
+                            document.querySelector('[name=transfer_path_prefix]').value = data.transfer.path_prefix;
+                        }
+                    });
+                }
+            } catch (e) {
+                console.error('Failed to load preset:', e);
+            }
+        },
+        includeImages: {% if device %}{{ device.include_images|yesno:'true,false' }}{% else %}false{% endif %}
+    }">
+        {% csrf_token %}
+
+        <!-- Device Info Section -->
+        <div class="retro-system-card retro-system-card-static mb-6">
+            <div class="retro-system-card-header retro-header-purple flex items-center gap-2 !text-left">
+                <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5S18.67 9 19.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+                </svg>
+                <h3>Device Information</h3>
+            </div>
+            <div class="retro-system-card-body !text-left !items-start">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+                    <div>
+                        <label for="name" class="block text-base font-medium text-[var(--color-text)] mb-2">
+                            Name <span class="text-[var(--color-danger)]">*</span>
+                        </label>
+                        <input type="text" name="name" id="name" required
+                               value="{% if device %}{{ device.name }}{% endif %}"
+                               placeholder="e.g., Miyoo Mini Plus"
+                               class="retro-input w-full">
+                        <p class="mt-1 text-base text-[var(--color-text-muted)]">
+                            The name you call this device
+                        </p>
+                    </div>
+
+                    <div class="sm:col-span-1">
+                        <label for="description" class="block text-base font-medium text-[var(--color-text)] mb-2">
+                            Description
+                        </label>
+                        <input type="text" name="description" id="description"
+                               value="{% if device %}{{ device.description }}{% endif %}"
+                               placeholder="Optional notes about this device"
+                               class="retro-input w-full">
+                    </div>
+                </div>
+
+                <!-- Has WiFi checkbox -->
+                <div class="mt-4 pt-4 border-t-2 border-[var(--color-border)]">
+                    <label class="inline-flex items-center gap-3 cursor-pointer">
+                        <input type="checkbox" name="has_wifi" id="has_wifi"
+                               x-model="hasWifi"
+                               {% if device.has_wifi or not device %}checked{% endif %}
+                               class="retro-checkbox">
+                        <div>
+                            <span class="font-medium text-[var(--color-text)]">Has WiFi</span>
+                            <p class="text-base text-[var(--color-text-muted)]">
+                                Enable this if the device can receive ROMs via FTP/SFTP
+                            </p>
+                        </div>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Load Preset Section -->
+        <div class="retro-system-card retro-system-card-static mb-6" x-show="presets.length > 0">
+            <div class="retro-system-card-header retro-header-blue flex items-center gap-2 !text-left">
+                <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                <h3>Load Preset</h3>
+            </div>
+            <div class="retro-system-card-body !text-left !items-start">
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <div class="flex-1 sm:max-w-md">
+                        <select x-model="selectedPreset" class="retro-select w-full">
+                            <option value="">Select a preset to load...</option>
+                            <template x-for="preset in presets" :key="preset.slug">
+                                <option :value="preset.slug" x-text="preset.name"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <button type="button" @click="loadPreset()" :disabled="!selectedPreset"
+                            class="retro-btn retro-btn-primary whitespace-nowrap"
+                            :class="{ 'opacity-50 cursor-not-allowed': !selectedPreset }">
+                        Load Preset
+                    </button>
+                </div>
+                <p class="mt-2 text-base text-[var(--color-text-muted)]">
+                    Load a preset to auto-fill folder paths, image settings, and transfer configuration
+                </p>
+            </div>
+        </div>
+
+        <!-- Transfer Configuration Section -->
+        <div class="retro-system-card retro-system-card-static mb-6">
+            <div class="retro-system-card-header retro-header-teal flex items-center gap-2 !text-left">
+                <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/>
+                </svg>
+                <h3>Transfer Configuration</h3>
+            </div>
+            <div class="retro-system-card-body !text-left !items-start">
+                <template x-if="hasWifi">
+                    <div>
+                        {% include "devices/_transfer_config_form.html" with device=device expand_details=True %}
+                    </div>
+                </template>
+                <template x-if="!hasWifi">
+                    <div class="p-4 text-center text-[var(--color-text-muted)]">
+                        <p>Transfer configuration is disabled because this device doesn't have WiFi.</p>
+                        <p class="text-base mt-2">Enable "Has WiFi" above to configure FTP/SFTP settings.</p>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Image Configuration Section -->
+        <div class="retro-system-card retro-system-card-static mb-6">
+            <div class="retro-system-card-header retro-header-green flex items-center gap-2 !text-left">
+                <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+                <h3>Image Configuration</h3>
+            </div>
+            <div class="retro-system-card-body !text-left !items-start">
+                <!-- Include Images Toggle -->
+                <div class="mb-4">
+                    <label class="inline-flex items-center gap-3 cursor-pointer">
+                        <input type="checkbox" name="include_images" x-model="includeImages" class="retro-checkbox">
+                        <div>
+                            <span class="font-medium text-[var(--color-text)]">Include Images</span>
+                            <p class="text-base text-[var(--color-text-muted)]">
+                                Send box art/screenshots with games when transferring or downloading
+                            </p>
+                        </div>
+                    </label>
+                </div>
+
+                <template x-if="includeImages">
+                    <div class="border-t-2 border-[var(--color-border)] pt-4">
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <!-- Image Type -->
+                            <div>
+                                <label class="block text-base font-medium text-[var(--color-text)] mb-2">
+                                    Image Type
+                                </label>
+                                <select name="image_type" class="retro-select w-full">
+                                    <option value="cover" {% if device.image_type == 'cover' or not device %}selected{% endif %}>Box Art</option>
+                                    <option value="screenshot" {% if device.image_type == 'screenshot' %}selected{% endif %}>Screenshot</option>
+                                </select>
+                                <p class="mt-1 text-base text-[var(--color-text-muted)]">
+                                    Which image type to include
+                                </p>
+                            </div>
+
+                            <!-- Max Width -->
+                            <div>
+                                <label class="block text-base font-medium text-[var(--color-text)] mb-2">
+                                    Max Image Width (px)
+                                </label>
+                                <input type="number" name="image_max_width"
+                                       value="{{ device.image_max_width|default:'' }}"
+                                       placeholder="Leave empty for original size"
+                                       min="50" max="2000"
+                                       class="retro-input w-full">
+                                <p class="mt-1 text-base text-[var(--color-text-muted)]">
+                                    Resize images to this maximum width (maintains aspect ratio)
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Path Template (full width) -->
+                        <div class="mt-4">
+                            <label class="block text-base font-medium text-[var(--color-text)] mb-2">
+                                Image Path Template
+                            </label>
+                            <input type="text" name="image_path_template"
+                                   value="{{ device.image_path_template|default:'' }}"
+                                   placeholder="{root_path}/{system}/Imgs/{romname}.png"
+                                   class="retro-input w-full font-mono">
+                            <p class="mt-1 text-base text-[var(--color-text-muted)]">
+                                Placeholders: <code class="retro-code-inline text-base">{root_path}</code>,
+                                <code class="retro-code-inline text-base">{system}</code>,
+                                <code class="retro-code-inline text-base">{romname}</code>,
+                                <code class="retro-code-inline text-base">{romname_ext}</code>
+                            </p>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- ROM Organization Section -->
+        <div class="retro-system-card retro-system-card-static mb-6">
+            <div class="retro-system-card-header retro-header-navy flex items-center gap-2 !text-left">
+                <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                </svg>
+                <h3>ROM Organization</h3>
+            </div>
+            <div class="retro-system-card-body !text-left !items-start w-full">
+                <div class="w-full">
+                    <label for="root_path" class="block text-base font-medium text-[var(--color-text)] mb-2">
+                        ROM Folder
+                    </label>
+                    <input type="text" name="root_path" id="root_path"
+                           value="{% if device %}{{ device.root_path }}{% else %}Roms/{% endif %}"
+                           placeholder="e.g., Roms/"
+                           class="retro-input w-full lg:w-1/2 font-mono">
+                    <p class="mt-1 text-base text-[var(--color-text-muted)]">
+                        Folder name for ROMs in downloads and transfers (e.g., Roms/, ROMS/, Games/)
+                    </p>
+                </div>
+
+                <!-- System Paths -->
+                <div class="w-full mt-4 pt-4 border-t-2 border-[var(--color-border)]">
+                    <label for="system_paths" class="block text-base font-medium text-[var(--color-text)] mb-2">
+                        System Paths (JSON)
+                    </label>
+                    <textarea name="system_paths" id="system_paths" rows="16"
+                              class="retro-input w-full font-mono text-base">{% if system_paths_json %}{{ system_paths_json }}{% else %}{
+  "gba": {"folder": "GBA"},
+  "snes": {"folder": "SFC"},
+  "ps1": {"folder": "PS", "game_folders": true}
+}{% endif %}</textarea>
+                    <div class="mt-3 p-3 bg-[var(--color-bg)] border-2 border-[var(--color-border)]">
+                        <p class="text-base font-medium text-[var(--color-text)] mb-2">Configuration Options:</p>
+                        <ul class="text-base text-[var(--color-text-muted)] space-y-1">
+                            <li><code class="retro-code-inline">"folder"</code> - Custom folder name for this system</li>
+                            <li><code class="retro-code-inline">"game_folders"</code> - Create subfolders per game (optional, defaults to false)</li>
+                        </ul>
+                        <button type="button" @click="showSystems = !showSystems"
+                                class="mt-3 text-base text-[var(--color-primary)] hover:underline flex items-center gap-1">
+                            <svg class="w-3 h-3 transition-transform" :class="{ 'rotate-90': showSystems }" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                            </svg>
+                            <span x-text="showSystems ? 'Hide available systems' : 'Show available systems'"></span>
+                        </button>
+                        <div x-show="showSystems" x-collapse class="mt-2">
+                            <span class="block text-base text-[var(--color-text-muted)]">
+                            {% for system in systems %}
+                            <code class="retro-code-inline text-base mr-1 mb-1 inline-block">{{ system.slug }}</code>
+                            {% endfor %}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex flex-col-reverse sm:flex-row justify-end gap-3">
+            {% if device %}
+            <div class="mr-auto">
+                <a href="{% url 'devices:export_device' device.slug %}" class="retro-btn flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                    </svg>
+                    <span>Export</span>
+                </a>
+            </div>
+            {% endif %}
+            <a href="{% url 'devices:device_list' %}"
+               class="retro-btn text-center">
+                Cancel
+            </a>
+            <button type="submit" class="retro-btn retro-btn-primary">
+                {% if device %}Save Changes{% else %}Create Device{% endif %}
+            </button>
+        </div>
+    </form>
+{% endblock %}

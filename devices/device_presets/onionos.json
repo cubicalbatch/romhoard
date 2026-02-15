@@ -1,0 +1,162 @@
+{
+  "slug": "onionos",
+  "name": "OnionOS",
+  "description": "Configuration for OnionOS on Miyoo Mini and Miyoo Mini Plus devices",
+  "tags": [
+    "onionos",
+    "miyoo",
+    "miyoo-mini",
+    "miyoo-mini-plus"
+  ],
+  "folders": {
+    "root_path": "Roms/",
+    "system_paths": {
+      "gba": {
+        "folder": "GBA"
+      },
+      "gbc": {
+        "folder": "GBC"
+      },
+      "gb": {
+        "folder": "GB"
+      },
+      "snes": {
+        "folder": "SFC"
+      },
+      "nes": {
+        "folder": "FC"
+      },
+      "genesis": {
+        "folder": "MD"
+      },
+      "sms": {
+        "folder": "MS"
+      },
+      "gg": {
+        "folder": "GG"
+      },
+      "psx": {
+        "folder": "PS"
+      },
+      "arcade": {
+        "folder": "ARCADE"
+      },
+      "fbneo": {
+        "folder": "FBNEO"
+      },
+      "neogeo": {
+        "folder": "NEOGEO"
+      },
+      "neogeocd": {
+        "folder": "NEOCD"
+      },
+      "atari2600": {
+        "folder": "ATARI"
+      },
+      "atari5200": {
+        "folder": "FIFTYTWOHUNDRED"
+      },
+      "atari7800": {
+        "folder": "SEVENTYEIGHTHUNDRED"
+      },
+      "lynx": {
+        "folder": "LYNX"
+      },
+      "ngp": {
+        "folder": "NGP"
+      },
+      "pcengine": {
+        "folder": "PCE"
+      },
+      "pcenginecd": {
+        "folder": "PCECD"
+      },
+      "wonderswan": {
+        "folder": "WS"
+      },
+      "wonderswancolor": {
+        "folder": "WSC"
+      },
+      "segacd": {
+        "folder": "SEGACD"
+      },
+      "sega32x": {
+        "folder": "THIRTYTWOX"
+      },
+      "virtualboy": {
+        "folder": "VB"
+      },
+      "coleco": {
+        "folder": "COLECO"
+      },
+      "intellivision": {
+        "folder": "INTELLIVISION"
+      },
+      "msx": {
+        "folder": "MSX"
+      },
+      "dos": {
+        "folder": "DOS"
+      },
+      "scummvm": {
+        "folder": "SCUMMVM"
+      },
+      "fds": {
+        "folder": "FDS"
+      },
+      "gameandwatch": {
+        "folder": "GW"
+      },
+      "amstradcpc": {
+        "folder": "CPC"
+      },
+      "c64": {
+        "folder": "COMMODORE"
+      },
+      "amiga": {
+        "folder": "AMIGA"
+      },
+      "zxspectrum": {
+        "folder": "ZXS"
+      },
+      "nds": {
+        "folder": "NDS"
+      },
+      "poke": {
+        "folder": "POKE"
+      },
+      "sgb": {
+        "folder": "SGB"
+      },
+      "cps1": {
+        "folder": "CPS1"
+      },
+      "cps2": {
+        "folder": "CPS2"
+      },
+      "cps3": {
+        "folder": "CPS3"
+      },
+      "vectrex": {
+        "folder": "VECTREX"
+      },
+      "atarist": {
+        "folder": "ATARIST"
+      },
+      "supergrafx": {
+        "folder": "SGFX"
+      }
+    }
+  },
+  "images": {
+    "path_template": "{root_path}/{system}/Imgs/{romname}.png",
+    "max_width": 250,
+    "image_type": "cover"
+  },
+  "transfer": {
+    "protocol": "ftp",
+    "port": 21,
+    "anonymous": true,
+    "path_prefix": "/"
+  }
+}

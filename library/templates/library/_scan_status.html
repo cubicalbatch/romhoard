@@ -1,0 +1,199 @@
+{% load duration %}
+<div id="scan-status-container"
+     {% if active_jobs %}
+     hx-get="{% url 'library:scan_status' %}"
+     hx-trigger="every 3s"
+     hx-swap="outerHTML"
+     {% endif %}>
+<!-- Hidden element for Alpine.js to track active scan jobs -->
+<div id="scan-status-data" class="hidden"
+     data-active-job-ids="{% for job in active_jobs %}{{ job.pk }}{% if not forloop.last %},{% endif %}{% endfor %}">
+</div>
+{% if active_jobs %}
+<div class="retro-system-card retro-system-card-static mb-6">
+    <div class="retro-system-card-header retro-header-teal flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+        <h3>Active Scans</h3>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start w-full">
+        {% for job in active_jobs %}
+        <div class="w-full border-l-4 {% if job.status == 'running' %}border-[var(--color-primary)]{% else %}border-yellow-600{% endif %} bg-[var(--color-bg)] p-4 mb-4">
+            <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
+                <div class="min-w-0 flex-1">
+                    <div class="font-medium text-[var(--color-text)] break-all">{{ job.path }}</div>
+                    <div class="text-base text-[var(--color-text-muted)]">
+                        Status: <span class="capitalize {% if job.status == 'running' %}text-[var(--color-primary)]{% else %}text-yellow-600{% endif %}">{{ job.status }}</span>
+                        {% if job.running_duration %}
+                        - Running for {{ job.running_duration|format_duration }}
+                        {% elif job.started_at %}
+                        - Started: {{ job.started_at|timesince }} ago
+                        {% endif %}
+                    </div>
+                </div>
+                <form method="post" action="{% url 'library:cancel_scan_job' job.pk %}" class="flex-shrink-0">
+                    {% csrf_token %}
+                    <button type="submit" class="retro-btn retro-btn-danger retro-btn-sm">
+                        Cancel
+                    </button>
+                </form>
+            </div>
+
+            {% if job.status == 'running' %}
+            {% if job.files_processed == 0 %}
+            <div class="mt-3 text-base text-center text-[var(--color-text-muted)]">
+                <div class="flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Initializing scan...</span>
+                </div>
+            </div>
+            {% else %}
+            <div class="grid grid-cols-3 gap-2 mt-3 text-base">
+                <div class="text-center">
+                    <div class="text-lg font-semibold text-[var(--color-primary)] flex items-center justify-center gap-1">
+                        <svg class="w-3 h-3 animate-spin opacity-50" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        {{ job.files_processed|default:0 }}
+                    </div>
+                    <div class="text-base text-[var(--color-text-muted)]">Files</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-lg font-semibold text-[var(--color-success)]">{{ job.roms_found|default:0 }}</div>
+                    <div class="text-base text-[var(--color-text-muted)]">ROMs</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-lg font-semibold text-[var(--color-teal)]">{{ job.images_found|default:0 }}</div>
+                    <div class="text-base text-[var(--color-text-muted)]">Local Images</div>
+                </div>
+            </div>
+            {% if job.current_directory %}
+            <div class="mt-2 text-base text-[var(--color-text-muted)] truncate" title="{{ job.current_directory }}">
+                {{ job.current_directory }}
+            </div>
+            {% endif %}
+            {% endif %}
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if recent_jobs %}
+<details class="retro-system-card mb-6"
+        x-data="{ open: localStorage.getItem('recentScansOpen') === 'true' }"
+        x-init="$el.open = open"
+        @toggle="open = $el.open; localStorage.setItem('recentScansOpen', open)">
+    <summary class="retro-system-card-header retro-header-navy cursor-pointer flex items-center gap-2 !text-left list-none">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <h3 class="flex-1">Recent Scans ({{ recent_jobs|length }})</h3>
+        <svg class="w-4 h-4 text-white transition-transform details-arrow" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+        </svg>
+    </summary>
+    <div class="retro-system-card-body !text-left !items-start w-full">
+        {% for job in recent_jobs %}
+        <div class="w-full border-l-4 {% if job.status == 'completed' %}border-[var(--color-success)]{% elif job.status == 'cancelled' %}border-yellow-600{% else %}border-[var(--color-danger)]{% endif %} bg-[var(--color-bg)] p-4 mb-4">
+            <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-2">
+                <div class="min-w-0 flex-1">
+                    <div class="font-medium text-[var(--color-text)] break-all">{{ job.path }}</div>
+                    <div class="text-base text-[var(--color-text-muted)]">
+                        Status: <span class="capitalize {% if job.status == 'completed' %}text-[var(--color-success)]{% elif job.status == 'cancelled' %}text-yellow-600{% else %}text-[var(--color-danger)]{% endif %}">{{ job.status }}</span>
+                        {% if job.total_duration %}
+                        - Duration: {{ job.total_duration|format_duration }}
+                        {% endif %}
+                        {% if job.completed_at %}
+                        - Completed: {{ job.completed_at|timesince }} ago
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="text-base text-[var(--color-text-muted)] flex-shrink-0">
+                    Task ID: {{ job.task_id }}
+                </div>
+            </div>
+
+            {% if job.status == 'completed' %}
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mt-3">
+                <div class="text-center">
+                    <div class="text-lg font-semibold text-[var(--color-success)]">{{ job.added }}</div>
+                    <div class="text-base text-[var(--color-text-muted)]">Added</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-lg font-semibold text-[var(--color-text-muted)]">{{ job.skipped }}</div>
+                    <div class="text-base text-[var(--color-text-muted)]">Skipped</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-lg font-semibold text-yellow-600">{{ job.marked_missing }}</div>
+                    <div class="text-base text-[var(--color-text-muted)]">Missing</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-lg font-semibold text-[var(--color-teal)]">{{ job.images_added }}</div>
+                    <div class="text-base text-[var(--color-text-muted)]">Local Imgs</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-lg font-semibold text-[var(--color-text-muted)]">{{ job.images_skipped }}</div>
+                    <div class="text-base text-[var(--color-text-muted)]">Img Skip</div>
+                </div>
+            </div>
+            {% if job.metadata_queued > 0 %}
+            <div class="mt-3 pt-3 border-t border-[var(--color-border)]">
+                <div class="text-base text-[var(--color-text-muted)] flex items-center gap-2">
+                    <svg class="w-4 h-4 text-[var(--color-primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                    </svg>
+                    <span>Metadata queued for {{ job.metadata_queued }} game{{ job.metadata_queued|pluralize }} -</span>
+                    <a href="{% url 'library:metadata' %}" class="text-[var(--color-primary)] hover:underline">
+                        View progress
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+            {% endif %}
+
+            {% if job.errors %}
+            <div class="mt-2">
+                <details class="text-base"
+                        x-data="{
+                            open: localStorage.getItem('scanErrors_{{ job.task_id }}') === 'true',
+                            copied: false,
+                            copyErrors() {
+                                navigator.clipboard.writeText(this.$refs.allErrors.textContent.trim());
+                                this.copied = true;
+                                setTimeout(() => this.copied = false, 2000);
+                            }
+                        }"
+                        x-init="$el.open = open"
+                        @toggle="open = $el.open; localStorage.setItem('scanErrors_{{ job.task_id }}', open)">
+                    <summary class="cursor-pointer text-[var(--color-danger)] hover:opacity-80 flex items-center gap-2">
+                        <span>{{ job.errors|length }} error{% if job.errors|length != 1 %}s{% endif %}</span>
+                        <button type="button" @click.prevent.stop="copyErrors()"
+                                class="text-base px-1.5 py-0.5 bg-[var(--color-danger)]/20 hover:bg-[var(--color-danger)]/30 rounded"
+                                x-text="copied ? 'Copied!' : 'Copy'"></button>
+                    </summary>
+                    <div class="mt-1 bg-[var(--color-danger)]/10 rounded p-2 max-h-32 overflow-y-auto">
+                        {% for error in job.errors|slice:":5" %}
+                        <div class="text-[var(--color-danger)]">{{ error }}</div>
+                        {% endfor %}
+                        {% if job.errors|length > 5 %}
+                        <div class="text-[var(--color-danger)] opacity-70">... and {{ job.errors|length|add:"-5" }} more</div>
+                        {% endif %}
+                    </div>
+                    <pre x-ref="allErrors" class="hidden">{% for error in job.errors %}{{ error }}
+{% endfor %}</pre>
+                </details>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</details>
+{% endif %}
+</div>

@@ -1,0 +1,63 @@
+{
+  "slug": "arkos",
+  "name": "ArkOS",
+  "description": "Configuration for ArkOS on RK3326/RK3566 Rockchip handhelds (archived, replaced by dArkOS)",
+  "tags": ["arkos", "darkos", "emulationstation", "rg351", "rg353", "rg503", "rgb30"],
+
+  "folders": {
+    "root_path": "roms/",
+    "system_paths": {
+      "gba": {"folder": "gba"},
+      "gbc": {"folder": "gbc"},
+      "gb": {"folder": "gb"},
+      "snes": {"folder": "snes"},
+      "nes": {"folder": "nes"},
+      "genesis": {"folder": "genesis"},
+      "sms": {"folder": "mastersystem"},
+      "gg": {"folder": "gamegear"},
+      "psx": {"folder": "psx"},
+      "n64": {"folder": "n64"},
+      "nds": {"folder": "nds"},
+      "psp": {"folder": "psp"},
+      "arcade": {"folder": "arcade"},
+      "neogeo": {"folder": "neogeo"},
+      "atari2600": {"folder": "atari2600"},
+      "atari5200": {"folder": "atari5200"},
+      "atari7800": {"folder": "atari7800"},
+      "lynx": {"folder": "atarilynx"},
+      "ngp": {"folder": "ngp"},
+      "ngpc": {"folder": "ngpc"},
+      "pcengine": {"folder": "pcengine"},
+      "pcenginecd": {"folder": "pcenginecd"},
+      "wonderswan": {"folder": "wonderswan"},
+      "wonderswancolor": {"folder": "wonderswancolor"},
+      "segacd": {"folder": "segacd"},
+      "sega32x": {"folder": "sega32x"},
+      "saturn": {"folder": "saturn"},
+      "dreamcast": {"folder": "dreamcast"},
+      "virtualboy": {"folder": "virtualboy"},
+      "coleco": {"folder": "coleco"},
+      "intellivision": {"folder": "intellivision"},
+      "vectrex": {"folder": "vectrex"},
+      "msx": {"folder": "msx"},
+      "dos": {"folder": "dos"},
+      "scummvm": {"folder": "scummvm"},
+      "fds": {"folder": "fds"},
+      "gameandwatch": {"folder": "gameandwatch"}
+    }
+  },
+
+  "images": {
+    "path_template": "{root_path}/{system}/images/{romname}-image.png",
+    "max_width": null,
+    "image_type": "mixed"
+  },
+
+  "transfer": {
+    "protocol": "sftp",
+    "port": 22,
+    "user": "ark",
+    "password": "ark",
+    "path_prefix": "/roms"
+  }
+}

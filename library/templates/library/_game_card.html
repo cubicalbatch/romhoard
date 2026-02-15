@@ -1,0 +1,81 @@
+{# Mobile game card. Requires: game object with pk, name, wheel_mini_image, rating, system.slug #}
+<div class="retro-card">
+    <div class="retro-card-body">
+        {# Top row: checkbox (left) + wheel (center) + rating (right) #}
+        <div class="flex items-center gap-2 mb-3">
+            <input type="checkbox" class="game-checkbox retro-checkbox flex-shrink-0"
+                   data-game-id="{{ game.pk }}"
+                   data-system-slug="{{ game.system.slug }}">
+
+            <a href="{% url 'library:game_detail' game.pk %}" class="flex-1 flex justify-center min-w-0">
+                {% if game.wheel_mini_image %}
+                <img src="{% url 'library:serve_image' game.wheel_mini_image.pk %}"
+                     alt="" class="h-10 max-w-full object-contain" loading="lazy">
+                {% elif game.cover_image %}
+                <img src="{% url 'library:serve_image' game.cover_image.pk %}"
+                     alt="" class="h-10 max-h-10 max-w-full object-contain" loading="lazy">
+                {% else %}
+                <div class="h-10 w-24 bg-[var(--color-bg)] border border-[var(--color-border)] flex items-center justify-center">
+                    <span class="text-base text-[var(--color-text-muted)] truncate px-1">{{ game.name|truncatechars:10 }}</span>
+                </div>
+                {% endif %}
+            </a>
+
+            <div class="flex-shrink-0 w-10 text-right">
+                {% if game.rating %}{% include "components/_rating_badge.html" with rating=game.rating %}{% endif %}
+            </div>
+        </div>
+
+        {# Game name and genres row #}
+        <div class="flex items-start justify-between gap-2 mb-3">
+            <a href="{% url 'library:game_detail' game.pk %}"
+               class="text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] font-medium leading-tight">
+                {{ game.name }}
+            </a>
+            {% if game.genres.all %}
+            <div class="flex flex-wrap gap-1 justify-end flex-shrink-0">
+                {% for genre in game.display_genres %}
+                {% if genre.parent %}
+                <span class="text-base px-1.5 py-0.5 bg-[var(--color-surface-alt)] text-[var(--color-text-muted)] border border-[var(--color-border)]">{{ genre.parent.name }}</span>
+                {% endif %}
+                <span class="text-base px-1.5 py-0.5 bg-[var(--color-surface-alt)] text-[var(--color-text-muted)] border border-[var(--color-border)]">{{ genre.short_name }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+
+        {# Action buttons row #}
+        <div class="flex items-center justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
+            <!-- Add to Collection button -->
+            <button @click="$dispatch('add-to-collection', { gameId: {{ game.pk }}, gameName: '{{ game.name|escapejs }}', systemSlug: '{{ game.system.slug }}' })"
+                    class="retro-btn retro-btn-sm retro-btn-teal"
+                    title="Add to collection">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+            </button>
+            <!-- Visual divider -->
+            <div class="w-px h-6 bg-[var(--color-border)]"></div>
+            <!-- Send button -->
+            <button @click="$dispatch('open-send-for-game', { gameId: {{ game.pk }}, systemSlug: '{{ game.system.slug }}' })"
+                    class="retro-btn retro-btn-sm retro-btn-purple flex items-center gap-1"
+                    title="Send to device">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <span>Send</span>
+            </button>
+            <!-- Download button -->
+            <button @click="$store.gameDownload.handle({{ game.pk }})"
+                    class="retro-btn retro-btn-sm retro-btn-success flex items-center gap-1"
+                    title="Download">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>Download</span>
+            </button>
+        </div>
+    </div>
+</div>

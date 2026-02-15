@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% load retro_components %}
+
+{% block title %}Collections - RomHoard{% endblock %}
+
+
+{% block content %}
+<div x-data="{
+    filterType: 'all',
+    startDownloadWithDevice() {
+        $store.downloadManager.startDownload(`/collections/${$store.downloadManager.collectionCreator}/${$store.downloadManager.collectionSlug}/download/`, {});
+    },
+    startSend() {
+        $store.downloadManager.startSend(`/collections/${$store.downloadManager.collectionCreator}/${$store.downloadManager.collectionSlug}/send/`, {});
+    }
+}">
+<!-- Header -->
+<div class="mb-8 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+    <div>
+        <h2 class="retro-heading retro-heading-lg">Collections</h2>
+        <p class="text-[var(--color-text-muted)] mt-1">
+            {{ total_personal }} personal · {{ total_community }} community
+        </p>
+    </div>
+    <div class="flex gap-2">
+        <a href="{% url 'romcollections:import_collection' %}"
+           class="retro-btn retro-btn-secondary flex items-center gap-2">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+            </svg>
+            <span class="hidden sm:inline">Import</span>
+        </a>
+        <a href="{% url 'romcollections:collection_create' %}"
+           class="retro-btn retro-btn-primary flex items-center gap-2">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            <span class="hidden sm:inline">New Collection</span>
+        </a>
+    </div>
+</div>
+
+<!-- Search and Filter Bar -->
+<div class="mb-8">
+    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 max-w-2xl mx-auto">
+        <input type="text" name="q" id="collection-search"
+            placeholder="Search games, systems, collections..."
+            class="retro-input flex-1 min-w-0 py-2 text-lg"
+            hx-get="{% url 'romcollections:collection_search' %}"
+            hx-trigger="input changed delay:300ms, search"
+            hx-target="#collection-grids-container"
+            hx-include="#filter-type"
+            hx-swap="innerHTML">
+        <select id="filter-type" name="type"
+                class="retro-select w-auto shrink-0"
+                x-model="filterType"
+                hx-get="{% url 'romcollections:collection_search' %}"
+                hx-trigger="change"
+                hx-target="#collection-grids-container"
+                hx-include="#collection-search"
+                hx-swap="innerHTML">
+            <option value="all">All Collections</option>
+            <option value="personal">Personal Only</option>
+            <option value="community">Community Only</option>
+        </select>
+        <button @click="document.getElementById('collection-search').value = ''; filterType = 'all'; htmx.ajax('GET', '{% url 'romcollections:collection_search' %}', {target: '#collection-grids-container', values: {q: '', type: 'all'}})"
+                class="retro-btn retro-btn-secondary shrink-0 py-3">
+            Clear
+        </button>
+    </div>
+</div>
+
+<!-- Collection Grids Container -->
+<div id="collection-grids-container">
+    {% if total_personal == 0 and total_community == 0 %}
+    <!-- Enhanced Empty State -->
+    <div class="retro-system-card">
+        <div class="retro-empty-state">
+            <div class="retro-empty-state-icon">
+                <svg class="h-20 w-20 mx-auto text-[var(--color-text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                          d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                </svg>
+            </div>
+            <h3 class="retro-empty-state-title">No Collections Yet</h3>
+            <p class="retro-empty-state-text">
+                Create a collection to curate your favorite games.<br>
+                Import existing lists or start fresh!
+            </p>
+            <div class="flex flex-col sm:flex-row gap-2 justify-center">
+                <a href="{% url 'romcollections:collection_create' %}"
+                   class="retro-btn retro-btn-primary flex items-center gap-2 justify-center">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Create Collection
+                </a>
+                <a href="{% url 'romcollections:import_collection' %}"
+                   class="retro-btn retro-btn-secondary flex items-center gap-2 justify-center">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                    </svg>
+                    Import JSON
+                </a>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    {% with show_personal=True show_community=True %}
+    {% include "collections/_collection_search_results.html" %}
+    {% endwith %}
+    {% endif %}
+</div>
+
+<!-- Download/Send modals -->
+{% include "components/_download_modals.html" %}
+{% include "library/_send_modal.html" %}
+
+</div>
+{% endblock %}

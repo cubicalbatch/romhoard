@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}{% if is_create %}New Collection{% else %}Edit {{ collection.name }}{% endif %} - RomHoard{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <!-- Breadcrumb -->
+    <div class="text-base mb-4">
+        <a href="{% url 'romcollections:collection_list' %}" class="text-[var(--color-primary)] hover:underline">Collections</a>
+        {% if is_create %}
+        <span class="text-[var(--color-text-muted)]"> / </span>
+        <span class="text-[var(--color-text-muted)]">New</span>
+        {% else %}
+        <span class="text-[var(--color-text-muted)]"> / </span>
+        <a href="{% url 'romcollections:collection_detail' collection.creator collection.slug %}" class="text-[var(--color-primary)] hover:underline">{{ collection.name }}</a>
+        <span class="text-[var(--color-text-muted)]"> / </span>
+        <span class="text-[var(--color-text-muted)]">Edit</span>
+        {% endif %}
+    </div>
+
+    <!-- Header -->
+    <div class="mb-6">
+        <h1 class="retro-heading retro-heading-lg">{% if is_create %}New Collection{% else %}Edit Collection{% endif %}</h1>
+    </div>
+
+    {% if error %}
+    <div class="retro-system-card retro-system-card-static mb-6">
+        <div class="retro-system-card-header retro-header-red flex items-center gap-2 !text-left">
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <h3>Error</h3>
+        </div>
+        <div class="retro-system-card-body !text-left !items-start">
+            <span class="text-[var(--color-danger)]">{{ error }}</span>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="retro-system-card retro-system-card-static">
+        <div class="retro-system-card-header retro-header-teal flex items-center gap-2 !text-left">
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+            </svg>
+            <h3>Collection Details</h3>
+        </div>
+        <div class="retro-system-card-body !text-left !items-start">
+            <form method="POST" class="w-full">
+            {% csrf_token %}
+            <div class="space-y-4">
+                <div>
+                    <label for="name" class="block text-base font-medium mb-1">
+                        Name *
+                    </label>
+                    <input type="text" name="name" id="name" required
+                           value="{% if collection %}{{ collection.name }}{% endif %}"
+                           class="retro-input w-full">
+                </div>
+
+                <div x-data="{ charCount: $refs.desc.value.length }">
+                    <label for="description" class="block text-base font-medium mb-1">
+                        Description
+                    </label>
+                    <textarea name="description" id="description" rows="3"
+                              x-ref="desc"
+                              @input="charCount = $el.value.length"
+                              maxlength="1000"
+                              class="retro-input w-full">{% if collection %}{{ collection.description }}{% endif %}</textarea>
+                    <p class="text-base text-[var(--color-text-muted)] mt-1">
+                        <span x-text="charCount"></span>/1000 characters
+                    </p>
+                </div>
+
+                <div>
+                    <label for="creator" class="block text-base font-medium mb-1">
+                        Creator
+                    </label>
+                    <input type="text" name="creator" id="creator"
+                           value="{% if collection %}{{ collection.creator }}{% endif %}"
+                           class="retro-input w-full">
+                </div>
+
+                <div>
+                    <label for="tags" class="block text-base font-medium mb-1">
+                        Tags
+                    </label>
+                    <input type="text" name="tags" id="tags" placeholder="Ex: platformer, favorites, ..."
+                           value="{% if tags_str %}{{ tags_str }}{% endif %}"
+                           class="retro-input w-full">
+                    <p class="text-base text-[var(--color-text-muted)] mt-1">Comma-separated tags</p>
+                </div>
+            </div>
+
+            <div class="flex flex-col-reverse sm:flex-row gap-3 mt-6">
+                <a href="{% if is_create %}{% url 'romcollections:collection_list' %}{% else %}{% url 'romcollections:collection_detail' collection.creator collection.slug %}{% endif %}"
+                   class="retro-btn text-center">
+                    Cancel
+                </a>
+                <button type="submit" class="retro-btn retro-btn-success">
+                    {% if is_create %}Create Collection{% else %}Save Changes{% endif %}
+                </button>
+            </div>
+            </form>
+        </div>
+    </div>
+
+    {% if not is_create %}
+    {% include "collections/_cover_section.html" with collection=collection %}
+    {% endif %}
+</div>
+{% endblock %}

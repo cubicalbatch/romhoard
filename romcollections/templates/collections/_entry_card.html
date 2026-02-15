@@ -1,0 +1,210 @@
+{# Uses Alpine.js: x-show bound to parent editMode, $dispatch for events #}
+<div x-data="{ notesExpanded: false, needsMore: false }"
+     x-init="$nextTick(() => { if ($refs.notesContent) needsMore = $refs.notesContent.scrollHeight > $refs.notesContent.clientHeight })"
+     data-entry-id="{{ entry.pk }}" class="entry-card retro-system-card relative hover:border-[var(--color-primary)]">
+    <div class="retro-system-card-body p-4 sm:p-5 !text-left !items-start">
+        <div class="flex flex-col sm:flex-row gap-3 sm:gap-5 w-full">
+            <!-- Mobile: Image centered; Desktop: Image column -->
+            <div class="shrink-0 flex flex-col sm:flex-col items-center gap-2 sm:gap-0 sm:w-40">
+                {% if is_matched and matched_game.wheel_mini_image %}
+                <a href="{% url 'romcollections:collection_game_detail' collection.creator collection.slug matched_game.pk %}" class="block">
+                    <img src="{% url 'library:serve_image' matched_game.wheel_mini_image.pk %}"
+                         alt="" class="h-20 sm:h-24 max-w-32 sm:max-w-40 w-auto object-contain" loading="lazy">
+                </a>
+                {% elif is_matched and matched_game.cover_image %}
+                <a href="{% url 'romcollections:collection_game_detail' collection.creator collection.slug matched_game.pk %}" class="block">
+                    <img src="{% url 'library:serve_image' matched_game.cover_image.pk %}"
+                         alt="" class="h-20 sm:h-24 max-w-32 sm:max-w-40 w-auto object-contain" loading="lazy">
+                </a>
+                {% else %}
+                <div class="h-20 sm:h-24 w-24 sm:w-40 bg-[var(--color-surface-alt)] border-2 border-dashed border-[var(--color-border)] flex items-center justify-center">
+                    <span class="text-base text-[var(--color-text-muted)] text-center px-2 line-clamp-3">{{ entry.game_name }}</span>
+                </div>
+                {% endif %}
+                {% if has_roms %}
+                <div class="hidden sm:flex items-center gap-1 mt-2">
+                    <button @click="$dispatch('open-send-for-game', { gameId: {{ matched_game.pk }}, systemSlug: '{{ entry.system_slug }}' })"
+                            class="retro-btn retro-btn-sm retro-btn-purple"
+                            title="Send to device">
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                    </button>
+                    <button @click="$store.gameDownload.handle({{ matched_game.pk }})"
+                            class="retro-btn retro-btn-sm retro-btn-success"
+                            title="Download">
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                    </button>
+                </div>
+                {% endif %}
+                <!-- Mobile-only controls (status, rating, delete, checkbox) - positioned top-right -->
+                <div class="flex sm:hidden items-center gap-2 absolute top-4 right-4">
+                    {% if has_roms %}
+                    <span class="retro-badge retro-badge-sm retro-badge-success">
+                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                        </svg>
+                    </span>
+                    {% else %}
+                    <span class="retro-badge retro-badge-sm bg-amber-600 text-white">
+                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                        </svg>
+                    </span>
+                    {% endif %}
+                    {% if is_matched and matched_game.rating %}
+                    {% include "components/_rating_badge.html" with rating=matched_game.rating opacity="/60" sm=True %}
+                    {% endif %}
+                    <button hx-post="{% url 'romcollections:remove_entry' collection.creator collection.slug entry.pk %}"
+                            hx-target="closest [data-entry-id]"
+                            hx-swap="outerHTML"
+                            hx-confirm="Remove this entry?"
+                            x-show="editMode" x-cloak
+                            class="retro-btn retro-btn-sm retro-btn-danger">
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                    </button>
+                    <input type="checkbox" class="entry-checkbox retro-checkbox"
+                           data-entry-id="{{ entry.pk }}"
+                           data-game-id="{% if matched_game %}{{ matched_game.pk }}{% endif %}"
+                           data-is-matched="{% if has_roms %}true{% else %}false{% endif %}">
+                </div>
+            </div>
+
+            <!-- Right: Game Info -->
+            <div class="flex-1 min-w-0 flex flex-col">
+                <!-- Header: Name on left, controls on right -->
+                <div class="flex items-start gap-2 mb-2">
+                    <!-- Game Name -->
+                    <div class="flex-1 min-w-0">
+                        {% if is_matched and matched_game %}
+                        <a href="{% url 'romcollections:collection_game_detail' collection.creator collection.slug matched_game.pk %}" class="text-[var(--color-primary)] hover:underline font-medium block truncate text-lg">
+                            {{ entry.game_name }}
+                        </a>
+                        {% else %}
+                        <span class="font-medium block truncate text-lg">{{ entry.game_name }}</span>
+                        {% endif %}
+                    </div>
+
+                    <!-- Right-side controls group (desktop only) -->
+                    <div class="hidden sm:flex items-center gap-2 shrink-0">
+                        {% if has_roms %}
+                        <span class="retro-badge retro-badge-sm retro-badge-success">
+                            <svg class="h-3 w-3 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                            </svg>
+                            <span class="whitespace-nowrap hidden sm:inline">In Library</span>
+                        </span>
+                        {% else %}
+                        <span class="retro-badge retro-badge-sm bg-amber-600 text-white">
+                            <svg class="h-3 w-3 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                            </svg>
+                            <span class="whitespace-nowrap hidden sm:inline">Not in Library</span>
+                        </span>
+                        {% endif %}
+
+                        {% if is_matched and matched_game.rating %}
+                        {% include "components/_rating_badge.html" with rating=matched_game.rating opacity="/60" sm=True %}
+                        {% endif %}
+
+                        <button hx-post="{% url 'romcollections:remove_entry' collection.creator collection.slug entry.pk %}"
+                                hx-target="closest [data-entry-id]"
+                                hx-swap="outerHTML"
+                                hx-confirm="Remove this entry?"
+                                x-show="editMode" x-cloak
+                                class="retro-btn retro-btn-sm retro-btn-danger">
+                            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                            </svg>
+                        </button>
+
+                        <span x-show="editMode && !$store.searchFilters.hasActiveFilters()" x-cloak class="drag-handle cursor-move text-[var(--color-text-muted)] hover:text-[var(--color-text)] p-1" title="Drag to reorder">
+                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/>
+                            </svg>
+                        </span>
+
+                        <input type="checkbox" class="entry-checkbox retro-checkbox"
+                               data-entry-id="{{ entry.pk }}"
+                               data-game-id="{% if matched_game %}{{ matched_game.pk }}{% endif %}"
+                               data-is-matched="{% if has_roms %}true{% else %}false{% endif %}">
+                    </div>
+                </div>
+
+                <!-- System and genres row -->
+                <div class="flex flex-wrap items-center gap-1.5 justify-end sm:justify-start text-base text-[var(--color-text-muted)]">
+                    <div class="flex items-center gap-1.5">
+                        {% if system.icon_path %}
+                        <img src="{% url 'library:serve_system_icon' system.slug %}" alt="" class="w-4 h-4">
+                        {% endif %}
+                        <span>{{ system.name|default:entry.system_slug }}</span>
+                    </div>
+                    {% if is_matched and matched_game.genres.all %}
+                    {% for genre in matched_game.display_genres %}
+                    {% if genre.parent %}
+                    <span class="text-base px-1.5 py-0.5 bg-[var(--color-surface-alt)] text-[var(--color-text-muted)] border border-[var(--color-border)]">{{ genre.parent.name }}</span>
+                    {% endif %}
+                    <span class="text-base px-1.5 py-0.5 bg-[var(--color-surface-alt)] text-[var(--color-text-muted)] border border-[var(--color-border)]">{{ genre.short_name }}</span>
+                    {% endfor %}
+                    {% endif %}
+                </div>
+
+                <!-- Notes section (only show if notes exist or in edit mode) -->
+                {% if entry.notes %}
+                <div class="mt-auto pt-3 border-t border-[var(--color-border)] mt-3">
+                    <div class="flex items-start gap-2">
+                        <div class="flex-1 text-[var(--color-text)]">
+                            <div x-ref="notesContent" :class="notesExpanded ? '' : 'line-clamp-6'">
+                                {{ entry.notes|linebreaksbr }}
+                            </div>
+                            <button @click="notesExpanded = !notesExpanded"
+                                    x-show="needsMore || notesExpanded"
+                                    class="text-[var(--color-primary)] hover:underline text-base mt-1"
+                                    x-text="notesExpanded ? '[Less]' : '[More]'">
+                            </button>
+                        </div>
+                        <button type="button"
+                                @click="$dispatch('open-edit-notes', {
+                                    entryId: {{ entry.pk }},
+                                    gameName: '{{ entry.game_name|escapejs }}',
+                                    notes: '{{ entry.notes|escapejs }}',
+                                    updateUrl: '{% url 'romcollections:update_entry_notes' collection.creator collection.slug entry.pk %}'
+                                })"
+                                x-show="editMode" x-cloak
+                                class="shrink-0 retro-btn retro-btn-sm"
+                                title="Edit notes">
+                            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                {% else %}
+                <!-- Add notes button (edit mode only, when no notes exist) -->
+                <div x-show="editMode" x-cloak class="mt-auto pt-3 mt-3">
+                    <button type="button"
+                            @click="$dispatch('open-edit-notes', {
+                                entryId: {{ entry.pk }},
+                                gameName: '{{ entry.game_name|escapejs }}',
+                                notes: '',
+                                updateUrl: '{% url 'romcollections:update_entry_notes' collection.creator collection.slug entry.pk %}'
+                            })"
+                            class="text-base text-[var(--color-text-muted)] hover:text-[var(--color-primary)] flex items-center gap-1">
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        Add notes
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>

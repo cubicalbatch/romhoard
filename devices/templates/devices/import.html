@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}Import Device - RomHoard{% endblock %}
+
+{% block content %}
+<div x-data="{ mode: 'url' }">
+    <!-- Header -->
+    <div class="mb-8 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <div>
+            <h2 class="retro-heading retro-heading-lg">Import Device</h2>
+            <p class="text-[var(--color-text-muted)] mt-1">Import a device configuration from a file or URL</p>
+        </div>
+        <a href="{% url 'devices:device_list' %}" class="retro-btn">
+            Back to Devices
+        </a>
+    </div>
+
+    {% if error %}
+    <div class="retro-system-card retro-system-card-static mb-6">
+        <div class="retro-system-card-header retro-header-red flex items-center gap-2 !text-left">
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <h3>Error</h3>
+        </div>
+        <div class="retro-system-card-body !text-left !items-start">
+            <p class="text-[var(--color-danger)]">{{ error }}</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="retro-system-card retro-system-card-static">
+        <div class="retro-system-card-header retro-header-orange flex items-center gap-2 !text-left">
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            <h3>Import Configuration</h3>
+        </div>
+        <div class="retro-system-card-body !text-left !items-start">
+            <form method="post" enctype="multipart/form-data" class="w-full">
+                {% csrf_token %}
+
+                <!-- Mode Toggle -->
+                <div class="mb-6">
+                    <div class="flex gap-2">
+                        <button type="button"
+                                @click="mode = 'file'"
+                                :class="mode === 'file' ? 'retro-btn retro-btn-primary' : 'retro-btn'"
+                                class="flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                            </svg>
+                            Upload File
+                        </button>
+                        <button type="button"
+                                @click="mode = 'url'"
+                                :class="mode === 'url' ? 'retro-btn retro-btn-primary' : 'retro-btn'"
+                                class="flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                            </svg>
+                            Import from URL
+                        </button>
+                    </div>
+                </div>
+
+                <!-- File Upload -->
+                <div x-show="mode === 'file'" x-cloak class="mb-6">
+                    <label for="file" class="block text-base font-medium text-[var(--color-text)] mb-2">
+                        JSON File <span class="text-[var(--color-danger)]">*</span>
+                    </label>
+                    <div class="retro-bevel-in p-4 bg-[var(--color-bg)]">
+                        <input type="file" name="file" id="file" accept=".json"
+                               :required="mode === 'file'"
+                               class="w-full text-base text-[var(--color-text)]
+                                      file:mr-4 file:py-2 file:px-4
+                                      file:border-2 file:border-[var(--color-border)]
+                                      file:text-base file:font-bold file:uppercase
+                                      file:bg-[var(--color-panel)] file:text-[var(--color-text)]
+                                      file:cursor-pointer file:hover:bg-[var(--color-surface-alt)]
+                                      file:shadow-[inset_2px_2px_0_var(--bevel-light),inset_-2px_-2px_0_var(--bevel-dark)]">
+                        <p class="mt-2 text-base text-[var(--color-text-muted)]">
+                            Select a <code class="retro-code-inline">.json</code> file exported from another RomHoard instance
+                        </p>
+                    </div>
+                </div>
+
+                <!-- URL Input -->
+                <div x-show="mode === 'url'" x-cloak class="mb-6">
+                    <label for="url" class="block text-base font-medium text-[var(--color-text)] mb-2">
+                        Device Config URL <span class="text-[var(--color-danger)]">*</span>
+                    </label>
+                    <div class="retro-bevel-in p-4 bg-[var(--color-bg)]">
+                        <input type="url" name="url" id="url"
+                               :required="mode === 'url'"
+                               placeholder="https://example.com/device.json"
+                               class="retro-input w-full">
+                        <p class="mt-2 text-base text-[var(--color-text-muted)]">
+                            Direct link to a device configuration JSON file (max 1MB)
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Overwrite Option -->
+                <div class="mb-6 p-4 bg-[var(--color-bg)] border-2 border-[var(--color-border)]">
+                    <label class="flex items-start gap-3 cursor-pointer">
+                        <input type="checkbox" name="overwrite" id="overwrite" class="retro-checkbox mt-0.5">
+                        <div>
+                            <span class="font-medium text-[var(--color-text)]">Overwrite existing device</span>
+                            <p class="text-base text-[var(--color-text-muted)] mt-1">
+                                If a device with the same name exists, replace it with the imported configuration.
+                                Otherwise, the import will fail if a duplicate is found.
+                            </p>
+                        </div>
+                    </label>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex flex-col-reverse sm:flex-row justify-end gap-3">
+                    <a href="{% url 'devices:device_list' %}" class="retro-btn text-center">
+                        Cancel
+                    </a>
+                    <button type="submit" class="retro-btn retro-btn-primary flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                        </svg>
+                        <span x-text="mode === 'url' ? 'Fetch & Preview' : 'Import Device'"></span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Help Section -->
+    <details class="retro-system-card mt-6">
+        <summary class="retro-system-card-header retro-header-teal cursor-pointer flex items-center gap-2 list-none !text-left">
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span>How to export a device</span>
+            <svg class="w-4 h-4 details-arrow ml-auto" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </summary>
+        <div class="retro-system-card-body !text-left !items-start text-base text-[var(--color-text-muted)]">
+            <ol class="list-decimal list-inside space-y-2">
+                <li>Go to <strong>Devices</strong> in the navigation</li>
+                <li>Click on the device you want to export</li>
+                <li>Click the <strong>Export</strong> button</li>
+                <li>Save the downloaded JSON file</li>
+                <li>Use that file here to import on another instance</li>
+            </ol>
+        </div>
+    </details>
+</div>
+{% endblock %}

@@ -1,0 +1,42 @@
+{# Reusable fixed selection toolbar (bottom bar). #}
+{# Page must configure Alpine store `selection` and provide `sendSelected()` / `downloadSelected()` handlers. #}
+
+<div id="{{ toolbar_id|default:'selection-toolbar' }}"
+     class="fixed bottom-0 left-0 right-0 {{ toolbar_classes|default:'retro-toolbar' }} z-50">
+    <div class="max-w-7xl mx-auto {{ inner_classes|default:'flex flex-col sm:flex-row items-center justify-between gap-3' }}">
+        <div class="flex items-center gap-3">
+            <span id="{{ count_id|default:'selection-count' }}"
+                  class="{{ count_classes|default:'text-[var(--color-text)] font-semibold' }}">{{ initial_count_text|default:'0 games selected' }}</span>
+            <button id="{{ clear_id|default:'clear-selection' }}"
+                    class="{{ clear_classes|default:'text-[var(--color-text-muted)] hover:text-[var(--color-text)] text-base underline' }}">
+                {{ clear_text|default:'Clear selection' }}
+            </button>
+        </div>
+        <div class="{{ actions_classes|default:'flex items-center gap-3' }}">
+            {% if extra_buttons_template %}
+                {% include extra_buttons_template %}
+            {% endif %}
+
+            <button {% if send_btn_id %}id="{{ send_btn_id }}"{% endif %}
+                    @click="{{ send_click|default:'sendSelected()' }}"
+                    class="{{ send_classes|default:'retro-btn retro-btn-purple retro-btn-sm flex items-center gap-2' }}">
+                <svg class="{{ send_icon_classes|default:'h-4 w-4' }}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                {{ send_text|default:'Send' }}
+            </button>
+
+            <button {% if download_btn_id %}id="{{ download_btn_id }}"{% endif %}
+                    @click="{{ download_click|default:'downloadSelected()' }}"
+                    class="{{ download_classes|default:'retro-btn retro-btn-success retro-btn-sm flex items-center gap-2' }}">
+                <svg class="{{ download_icon_classes|default:'h-4 w-4' }}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                </svg>
+                {{ download_text|default:'Download' }}
+            </button>
+        </div>
+    </div>
+</div>
+

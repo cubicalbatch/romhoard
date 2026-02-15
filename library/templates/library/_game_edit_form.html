@@ -1,0 +1,399 @@
+{# Game edit form - loaded via HTMX into modal #}
+{# Variables: game, cover_image, screenshots, saved (optional), errors (optional) #}
+<div class="retro-modal-body"
+     x-data="{
+         coverPreview: null,
+         screenshotPreviews: [],
+         imagesToDelete: [],
+         mergeExpanded: false,
+         mergeQuery: '',
+         mergeTargetId: null,
+         mergeTargetName: '',
+         mergeConfirming: false,
+         handleCoverChange(event) {
+             const file = event.target.files[0];
+             if (file) {
+                 this.coverPreview = URL.createObjectURL(file);
+             }
+         },
+         handleScreenshotsChange(event) {
+             this.screenshotPreviews = [];
+             for (const file of event.target.files) {
+                 this.screenshotPreviews.push(URL.createObjectURL(file));
+             }
+         },
+         markForDeletion(imageId) {
+             if (!this.imagesToDelete.includes(imageId)) {
+                 this.imagesToDelete.push(imageId);
+             }
+         },
+         unmarkForDeletion(imageId) {
+             this.imagesToDelete = this.imagesToDelete.filter(id => id !== imageId);
+         },
+         isMarkedForDeletion(imageId) {
+             return this.imagesToDelete.includes(imageId);
+         },
+         selectMergeTarget(id, name) {
+             this.mergeTargetId = id;
+             this.mergeTargetName = name;
+             this.mergeQuery = '';
+         },
+         clearMergeTarget() {
+             this.mergeTargetId = null;
+             this.mergeTargetName = '';
+             this.mergeConfirming = false;
+         }
+     }"
+     {% if saved %}x-init="$store.toast.show('Changes saved successfully!', 'success')"{% endif %}>
+
+    {% if errors %}
+    <div class="bg-[var(--color-danger)]/10 text-[var(--color-danger)] border border-[var(--color-danger)] px-4 py-3 mb-6 text-base rounded">
+        {% for error in errors %}
+        <p>{{ error }}</p>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <form id="edit-game-form"
+          method="post"
+          action="{% url 'library:edit_game' game.pk %}"
+          hx-post="{% url 'library:edit_game' game.pk %}"
+          hx-target="#edit-game-form-container"
+          hx-swap="innerHTML"
+          enctype="multipart/form-data"
+          class="space-y-6">
+        {% csrf_token %}
+
+        <!-- Hidden inputs for images to delete -->
+        <template x-for="id in imagesToDelete" :key="id">
+            <input type="hidden" name="delete_images" :value="id">
+        </template>
+
+        <!-- Name Field -->
+        <div>
+            <label for="game-name" class="block text-base font-bold text-[var(--color-text)] uppercase mb-2 tracking-wide">
+                Name
+            </label>
+            <input type="text"
+                   id="game-name"
+                   name="name"
+                   value="{{ game.name }}"
+                   class="retro-input w-full"
+                   required>
+        </div>
+
+        <!-- System Field -->
+        <div>
+            <label for="game-system" class="block text-base font-bold text-[var(--color-text)] uppercase mb-2 tracking-wide">
+                System
+            </label>
+            <select id="game-system"
+                    name="system"
+                    class="retro-select w-full">
+                {% for system in systems %}
+                <option value="{{ system.slug }}" {% if system == game.system %}selected{% endif %}>
+                    {{ system.name }}
+                </option>
+                {% endfor %}
+            </select>
+            <p class="mt-1 text-base text-[var(--color-text-muted)]">
+                Change if this game was miscategorized
+            </p>
+        </div>
+
+        <!-- Description Field -->
+        <div>
+            <label for="game-description" class="block text-base font-bold text-[var(--color-text)] uppercase mb-2 tracking-wide">
+                Description
+            </label>
+            <textarea id="game-description"
+                      name="description"
+                      rows="4"
+                      class="retro-input w-full resize-y"
+                      placeholder="Enter a description for this game...">{{ game.description }}</textarea>
+        </div>
+
+        <!-- ScreenScraper ID Field -->
+        <div>
+            <label for="screenscraper-id" class="block text-base font-bold text-[var(--color-text)] uppercase mb-2 tracking-wide">
+                ScreenScraper ID
+            </label>
+            <div class="flex flex-wrap items-center gap-3">
+                <input type="text"
+                       id="screenscraper-id"
+                       name="screenscraper_id"
+                       value="{{ game.screenscraper_id|default:'' }}"
+                       class="retro-input w-32"
+                       placeholder="Game ID"
+                       pattern="[0-9]*"
+                       inputmode="numeric">
+                <label class="flex items-center gap-2 text-base text-[var(--color-text-muted)] cursor-pointer">
+                    <input type="checkbox" name="fetch_metadata_on_save" value="1" class="accent-[var(--color-primary)]">
+                    Fetch metadata after save
+                </label>
+                {% if game.screenscraper_id %}
+                <a href="https://www.screenscraper.fr/gameinfos.php?gameid={{ game.screenscraper_id }}"
+                   target="_blank"
+                   class="text-base text-[var(--color-primary)] hover:underline flex items-center gap-1">
+                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                    </svg>
+                    View on ScreenScraper
+                </a>
+                {% endif %}
+            </div>
+            <p class="mt-1 text-base text-[var(--color-text-muted)]">
+                Set manually to link this game to ScreenScraper for metadata
+            </p>
+        </div>
+
+        <!-- Images Section -->
+        <div class="border-t border-[var(--color-border)] pt-6">
+            <h4 class="text-base font-bold text-[var(--color-text)] uppercase mb-4 tracking-wide">Images</h4>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Cover Image -->
+                <div class="bg-[var(--color-surface-alt)]/50 p-4 rounded border border-[var(--color-border)]">
+                    <label class="block text-base font-medium text-[var(--color-text-muted)] uppercase mb-3">
+                        Cover Image
+                    </label>
+
+                    <div class="flex flex-col items-center gap-3">
+                        <!-- Image Preview Area -->
+                        <div class="w-full flex justify-center">
+                            {% if cover_image %}
+                            <div x-show="!coverPreview && !isMarkedForDeletion({{ cover_image.pk }})"
+                                 class="relative group">
+                                <img src="{% url 'library:serve_image' cover_image.pk %}"
+                                     alt="Current cover"
+                                     class="max-w-[160px] max-h-[160px] w-auto h-auto border-2 border-[var(--color-border)] rounded">
+                                <button type="button"
+                                        @click="markForDeletion({{ cover_image.pk }})"
+                                        class="absolute -top-2 -right-2 bg-[var(--color-danger)] text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                                        title="Remove cover">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div x-show="isMarkedForDeletion({{ cover_image.pk }})"
+                                 class="w-[160px] h-[100px] bg-[var(--color-danger)]/10 border-2 border-dashed border-[var(--color-danger)] flex items-center justify-center rounded">
+                                <button type="button"
+                                        @click="unmarkForDeletion({{ cover_image.pk }})"
+                                        class="text-[var(--color-danger)] text-base hover:underline">
+                                    Undo delete
+                                </button>
+                            </div>
+                            {% endif %}
+
+                            <img x-show="coverPreview"
+                                 :src="coverPreview"
+                                 class="max-w-[160px] max-h-[160px] w-auto h-auto border-2 border-[var(--color-success)] rounded"
+                                 alt="New cover preview">
+
+                            {% if not cover_image %}
+                            <div x-show="!coverPreview"
+                                 class="w-[160px] h-[100px] bg-[var(--color-surface)] border-2 border-dashed border-[var(--color-border)] flex items-center justify-center rounded">
+                                <span class="text-base text-[var(--color-text-muted)]">No cover</span>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <!-- Upload Button -->
+                        <label class="retro-btn retro-btn-sm cursor-pointer inline-flex items-center gap-2 w-full justify-center">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                            </svg>
+                            <span x-text="coverPreview ? 'Change Cover' : '{% if cover_image %}Replace Cover{% else %}Upload Cover{% endif %}'"></span>
+                            <input type="file"
+                                   name="cover_image"
+                                   accept="image/*"
+                                   class="hidden"
+                                   @change="handleCoverChange($event)">
+                        </label>
+                        <p class="text-[10px] text-[var(--color-text-muted)] text-center">
+                            PNG, JPG up to 1200x1200px
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Screenshots -->
+                <div class="bg-[var(--color-surface-alt)]/50 p-4 rounded border border-[var(--color-border)]">
+                    <label class="block text-base font-medium text-[var(--color-text-muted)] uppercase mb-3">
+                        Screenshots
+                    </label>
+
+                    <div class="flex flex-col gap-3">
+                        <!-- Current Screenshots Grid -->
+                        <div class="min-h-[100px]">
+                            {% if screenshots %}
+                            <div class="flex flex-wrap gap-2 justify-center">
+                                {% for screenshot in screenshots %}
+                                <div class="relative group" x-show="!isMarkedForDeletion({{ screenshot.pk }})">
+                                    <img src="{% url 'library:serve_image' screenshot.pk %}"
+                                         alt="Screenshot {{ forloop.counter }}"
+                                         class="w-[70px] h-auto border border-[var(--color-border)] rounded">
+                                    <button type="button"
+                                            @click="markForDeletion({{ screenshot.pk }})"
+                                            class="absolute -top-1 -right-1 bg-[var(--color-danger)] text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                                            title="Remove">
+                                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div x-show="isMarkedForDeletion({{ screenshot.pk }})"
+                                     class="w-[70px] h-[50px] bg-[var(--color-danger)]/10 border border-dashed border-[var(--color-danger)] flex items-center justify-center rounded">
+                                    <button type="button"
+                                            @click="unmarkForDeletion({{ screenshot.pk }})"
+                                            class="text-[var(--color-danger)] text-[8px] hover:underline">
+                                        Undo
+                                    </button>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% else %}
+                            <div x-show="screenshotPreviews.length === 0"
+                                 class="w-full h-[100px] bg-[var(--color-surface)] border-2 border-dashed border-[var(--color-border)] flex items-center justify-center rounded">
+                                <span class="text-base text-[var(--color-text-muted)]">No screenshots</span>
+                            </div>
+                            {% endif %}
+
+                            <!-- New Screenshot Previews -->
+                            <div x-show="screenshotPreviews.length > 0" class="flex flex-wrap gap-2 justify-center mt-2">
+                                <template x-for="(preview, index) in screenshotPreviews" :key="index">
+                                    <img :src="preview"
+                                         class="w-[70px] h-auto border border-[var(--color-success)] rounded"
+                                         alt="New screenshot">
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- Upload Button -->
+                        <label class="retro-btn retro-btn-sm cursor-pointer inline-flex items-center gap-2 w-full justify-center">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                            </svg>
+                            Add Screenshots
+                            <input type="file"
+                                   name="screenshots"
+                                   accept="image/*"
+                                   multiple
+                                   class="hidden"
+                                   @change="handleScreenshotsChange($event)">
+                        </label>
+                        <p class="text-[10px] text-[var(--color-text-muted)] text-center">
+                            Select multiple files. PNG, JPG up to 1920x1080px
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Merge Section -->
+        <div class="border-t border-[var(--color-border)] pt-6">
+            <button type="button"
+                    @click="mergeExpanded = !mergeExpanded"
+                    class="flex items-center gap-2 text-base font-bold text-[var(--color-text)] uppercase tracking-wide hover:text-[var(--color-primary)] transition-colors">
+                <svg class="w-4 h-4 transition-transform" :class="mergeExpanded && 'rotate-90'" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+                Merge into Another Game
+            </button>
+
+            <div x-show="mergeExpanded" x-collapse class="mt-4 space-y-4">
+                <p class="text-base text-[var(--color-text-muted)]">
+                    Merge this game's ROM variants into another game. The current game will be deleted.
+                </p>
+
+                <!-- Search input -->
+                <div x-show="!mergeTargetId" class="relative">
+                    <input type="text"
+                           x-model="mergeQuery"
+                           placeholder="Search for a game..."
+                           class="retro-input w-full"
+                           hx-get="{% url 'library:game_merge_search' game.pk %}"
+                           hx-trigger="input changed delay:300ms"
+                           hx-target="#merge-search-results"
+                           hx-swap="innerHTML"
+                           name="q"
+                           autocomplete="off">
+
+                    <!-- Search results dropdown -->
+                    <div id="merge-search-results"
+                         x-show="mergeQuery.length >= 2"
+                         class="absolute z-10 w-full mt-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded shadow-lg max-h-60 overflow-y-auto">
+                    </div>
+                </div>
+
+                <!-- Selected target -->
+                <div x-show="mergeTargetId" class="flex items-center gap-3 p-3 bg-[var(--color-surface-alt)] border border-[var(--color-border)] rounded">
+                    <div class="flex-1">
+                        <p class="text-base font-medium text-[var(--color-text)]">Merge into:</p>
+                        <p class="text-base text-[var(--color-primary)]" x-text="mergeTargetName"></p>
+                    </div>
+                    <button type="button"
+                            @click="clearMergeTarget()"
+                            class="text-[var(--color-text-muted)] hover:text-[var(--color-danger)]">
+                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Merge button (two-step confirmation) -->
+                <div x-show="mergeTargetId">
+                    <button type="button"
+                            x-show="!mergeConfirming"
+                            @click="mergeConfirming = true"
+                            class="retro-btn retro-btn-danger w-full flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                        </svg>
+                        Merge &amp; Delete This Game
+                    </button>
+
+                    <div x-show="mergeConfirming" class="space-y-3">
+                        <p class="text-base text-[var(--color-danger)] font-medium">
+                            This will move all ROM variants to the target game and permanently delete this game.
+                        </p>
+                        <div class="flex gap-3">
+                            <button type="button"
+                                    @click="mergeConfirming = false"
+                                    class="retro-btn flex-1">
+                                Cancel
+                            </button>
+                            <button type="button"
+                                    hx-post="{% url 'library:merge_game' game.pk %}"
+                                    :hx-vals="JSON.stringify({target_game_id: mergeTargetId})"
+                                    class="retro-btn retro-btn-danger flex-1 flex items-center justify-center gap-2">
+                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                </svg>
+                                Confirm Merge
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Footer (outside modal-body for proper positioning) -->
+<div class="retro-modal-footer">
+    <button type="button"
+            @click="$store.modals.close('edit-game')"
+            class="retro-btn">
+        Cancel
+    </button>
+    <button type="submit"
+            form="edit-game-form"
+            onclick="document.querySelector('#edit-game-form-container form').requestSubmit()"
+            class="retro-btn retro-btn-primary flex items-center gap-2">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+        </svg>
+        Save Changes
+    </button>
+</div>

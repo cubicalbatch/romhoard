@@ -1,0 +1,25 @@
+{# HTMX partial: System filter options for collection #}
+{% if systems %}
+<div class="divide-y divide-[var(--color-border)]">
+    {% for system in systems %}
+    <label class="retro-filter-option flex items-center gap-3 p-3 cursor-pointer hover:bg-[var(--color-bg)]"
+           data-slug="{{ system.slug }}"
+           data-name="{{ system.name }}"
+           @click="$store.searchFilters.toggleSystem('{{ system.slug }}', '{{ system.name|escapejs }}')">
+        <span class="retro-checkbox-visual"
+              :class="{ 'checked': $store.searchFilters.hasSystem('{{ system.slug }}') }"></span>
+        {% if system.icon_path %}
+        <img src="{% url 'library:serve_system_icon' system.slug %}" alt="" class="w-5 h-5 pixelated">
+        {% else %}
+        <div class="w-5 h-5 bg-[var(--color-surface-alt)] border border-[var(--color-border)]"></div>
+        {% endif %}
+        <span class="flex-1 truncate">{{ system.name }}</span>
+        <span class="text-base text-[var(--color-text-muted)]">{{ system.entry_count }}</span>
+    </label>
+    {% endfor %}
+</div>
+{% else %}
+<div class="p-4 text-center text-base text-[var(--color-text-muted)]">
+    No systems found
+</div>
+{% endif %}

@@ -1,0 +1,149 @@
+{% if not matched_systems and not matched_games_by_system and not matched_collections %}
+<div class="retro-card">
+    <div class="retro-card-body text-center py-8">
+        <p class="text-[var(--color-text-muted)]">No results found for "{{ query }}"</p>
+    </div>
+</div>
+{% else %}
+
+{% if matched_systems %}
+<div class="mb-8">
+    <h3 class="retro-heading retro-heading-sm mb-4">Systems</h3>
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        {% for system in matched_systems %}
+        <a href="{% url 'library:game_list' system.slug %}" class="retro-system-card block">
+            <div class="retro-system-card-header {% cycle 'retro-header-magenta' 'retro-header-blue' 'retro-header-purple' 'retro-header-teal' 'retro-header-green' 'retro-header-orange' 'retro-header-red' 'retro-header-navy' %}">
+                <h3>{{ system.name }}</h3>
+            </div>
+            <div class="retro-system-card-body">
+                {% if system.icon_path %}
+                <img src="{% url 'library:serve_system_icon' system.slug %}" alt="" class="retro-system-card-icon">
+                {% else %}
+                <div class="retro-system-card-icon flex items-center justify-center text-[var(--color-text-muted)]">
+                    <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                    </svg>
+                </div>
+                {% endif %}
+                <div class="retro-system-card-games">{{ system.game_count }} game{{ system.game_count|pluralize }}</div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if matched_games_by_system %}
+<div>
+    <h3 class="retro-heading retro-heading-sm mb-4">Games</h3>
+    {% for system, games in matched_games_by_system %}
+    <div class="mb-6">
+        <div class="flex items-center gap-2 mb-2 pb-1 border-b-2 border-[var(--color-teal)]">
+            {% if system.icon_path %}
+            <img src="{% url 'library:serve_system_icon' system.slug %}" alt="" class="w-5 h-5 pixelated">
+            {% endif %}
+            <span class="retro-heading text-[var(--color-teal)] text-base">{{ system.name }}</span>
+            <span class="text-[var(--color-text-muted)] text-base">— {{ games|length }} match{{ games|length|pluralize:"es" }}</span>
+        </div>
+        {# Desktop: Table layout #}
+        <div class="hidden sm:block retro-card overflow-hidden">
+            <table class="min-w-full">
+                <thead class="retro-table-header retro-header-teal">
+                    <tr>
+                        <th scope="col" class="w-12 px-4 py-3"></th>
+                        <th scope="col" class="w-32 px-2 py-3"></th>
+                        <th scope="col" class="px-6 py-3 text-left">Game</th>
+                        <th scope="col" class="px-4 py-3 text-right">Genre</th>
+                        <th scope="col" class="px-4 py-3 text-center w-20">Rating</th>
+                        <th scope="col" class="px-4 py-3 text-right"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[var(--color-border)]">
+                    {% for game in games %}
+                    {% include "library/_game_row.html" %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {# Mobile: Card layout #}
+        <div class="sm:hidden space-y-3">
+            {% for game in games %}
+            {% include "library/_game_card.html" %}
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+
+    {# Build filter params for pagination links #}
+    {% with filter_params="" %}
+    {% if filter_systems %}{% with filter_params=filter_params|add:"&system="|add:filter_systems|join:"," %}{% endwith %}{% endif %}
+    {% if filter_genres %}{% with filter_params=filter_params|add:"&genre="|add:filter_genres|join:"," %}{% endwith %}{% endif %}
+    {% if filter_rating_op %}{% with filter_params=filter_params|add:"&rating_op="|add:filter_rating_op %}{% endwith %}{% endif %}
+    {% if filter_rating_min %}{% with filter_params=filter_params|add:"&rating_min="|add:filter_rating_min %}{% endwith %}{% endif %}
+    {% if filter_rating_max %}{% with filter_params=filter_params|add:"&rating_max="|add:filter_rating_max %}{% endwith %}{% endif %}
+
+    {# Pagination controls for games #}
+    {% if page_obj.has_other_pages %}
+    <div class="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-[var(--color-bg)] border border-[var(--color-border)]">
+        <div class="text-base text-[var(--color-text-muted)]">
+            Showing {{ page_obj.start_index }} - {{ page_obj.end_index }} of {{ page_obj.paginator.count }} games
+        </div>
+        <div class="flex gap-2 items-center">
+            <div class="flex gap-1">
+                {% if page_obj.has_previous %}
+                <button hx-get="{% url 'library:global_search' %}?q={{ query|urlencode }}&page=1&page_size={{ current_page_size }}{% if filter_systems %}&system={{ filter_systems|join:',' }}{% endif %}{% if filter_genres %}&genre={{ filter_genres|join:',' }}{% endif %}{% if filter_rating_op %}&rating_op={{ filter_rating_op }}{% endif %}{% if filter_rating_min %}&rating_min={{ filter_rating_min }}{% endif %}{% if filter_rating_max %}&rating_max={{ filter_rating_max }}{% endif %}"
+                        hx-target="#system-grid-container"
+                        hx-push-url="true"
+                        class="retro-btn retro-btn-sm">&laquo;</button>
+                <button hx-get="{% url 'library:global_search' %}?q={{ query|urlencode }}&page={{ page_obj.previous_page_number }}&page_size={{ current_page_size }}{% if filter_systems %}&system={{ filter_systems|join:',' }}{% endif %}{% if filter_genres %}&genre={{ filter_genres|join:',' }}{% endif %}{% if filter_rating_op %}&rating_op={{ filter_rating_op }}{% endif %}{% if filter_rating_min %}&rating_min={{ filter_rating_min }}{% endif %}{% if filter_rating_max %}&rating_max={{ filter_rating_max }}{% endif %}"
+                        hx-target="#system-grid-container"
+                        hx-push-url="true"
+                        class="retro-btn retro-btn-sm">Prev</button>
+                {% endif %}
+                <span class="retro-btn retro-btn-sm retro-btn-primary">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+                {% if page_obj.has_next %}
+                <button hx-get="{% url 'library:global_search' %}?q={{ query|urlencode }}&page={{ page_obj.next_page_number }}&page_size={{ current_page_size }}{% if filter_systems %}&system={{ filter_systems|join:',' }}{% endif %}{% if filter_genres %}&genre={{ filter_genres|join:',' }}{% endif %}{% if filter_rating_op %}&rating_op={{ filter_rating_op }}{% endif %}{% if filter_rating_min %}&rating_min={{ filter_rating_min }}{% endif %}{% if filter_rating_max %}&rating_max={{ filter_rating_max }}{% endif %}"
+                        hx-target="#system-grid-container"
+                        hx-push-url="true"
+                        class="retro-btn retro-btn-sm">Next</button>
+                <button hx-get="{% url 'library:global_search' %}?q={{ query|urlencode }}&page={{ page_obj.paginator.num_pages }}&page_size={{ current_page_size }}{% if filter_systems %}&system={{ filter_systems|join:',' }}{% endif %}{% if filter_genres %}&genre={{ filter_genres|join:',' }}{% endif %}{% if filter_rating_op %}&rating_op={{ filter_rating_op }}{% endif %}{% if filter_rating_min %}&rating_min={{ filter_rating_min }}{% endif %}{% if filter_rating_max %}&rating_max={{ filter_rating_max }}{% endif %}"
+                        hx-target="#system-grid-container"
+                        hx-push-url="true"
+                        class="retro-btn retro-btn-sm">&raquo;</button>
+                {% endif %}
+            </div>
+            <span class="text-[var(--color-text-muted)] mx-2">|</span>
+            <select hx-get="{% url 'library:global_search' %}?q={{ query|urlencode }}&page=1{% if filter_systems %}&system={{ filter_systems|join:',' }}{% endif %}{% if filter_genres %}&genre={{ filter_genres|join:',' }}{% endif %}{% if filter_rating_op %}&rating_op={{ filter_rating_op }}{% endif %}{% if filter_rating_min %}&rating_min={{ filter_rating_min }}{% endif %}{% if filter_rating_max %}&rating_max={{ filter_rating_max }}{% endif %}"
+                    hx-target="#system-grid-container"
+                    hx-push-url="true"
+                    name="page_size"
+                    class="retro-input py-1 px-2 text-base w-20">
+                <option value="25" {% if current_page_size == 25 %}selected{% endif %}>25</option>
+                <option value="50" {% if current_page_size == 50 %}selected{% endif %}>50</option>
+                <option value="100" {% if current_page_size == 100 %}selected{% endif %}>100</option>
+                <option value="200" {% if current_page_size == 200 %}selected{% endif %}>200</option>
+            </select>
+        </div>
+    </div>
+    {% endif %}
+    {% endwith %}
+</div>
+{% endif %}
+
+{% if matched_collections %}
+<div class="mt-8">
+    <div class="flex items-center justify-between mb-4">
+        <h3 class="retro-heading retro-heading-sm">Collections</h3>
+        {% if collections_truncated %}
+        <a href="{% url 'romcollections:collection_search' %}?q={{ query|urlencode }}"
+           class="text-base text-[var(--color-primary)] hover:underline">
+            View all &rarr;
+        </a>
+        {% endif %}
+    </div>
+    {% include "collections/_collection_grid.html" with collections=matched_collections page_obj=None %}
+</div>
+{% endif %}
+
+{% endif %}

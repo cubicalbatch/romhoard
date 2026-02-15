@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Devices - RomHoard{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+    <h1 class="retro-heading retro-heading-lg">Devices</h1>
+    <div class="flex flex-wrap gap-2">
+        <a href="{% url 'devices:import_device' %}" class="retro-btn flex-1 sm:flex-none text-center">
+            Import
+        </a>
+        <a href="{% url 'devices:device_create' %}" class="retro-btn retro-btn-primary flex-1 sm:flex-none text-center">
+            New Device
+        </a>
+    </div>
+</div>
+
+{% if devices %}
+<!-- Device Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+    {% for device in devices %}
+    <a href="{% url 'devices:device_edit' device.slug %}" class="retro-system-card block">
+        <!-- Header with rotating colors -->
+        <div class="retro-system-card-header flex items-center gap-2 !text-left {% cycle 'retro-header-magenta' 'retro-header-blue' 'retro-header-purple' 'retro-header-teal' 'retro-header-green' 'retro-header-orange' 'retro-header-red' 'retro-header-navy' %}">
+            <!-- Gamepad Icon -->
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5S18.67 9 19.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+            </svg>
+            <h3 class="truncate">{{ device.name }}</h3>
+        </div>
+
+        <div class="retro-system-card-body !items-start !text-left gap-2">
+            {% if device.description %}
+            <p class="text-base text-[var(--color-text-muted)]">{{ device.description }}</p>
+            {% endif %}
+
+            <!-- Root Path -->
+            <div class="flex items-center gap-1">
+                <img src="{% static 'images/icons/folder.png' %}" alt="" class="flex-shrink-0" style="width: 16px; height: 16px; image-rendering: pixelated;">
+                <code class="retro-code-inline !text-base truncate">{{ device.root_path }}</code>
+            </div>
+
+            <!-- Transfer Status -->
+            <div class="flex items-center gap-2 flex-wrap">
+                {% if device.has_transfer_config %}
+                <span class="retro-badge retro-badge-purple">{{ device.transfer_type|upper }}</span>
+                <span class="retro-badge retro-badge-teal">{{ device.transfer_host }}</span>
+                {% elif not device.has_wifi %}
+                <span class="retro-status-dot retro-status-dot-inactive"></span>
+                <span class="text-[var(--color-text-muted)] text-base">No WiFi</span>
+                {% else %}
+                <span class="retro-status-dot retro-status-dot-inactive"></span>
+                <span class="text-[var(--color-text-muted)] text-base">No transfer</span>
+                {% endif %}
+            </div>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+
+{% else %}
+<!-- Empty State -->
+<div class="retro-card max-w-2xl mx-auto">
+    <div class="retro-card-body text-center py-12">
+        <!-- Gamepad Illustration -->
+        <div class="mb-6">
+            <svg class="w-24 h-24 mx-auto text-[var(--color-gold)]" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5S18.67 9 19.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+            </svg>
+        </div>
+
+        <h2 class="retro-heading retro-heading-md mb-3 text-[var(--color-primary)]">No Devices Yet</h2>
+
+        <p class="text-[var(--color-text-muted)] mb-6 max-w-md mx-auto">
+            Configure your retro gaming handhelds to organize ROM downloads with custom folder structures and transfer settings.
+        </p>
+
+        <div class="flex flex-col sm:flex-row gap-3 justify-center">
+            <a href="{% url 'devices:import_device' %}" class="retro-btn retro-btn-secondary">
+                <span class="flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                    </svg>
+                    Import Device
+                </span>
+            </a>
+            <a href="{% url 'devices:device_create' %}" class="retro-btn retro-btn-primary">
+                <span class="flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Create Your First Device
+                </span>
+            </a>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

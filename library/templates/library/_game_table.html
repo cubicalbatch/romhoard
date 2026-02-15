@@ -1,0 +1,44 @@
+<tbody id="game-list" class="bg-[var(--color-surface)] divide-y divide-[var(--color-border)]">
+    {% for game in games %}
+    {% include "library/_game_row.html" %}
+    {% empty %}
+    <tr>
+        <td colspan="6" class="px-6 py-4 text-center text-[var(--color-text-muted)]">No games found</td>
+    </tr>
+    {% endfor %}
+</tbody>
+
+{% if page_obj.has_other_pages and not search_mode %}
+<tfoot>
+    <tr>
+        <td colspan="6" class="px-6 py-3 bg-[var(--color-bg)]">
+            <nav class="flex items-center justify-between">
+                <div class="text-base text-[var(--color-text-muted)]">
+                    Showing {{ page_obj.start_index }} - {{ page_obj.end_index }} of {{ page_obj.paginator.count }}
+                </div>
+                <div class="flex gap-2 items-center">
+                    <div class="flex gap-1">
+                        {% if page_obj.has_previous %}
+                        <a href="?page=1&page_size={{ current_page_size }}&sort={{ current_sort }}&order={{ current_order }}" class="retro-btn retro-btn-sm">&laquo;</a>
+                        <a href="?page={{ page_obj.previous_page_number }}&page_size={{ current_page_size }}&sort={{ current_sort }}&order={{ current_order }}" class="retro-btn retro-btn-sm">Prev</a>
+                        {% endif %}
+                        <span class="retro-btn retro-btn-sm retro-btn-primary">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+                        {% if page_obj.has_next %}
+                        <a href="?page={{ page_obj.next_page_number }}&page_size={{ current_page_size }}&sort={{ current_sort }}&order={{ current_order }}" class="retro-btn retro-btn-sm">Next</a>
+                        <a href="?page={{ page_obj.paginator.num_pages }}&page_size={{ current_page_size }}&sort={{ current_sort }}&order={{ current_order }}" class="retro-btn retro-btn-sm">&raquo;</a>
+                        {% endif %}
+                    </div>
+                    <span class="text-[var(--color-text-muted)] mx-2">|</span>
+                    <select id="page-size-select"
+                            @change="(() => { const url = new URL(window.location); url.searchParams.set('page_size', $el.value); url.searchParams.set('page', 1); window.location.href = url.toString(); })()"
+                            class="retro-input py-1 px-2 text-base w-20">
+                        <option value="50" {% if current_page_size == 50 %}selected{% endif %}>50</option>
+                        <option value="100" {% if current_page_size == 100 %}selected{% endif %}>100</option>
+                        <option value="200" {% if current_page_size == 200 %}selected{% endif %}>200</option>
+                    </select>
+                </div>
+            </nav>
+        </td>
+    </tr>
+</tfoot>
+{% endif %}

@@ -1,0 +1,31 @@
+{% load retro_components %}
+
+{% if show_personal %}
+<!-- Personal Collections Section -->
+<div class="mb-10">
+    <h3 class="retro-heading retro-heading-md mb-4">
+        Personal Collections
+        <span class="text-[var(--color-text-muted)] text-base font-normal">({{ total_personal }})</span>
+    </h3>
+    {% with collections=personal_collections page_obj=personal_page_obj page_param="personal_page" empty_message="No personal collections found." %}
+    {% include "collections/_collection_grid.html" %}
+    {% endwith %}
+</div>
+{% endif %}
+
+{% if show_community %}
+<!-- Community Collections Section -->
+<div>
+    <h3 class="retro-heading retro-heading-md mb-4">
+        Community Collections
+        <span class="text-[var(--color-text-muted)] text-base font-normal">({{ total_community }})</span>
+    </h3>
+    {% with collections=community_collections page_obj=community_page_obj page_param="community_page" empty_message="No community collections found." %}
+    {% include "collections/_collection_grid.html" %}
+    {% endwith %}
+</div>
+{% endif %}
+
+{% if not show_personal and not show_community %}
+<p class="text-[var(--color-text-muted)] text-center py-8">No collections to display.</p>
+{% endif %}

@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% load retro_components %}
+
+{% block title %}{{ system.name }} - RomHoard{% endblock %}
+
+
+{% block content %}
+<div x-data="{
+    singleGameSend: null,
+
+    openSendModalForGame(gameId) {
+        this.singleGameSend = { gameId };
+        $store.modals.open('send');
+    },
+
+    closeSendModal() {
+        this.singleGameSend = null;
+        $store.modals.close('send');
+    },
+
+    startSend() {
+        const gameIds = this.singleGameSend ? [this.singleGameSend.gameId] : $store.selection.getIds();
+        $store.downloadManager.startSend('{% url "library:start_send" system.slug %}', { game_ids: gameIds });
+    },
+
+    startDownloadWithDevice() {
+        $store.downloadManager.startDownload('{% url "library:start_multi_download" system.slug %}', { game_ids: $store.selection.getIds() });
+    },
+
+    startRomsetDownload(romsetId) {
+        $store.romsetPicker.start('{{ csrf_token }}');
+    },
+
+    downloadSelected() {
+        if ($store.selection.size === 0) return;
+        if ($store.selection.size === 1) {
+            $store.gameDownload.handle($store.selection.getIds()[0]);
+            return;
+        }
+        // Set store values for modal display
+        $store.downloadManager.gameIds = $store.selection.getIds();
+        $store.downloadManager.matchedCount = $store.selection.size;
+        $store.downloadManager.collectionCreator = null; $store.downloadManager.collectionSlug = null;
+        $store.downloadManager.resetPreview();
+        $store.modals.open('device-picker');
+    },
+
+    sendSelected() {
+        if ($store.selection.size === 0) return;
+        // Set store values for modal display
+        $store.downloadManager.gameIds = $store.selection.getIds();
+        $store.downloadManager.matchedCount = $store.selection.size;
+        $store.downloadManager.collectionCreator = null; $store.downloadManager.collectionSlug = null;
+        $store.downloadManager.resetPreview();
+        $store.modals.open('send');
+    },
+
+    openAddToCollectionModal(detail) {
+        $store.collectionPicker.reset();
+        $store.collectionPicker.setGame(detail.gameId, detail.gameName, detail.systemSlug);
+        $store.modals.open('add-to-collection');
+        $store.collectionPicker.loadPicker('add-to-collection-content');
+    },
+
+    addToCollection() {
+        const notes = document.getElementById('collection-entry-notes')?.value || '';
+        $store.collectionPicker.addSingle(notes);
+    },
+
+    gatherSelectedGames() {
+        const games = [];
+        document.querySelectorAll('.game-checkbox:checked').forEach(cb => {
+            const row = cb.closest('tr') || cb.closest('.retro-card');
+            const nameEl = row?.querySelector('a.text-\\[var\\(--color-primary\\)\\]');
+            if (nameEl) {
+                games.push({
+                    game_name: nameEl.textContent.trim(),
+                    system_slug: cb.dataset.systemSlug || '{{ system.slug }}'
+                });
+            }
+        });
+        return games;
+    },
+
+    addSelectedToCollection() {
+        if ($store.selection.size === 0) return;
+        $store.collectionPicker.reset();
+        const games = this.gatherSelectedGames();
+        $store.modals.open('bulk-add-to-collection');
+        $store.collectionPicker.loadPicker('bulk-add-collection-content', games);
+    },
+
+    bulkAddToCollection() {
+        const games = this.gatherSelectedGames();
+        $store.collectionPicker.addBulk(games);
+    }
+}"
+@open-send-for-game.window="openSendModalForGame($event.detail.gameId)"
+@add-to-collection.window="openAddToCollectionModal($event.detail)">
+
+<!-- Breadcrumb -->
+<nav class="text-base text-[var(--color-text-muted)] mb-6">
+    <a href="{% url 'library:system_list' %}" class="hover:text-[var(--color-primary)]">Library</a>
+    <span class="mx-2">/</span>
+    <span class="text-[var(--color-text)]">{{ system.name }}</span>
+</nav>
+
+<!-- Header -->
+<div class="mb-8 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+    <div class="flex items-center gap-3">
+        {% if system.icon_path %}
+        <img src="{% url 'library:serve_system_icon' system.slug %}" alt="" class="w-10 h-10 pixelated flex-shrink-0">
+        {% endif %}
+        <h1 class="retro-heading retro-heading-lg">{{ system.name }}</h1>
+    </div>
+    <p class="text-[var(--color-text-muted)]">{{ total_games }} game{{ total_games|pluralize }}</p>
+</div>
+
+{% if total_in_collections > 0 %}
+<details class="retro-system-card mb-6">
+    <summary class="retro-system-card-header retro-header-cream cursor-pointer flex items-center gap-3 list-none !text-left">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+        </svg>
+        <span>{{ total_in_collections }} game{{ total_in_collections|pluralize }} in collections</span>
+        <svg class="h-4 w-4 ml-auto transition-transform details-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+        </svg>
+    </summary>
+    <div class="retro-system-card-body !text-left !items-start">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 w-full">
+            {% for col in system_collections %}
+            <a href="{% url 'romcollections:collection_detail' col.creator col.slug %}" class="flex items-center justify-between p-3 bg-[var(--color-bg)] border-2 border-[var(--color-border)] hover:bg-[var(--color-surface-alt)] transition-colors">
+                <span class="font-medium text-[var(--color-primary)]">{{ col.name }}</span>
+                <span class="retro-badge retro-badge-primary">{{ col.system_count }}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</details>
+{% endif %}
+
+{% if games %}
+<!-- Search and Filter Bar -->
+{% include "library/_search_filter_bar.html" %}
+
+<!-- Select all checkbox -->
+<div class="mb-4 flex items-center">
+    <label class="flex items-center gap-2 text-base text-[var(--color-text-muted)] cursor-pointer">
+        <input type="checkbox" id="select-all" class="retro-checkbox">
+        <span>Select all</span>
+    </label>
+</div>
+
+<div id="game-table-container">
+    {% include "library/_game_list_content.html" %}
+</div>
+
+<!-- Selection toolbar (fixed at bottom) -->
+{% include "components/_selection_toolbar.html" with extra_buttons_template="components/_collection_toolbar_button.html" %}
+
+{% include "components/_download_modals.html" %}
+
+{% include "components/_add_to_collection_modal.html" %}
+
+<!-- ROMSet Download Modal -->
+{% retro_modal id="romset-download" title="" close_btn=False size="2xl" %}
+<div id="romset-download-modal-content">
+    <div class="retro-modal-body">
+        <div class="p-12">
+            {% include "components/_loading_spinner.html" %}
+        </div>
+    </div>
+</div>
+{% endretro_modal %}
+
+{% include "library/_send_modal.html" %}
+</div>
+
+{% else %}
+<div x-data>
+<div class="retro-system-card retro-system-card-static">
+    <div class="retro-system-card-header retro-header-orange flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <h3>No Games Found</h3>
+    </div>
+    <div class="retro-system-card-body">
+        <p class="text-[var(--color-text-muted)] mb-4">No games found for {{ system.name }}.</p>
+        <a href="{% url 'library:scan' %}" class="retro-btn retro-btn-primary">
+            Scan ROMs
+        </a>
+    </div>
+</div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Configure Alpine stores (must happen during alpine:init)
+document.addEventListener('alpine:init', () => {
+    // Configure selection store
+    Alpine.store('selection').configure({
+        itemType: 'game',
+        toolbarId: 'selection-toolbar',
+        countId: 'selection-count',
+        checkboxClass: 'game-checkbox',
+        selectAllId: 'select-all',
+        clearBtnId: 'clear-selection',
+        containerIdForSwap: 'game-table-container'
+    });
+
+    // Configure search filters for single-system mode
+    Alpine.store('searchFilters').configure({
+        singleSystem: '{{ system.slug }}',
+        systemName: '{{ system.name }}',
+        target: '#game-table-container'
+    });
+});
+</script>
+{% endblock %}

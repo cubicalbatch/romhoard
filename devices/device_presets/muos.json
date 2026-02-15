@@ -1,0 +1,77 @@
+{
+  "slug": "muos",
+  "name": "muOS",
+  "description": "Configuration for muOS on Anbernic H700 devices (RG35XX, RG28XX, RG40XX, etc.) - flexible folder naming",
+  "tags": ["muos", "anbernic", "rg35xx", "rg28xx", "rg40xx", "rgcubexx", "trimui"],
+
+  "folders": {
+    "root_path": "ROMS/",
+    "system_paths": {
+      "gba": {"folder": "gba"},
+      "gbc": {"folder": "gbc"},
+      "gb": {"folder": "gb"},
+      "snes": {"folder": "snes"},
+      "nes": {"folder": "nes"},
+      "genesis": {"folder": "genesis"},
+      "sms": {"folder": "sms"},
+      "gg": {"folder": "gg"},
+      "psx": {"folder": "psx", "game_folders": true},
+      "n64": {"folder": "n64"},
+      "nds": {"folder": "nds"},
+      "psp": {"folder": "psp"},
+      "arcade": {"folder": "arcade"},
+      "neogeo": {"folder": "neogeo"},
+      "neogeocd": {"folder": "neogeocd"},
+      "atari2600": {"folder": "atari2600"},
+      "atari5200": {"folder": "atari5200"},
+      "atari7800": {"folder": "atari7800"},
+      "lynx": {"folder": "lynx"},
+      "jaguar": {"folder": "jaguar"},
+      "ngp": {"folder": "ngp"},
+      "ngpc": {"folder": "ngpc"},
+      "pcengine": {"folder": "pcengine"},
+      "pcenginecd": {"folder": "pcenginecd"},
+      "supergrafx": {"folder": "supergrafx"},
+      "wonderswan": {"folder": "wonderswan"},
+      "wonderswancolor": {"folder": "wonderswancolor"},
+      "segacd": {"folder": "segacd"},
+      "sega32x": {"folder": "sega32x"},
+      "saturn": {"folder": "saturn"},
+      "dreamcast": {"folder": "dreamcast"},
+      "virtualboy": {"folder": "virtualboy"},
+      "coleco": {"folder": "coleco"},
+      "intellivision": {"folder": "intellivision"},
+      "vectrex": {"folder": "vectrex"},
+      "msx": {"folder": "msx"},
+      "dos": {"folder": "dos"},
+      "scummvm": {"folder": "scummvm"},
+      "fds": {"folder": "fds"},
+      "pokemini": {"folder": "pokemini"},
+      "gameandwatch": {"folder": "gameandwatch"},
+      "3do": {"folder": "3do"},
+      "channelf": {"folder": "channelf"},
+      "odyssey2": {"folder": "odyssey2"},
+      "amstradcpc": {"folder": "amstradcpc"},
+      "c64": {"folder": "c64"},
+      "amiga": {"folder": "amiga"},
+      "atarist": {"folder": "atarist"},
+      "pico8": {"folder": "pico8"},
+      "tic80": {"folder": "tic80"},
+      "arduboy": {"folder": "arduboy"}
+    }
+  },
+
+  "images": {
+    "path_template": "MUOS/info/catalogue/{system}/box/{romname}.png",
+    "max_width": 515,
+    "image_type": "cover"
+  },
+
+  "transfer": {
+    "protocol": "sftp",
+    "port": 2022,
+    "user": "muos",
+    "password": "muos",
+    "path_prefix": "/SD2 (sdcard)/"
+  }
+}

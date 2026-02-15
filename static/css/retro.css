@@ -1,0 +1,2132 @@
+/* ============================================
+   CSS Custom Properties
+   ============================================ */
+
+:root {
+  /* Windows 95 / Early Web Palette */
+  --color-bg: #dfdfdf;
+  --color-panel: #c0c0c0;
+  --color-surface: #c0c0c0;
+  --color-surface-alt: #d4d4d4;
+  --color-text: #000000;
+  --color-text-muted: #404040;
+  --color-primary: #000080;         /* Navy */
+  --color-primary-hover: #1084d0;
+  --color-primary-light: #1084d0;
+  --color-secondary: #808080;
+  --color-accent: #ff0000;
+  --color-danger: #cc0000;
+  --color-danger-hover: #ff0000;
+  --color-success: #00a000;
+  --color-border: #000000;
+  --color-white: #ffffff;
+  --color-gray-dark: #808080;
+  --color-gray-light: #dfdfdf;
+
+  /* Accent Colors (Win95/Early Web) */
+  --color-teal: #008080;
+  --color-teal-light: #20a0a0;
+  --color-purple: #800080;
+  --color-purple-light: #a040a0;
+  --color-gold: #c0a000;
+  --color-forest: #228B22;
+  --color-forest-hover: #1e7a1e;
+
+  /* Dark Nav Colors */
+  --color-nav-bg: #3a3a3a;
+  --color-nav-btn: #5a5a5a;
+  --color-nav-btn-light: #7a7a7a;
+  --color-nav-btn-dark: #2a2a2a;
+  --color-nav-btn-hover: #6a6a6a;
+  --color-nav-btn-active: #4040c0;
+  --color-nav-btn-active-light: #6060e0;
+  --color-nav-btn-active-dark: #202080;
+
+  /* Typography */
+  --font-heading: 'VT323', monospace;
+  --font-body: 'Public Sans', sans-serif;
+
+  /* Shadows */
+  --shadow-bevel-out: inset 2px 2px 0 var(--color-white), inset -2px -2px 0 var(--color-gray-dark);
+  --shadow-bevel-in: inset 2px 2px 0 var(--color-gray-dark), inset -2px -2px 0 var(--color-white);
+  --shadow-popup: 4px 4px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* ============================================
+   Alpine.js Support
+   ============================================ */
+
+/* Hide elements until Alpine initializes */
+[x-cloak] { display: none !important; }
+
+/* ============================================
+   Base Styles
+   ============================================ */
+
+html {
+  scrollbar-gutter: stable;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+
+/* Scanline overlay */
+body::before {
+  content: "";
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background:
+    linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.05) 50%),
+    linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.02));
+  z-index: 2000;
+  background-size: 100% 4px, 3px 100%;
+  pointer-events: none;
+}
+
+/* Noise texture */
+body::after {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1999;
+  opacity: 0.03;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+
+/* ============================================
+   Bevel Utility Classes
+   ============================================ */
+
+.retro-bevel-out {
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-bevel-out);
+  background-color: var(--color-panel);
+}
+
+.retro-bevel-in {
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-bevel-in);
+  background-color: var(--color-panel);
+}
+
+/* ============================================
+   Typography
+   ============================================ */
+
+.retro-heading {
+  font-family: var(--font-heading);
+  color: var(--color-text);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.retro-heading-lg {
+  font-size: 2rem;
+  line-height: 1.4;
+}
+
+.retro-heading-md {
+  font-size: 1.5rem;
+  line-height: 1.4;
+}
+
+.retro-heading-sm {
+  font-size: 1.25rem;
+  line-height: 1.4;
+}
+
+/* ============================================
+   Buttons
+   ============================================ */
+
+.retro-btn {
+  display: inline-block;
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  font-weight: 700;
+  padding: 4px 12px;
+  text-decoration: none;
+  color: var(--color-text);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-bevel-out);
+  background-color: var(--color-panel);
+  cursor: pointer;
+  user-select: none;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: none;
+}
+
+.retro-btn:hover {
+  background-color: var(--color-surface-alt);
+}
+
+.retro-btn:active,
+.retro-btn.active {
+  box-shadow: var(--shadow-bevel-in);
+  padding: 5px 11px 3px 13px;
+}
+
+.retro-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.retro-btn-primary {
+  background: var(--color-primary);
+  border-color: var(--color-border);
+  color: #fff;
+  box-shadow: inset 2px 2px 0 #4040c0,
+              inset -2px -2px 0 #000040;
+}
+
+.retro-btn-primary:hover {
+  background: var(--color-primary-hover);
+}
+
+.retro-btn-primary:active {
+  box-shadow: inset 2px 2px 0 #000040,
+              inset -2px -2px 0 #4040c0;
+}
+
+.retro-btn-secondary {
+  background: var(--color-secondary);
+  border-color: var(--color-border);
+  color: #fff;
+  box-shadow: inset 2px 2px 0 #a0a0a0,
+              inset -2px -2px 0 #404040;
+}
+
+.retro-btn-secondary:hover {
+  background: #909090;
+}
+
+.retro-btn-secondary:active {
+  box-shadow: inset 2px 2px 0 #404040,
+              inset -2px -2px 0 #a0a0a0;
+}
+
+.retro-btn-danger {
+  background: var(--color-danger);
+  border-color: var(--color-border);
+  color: #fff;
+  box-shadow: inset 2px 2px 0 #ff4040,
+              inset -2px -2px 0 #800000;
+}
+
+.retro-btn-danger:hover {
+  background: var(--color-danger-hover);
+}
+
+.retro-btn-danger:active {
+  box-shadow: inset 2px 2px 0 #800000,
+              inset -2px -2px 0 #ff4040;
+}
+
+.retro-btn-success {
+  background: var(--color-forest);
+  border-color: var(--color-border);
+  color: #fff;
+  box-shadow: inset 2px 2px 0 #3cb03c,
+              inset -2px -2px 0 #145214;
+}
+
+.retro-btn-success:hover {
+  background: var(--color-forest-hover);
+}
+
+.retro-btn-success:active {
+  box-shadow: inset 2px 2px 0 #145214,
+              inset -2px -2px 0 #3cb03c;
+}
+
+.retro-btn-purple {
+  background: var(--color-purple);
+  border-color: var(--color-border);
+  color: #fff;
+  box-shadow: inset 2px 2px 0 #c040c0,
+              inset -2px -2px 0 #400040;
+}
+
+.retro-btn-purple:hover {
+  background: var(--color-purple-light);
+}
+
+.retro-btn-purple:active {
+  box-shadow: inset 2px 2px 0 #400040,
+              inset -2px -2px 0 #c040c0;
+}
+
+.retro-btn-teal {
+  background: var(--color-teal);
+  border-color: var(--color-border);
+  color: #fff;
+  box-shadow: inset 2px 2px 0 #40b0b0,
+              inset -2px -2px 0 #004040;
+}
+
+.retro-btn-teal:hover {
+  background: var(--color-teal-light);
+}
+
+.retro-btn-teal:active {
+  box-shadow: inset 2px 2px 0 #004040,
+              inset -2px -2px 0 #40b0b0;
+}
+
+.retro-btn-yellow {
+  background: #d4a000;
+  border-color: var(--color-border);
+  color: #000;
+  box-shadow: inset 2px 2px 0 #ffe040,
+              inset -2px -2px 0 #806000;
+}
+
+.retro-btn-yellow:hover {
+  background: #e6b000;
+}
+
+.retro-btn-yellow:active {
+  box-shadow: inset 2px 2px 0 #806000,
+              inset -2px -2px 0 #ffe040;
+}
+
+.retro-btn-sm {
+  padding: 2px 8px;
+  font-size: 0.75rem;
+}
+
+.retro-btn-sm:active,
+.retro-btn-sm.active {
+  padding: 3px 7px 1px 9px !important;
+}
+
+.retro-btn-lg {
+  padding: 8px 20px;
+  font-size: 1rem;
+}
+
+.retro-btn-lg:active {
+  padding: 9px 19px 7px 21px !important;
+}
+
+/* ============================================
+   Cards
+   ============================================ */
+
+.retro-card {
+  background: var(--color-panel);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-bevel-out);
+  transition: border-color 0.15s ease;
+}
+
+.retro-card:hover {
+  border-color: var(--color-primary);
+}
+
+.retro-card-header {
+  background: var(--color-primary);
+  color: var(--color-white);
+  border-bottom: 2px solid var(--color-border);
+  padding: 0.5rem 1rem;
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  text-transform: uppercase;
+}
+
+/* Ensure headings inside card headers are white */
+.retro-card-header .retro-heading {
+  color: var(--color-white);
+}
+
+.retro-card-body {
+  padding: 1rem;
+}
+
+/* ============================================
+   Inputs
+   ============================================ */
+
+.retro-input {
+  font-family: 'Courier New', Courier, monospace;
+  font-weight: bold;
+  font-size: 0.875rem;
+  padding: 4px 8px;
+  background: var(--color-white);
+  border: 2px solid var(--color-border);
+  color: var(--color-text);
+  width: 100%;
+  box-shadow: var(--shadow-bevel-in);
+}
+
+.retro-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.retro-input::placeholder {
+  color: var(--color-text-muted);
+  opacity: 0.6;
+  font-style: italic;
+}
+
+/* Select dropdowns should appear raised, not pressed in */
+select.retro-input {
+  box-shadow: var(--shadow-bevel-out);
+}
+
+/* Native select styled to match retro-select-trigger */
+.retro-select {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  padding: 0.75rem 2.5rem 0.75rem 1rem;
+  background: var(--color-panel);
+  border: 2px solid var(--color-border);
+  color: var(--color-text);
+  cursor: pointer;
+  box-shadow: var(--shadow-bevel-out);
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg fill='none' stroke='%23404040' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1.25rem;
+}
+
+.retro-select:hover {
+  border-color: var(--color-primary);
+}
+
+.retro-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+/* ============================================
+   Stats
+   ============================================ */
+
+.retro-stat {
+  background: var(--color-panel);
+  border: 2px solid var(--color-border);
+  padding: 0.75rem 1rem;
+  text-align: center;
+  box-shadow: var(--shadow-bevel-out);
+}
+
+.retro-stat-label {
+  font-family: var(--font-heading);
+  font-size: 1.125rem;
+  color: var(--color-text);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.125rem;
+  line-height: 1.2;
+}
+
+.retro-stat-value {
+  font-family: var(--font-heading);
+  font-size: 2rem;
+  color: var(--color-primary);
+  line-height: 1.1;
+}
+
+.retro-stat-desc {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-top: 0.125rem;
+  line-height: 1.2;
+}
+
+/* Stat Color Variants */
+.retro-stat-navy {
+  background: #d0d0e0;
+}
+.retro-stat-navy .retro-stat-value {
+  color: var(--color-primary);
+}
+
+.retro-stat-teal {
+  background: #d0e0e0;
+}
+.retro-stat-teal .retro-stat-value {
+  color: var(--color-teal);
+}
+
+.retro-stat-purple {
+  background: #e0d0e0;
+}
+.retro-stat-purple .retro-stat-value {
+  color: var(--color-purple);
+}
+
+/* ============================================
+   Badges
+   ============================================ */
+
+.retro-badge {
+  display: inline-block;
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  background: var(--color-surface-alt);
+  border: 2px solid var(--color-border);
+  color: var(--color-text);
+}
+
+/* Small badge variant - matches retro-btn-sm visual height */
+.retro-badge-sm {
+  padding: 2px 8px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.retro-badge-primary {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.retro-badge-success {
+  background: var(--color-success);
+  color: #fff;
+}
+
+.retro-badge-purple {
+  background: var(--color-purple);
+  color: #fff;
+}
+
+.retro-badge-teal {
+  background: var(--color-teal);
+  color: #fff;
+}
+
+/* ============================================
+   Result Cards
+   ============================================ */
+
+.retro-result-card {
+  border: 2px solid var(--color-border);
+  padding: 0.5rem 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.retro-result-success {
+  background: #dff0d8;
+  color: #2b5d2b;
+}
+
+.retro-result-error {
+  background: #f2dede;
+  color: #7a2a2a;
+}
+
+/* ============================================
+   Navigation
+   ============================================ */
+
+.retro-nav {
+  background-color: var(--color-nav-bg);
+  border-bottom: 3px solid var(--color-border);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.2);
+}
+
+.retro-nav-brand {
+  font-family: var(--font-heading);
+  font-size: 2.5rem;
+  text-decoration: none;
+  display: inline-flex;
+  position: relative;
+}
+
+.brand-rom,
+.brand-hoard {
+  position: relative;
+  display: inline-block;
+}
+
+.brand-rom {
+  background: linear-gradient(180deg, #ff4040 0%, #c02020 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(1px 1px 0 #801010)
+          drop-shadow(1px 1px 0 #801010)
+          drop-shadow(1px 1px 0 #500808);
+}
+
+.brand-hoard {
+  background: linear-gradient(180deg, #80c0ff 0%, #4080c0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(1px 1px 0 #203060)
+          drop-shadow(1px 1px 0 #203060)
+          drop-shadow(1px 1px 0 #102040);
+}
+
+.brand-collections {
+  background: linear-gradient(180deg, #ffd700 0%, #c0a000 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(1px 1px 0 #806000)
+          drop-shadow(1px 1px 0 #806000)
+          drop-shadow(1px 1px 0 #504000);
+}
+
+.retro-nav-brand:hover .brand-rom {
+  background: linear-gradient(180deg, #ff6060 0%, #e04040 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.retro-nav-brand:hover .brand-hoard {
+  background: linear-gradient(180deg, #a0d0ff 0%, #60a0e0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.retro-nav-link {
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  padding: 4px 12px;
+  color: var(--color-text);
+  text-decoration: none;
+  display: inline-block;
+  text-transform: uppercase;
+}
+
+.retro-nav-link:hover {
+  color: var(--color-primary);
+}
+
+.retro-nav-link.active {
+  color: #551a8b;  /* Classic IE visited link purple */
+  text-decoration: underline;
+}
+
+/* Button-style nav links for dark nav bar */
+.retro-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 1rem;
+  background: var(--color-nav-btn);
+  border: 3px solid var(--color-border);
+  border-radius: 4px;
+  color: #d0d0d0;
+  font-family: var(--font-heading);
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  text-decoration: none;
+  box-shadow: inset 3px 3px 0 var(--color-nav-btn-light),
+              inset -3px -3px 0 var(--color-nav-btn-dark);
+  letter-spacing: 0.5px;
+}
+
+.retro-nav-btn:hover {
+  background: var(--color-nav-btn-hover);
+  color: #ffffff;
+}
+
+.retro-nav-btn.active {
+  background: var(--color-nav-btn-active);
+  color: #ffffff;
+  box-shadow: inset 3px 3px 0 var(--color-nav-btn-active-dark),
+              inset -3px -3px 0 var(--color-nav-btn-active-light);
+}
+
+.retro-nav-btn svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+/* Mobile nav button variant */
+.retro-nav-btn-mobile {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  color: #d0d0d0;
+  font-family: var(--font-heading);
+  font-size: 1.125rem;
+  text-transform: uppercase;
+  text-decoration: none;
+  border-left: 4px solid transparent;
+}
+
+.retro-nav-btn-mobile:hover {
+  background: var(--color-nav-btn);
+  border-left-color: var(--color-nav-btn-active);
+  color: #ffffff;
+}
+
+.retro-nav-btn-mobile.active {
+  background: var(--color-nav-btn-active);
+  border-left-color: var(--color-nav-btn-active-light);
+  color: #ffffff;
+}
+
+.retro-nav-btn-mobile svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+}
+
+/* ============================================
+   Toolbar (Fixed bottom bar)
+   ============================================ */
+
+.retro-toolbar {
+  background: var(--color-panel);
+  border-top: 2px solid var(--color-border);
+  box-shadow: 0 -4px 0 rgba(0, 0, 0, 0.1),
+              inset 0 2px 0 var(--color-white);
+  padding: 0.75rem 1rem;
+}
+
+/* Selection toolbar slide-in animation */
+.retro-toolbar,
+#selection-toolbar {
+  transform: translateY(100%);
+  transition: transform 0.2s ease-out;
+}
+
+.retro-toolbar.visible,
+#selection-toolbar.visible {
+  transform: translateY(0);
+}
+
+/* ============================================
+   Modal
+   ============================================ */
+
+.retro-modal-backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.retro-modal {
+  background: var(--color-panel);
+  border: 3px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: inset 3px 3px 0 var(--color-white),
+              inset -3px -3px 0 var(--color-gray-dark),
+              4px 4px 0 rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  max-height: min(85vh, 85dvh);
+  max-width: 500px;
+  width: 90%;
+  overflow: hidden;
+}
+
+.retro-modal-header {
+  background: var(--color-primary);
+  border-bottom: 3px solid var(--color-border);
+  padding: 0.5rem 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.2),
+              inset 0 -2px 0 rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+}
+
+.retro-modal-title {
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+}
+
+.retro-modal-close {
+  background: var(--color-panel);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-bevel-out);
+  color: var(--color-text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.retro-modal-close:hover {
+  background: var(--color-surface-alt);
+}
+
+.retro-modal-close:active {
+  box-shadow: var(--shadow-bevel-in);
+}
+
+.retro-modal-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+  /* Calculate max-height: 85vh/dvh minus header (~50px) and footer (~70px) */
+  max-height: min(calc(85vh - 120px), calc(85dvh - 120px));
+}
+
+.retro-modal-footer {
+  padding: 1rem;
+  border-top: 2px solid var(--color-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  background: var(--color-surface-alt);
+  flex-shrink: 0;
+}
+
+/* Mobile modal adjustments - use higher specificity to override Tailwind max-w-* classes */
+@media (max-width: 640px) {
+  .retro-modal-backdrop .retro-modal {
+    width: 95%;
+    max-width: none;
+  }
+}
+
+/* ============================================
+   Checkbox (retro styled)
+   ============================================ */
+
+.retro-checkbox {
+  appearance: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  min-width: 1.25rem;
+  min-height: 1.25rem;
+  background: var(--color-white);
+  border: 2px solid var(--color-border);
+  cursor: pointer;
+  position: relative;
+  box-shadow: var(--shadow-bevel-in);
+  flex-shrink: 0;
+}
+
+.retro-checkbox:checked {
+  background: var(--color-primary);
+}
+
+.retro-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 6px;
+  height: 10px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.retro-checkbox:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+/* Visual checkbox (for Alpine-controlled state) */
+.retro-checkbox-visual {
+  display: inline-block;
+  width: 1.25rem;
+  height: 1.25rem;
+  min-width: 1.25rem;
+  background: var(--color-white);
+  border: 2px solid var(--color-border);
+  cursor: pointer;
+  position: relative;
+  box-shadow: var(--shadow-bevel-in);
+}
+
+.retro-checkbox-visual.checked {
+  background: var(--color-primary);
+}
+
+.retro-checkbox-visual.checked::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 6px;
+  height: 10px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* ============================================
+   Progress Bar
+   ============================================ */
+
+.retro-progress {
+  height: 1.25rem;
+  background: var(--color-white);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-bevel-in);
+  overflow: hidden;
+}
+
+.retro-progress-bar {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 0.3s ease;
+}
+
+/* ============================================
+   Dropdown
+   ============================================ */
+
+.retro-dropdown {
+  position: relative;
+}
+
+.retro-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: var(--color-panel);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-bevel-out), var(--shadow-popup);
+  min-width: 150px;
+  z-index: 100;
+}
+
+.retro-dropdown-item {
+  display: block;
+  padding: 0.5rem 1rem;
+  color: var(--color-text);
+  text-decoration: none;
+  font-size: 0.875rem;
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+}
+
+.retro-dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.retro-dropdown-item:hover {
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+
+/* ============================================
+   Rich Select Dropdown
+   ============================================ */
+
+.retro-select-dropdown {
+  position: relative;
+  width: 100%;
+}
+
+.retro-select-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--color-border);
+  background: var(--color-panel);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.1s ease;
+  box-shadow: var(--shadow-bevel-out);
+}
+
+.retro-select-trigger:hover {
+  border-color: var(--color-primary);
+}
+
+.retro-select-trigger:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.retro-select-trigger .trigger-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.retro-select-trigger .trigger-chevron {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--color-text-muted);
+  transition: transform 0.15s ease;
+}
+
+.retro-select-trigger[aria-expanded="true"] .trigger-chevron {
+  transform: rotate(180deg);
+}
+
+.retro-select-menu {
+  /* Position set dynamically via Alpine.js for fixed positioning */
+  background: var(--color-panel);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-bevel-out), var(--shadow-popup);
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 1000;
+}
+
+.retro-select-option {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-border);
+  transition: background 0.1s ease;
+}
+
+.retro-select-option:last-child {
+  border-bottom: none;
+}
+
+.retro-select-option:hover {
+  background: var(--color-bg);
+}
+
+.retro-select-option.selected {
+  background: var(--color-bg);
+  border-left: 3px solid var(--color-primary);
+  padding-left: calc(1rem - 3px);
+}
+
+.retro-select-option.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.retro-select-option.disabled:hover {
+  background: transparent;
+}
+
+.retro-select-placeholder {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* ============================================
+   Footer
+   ============================================ */
+
+.retro-footer {
+  background-color: var(--color-panel);
+  border-top: 2px solid var(--color-border);
+  box-shadow: inset 0 2px 0 var(--color-white);
+}
+
+/* ============================================
+   Utility Classes
+   ============================================ */
+
+.retro-divider {
+  border: none;
+  border-top: 2px dashed var(--color-border);
+  margin: 1.5rem 0;
+}
+
+.retro-text-muted {
+  color: var(--color-text-muted);
+}
+
+.retro-text-primary {
+  color: var(--color-primary);
+}
+
+/* Pixelated image rendering */
+.pixelated {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+/* Image scanline overlay for covers */
+.retro-cover {
+  position: relative;
+  overflow: hidden;
+}
+
+.retro-cover::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 1px,
+    rgba(0, 0, 0, 0.05) 1px,
+    rgba(0, 0, 0, 0.05) 2px
+  );
+}
+
+/* ============================================
+   Game Detail Page - Hero & Gallery
+   ============================================ */
+
+/* Beveled image frame */
+.retro-image-frame {
+  background: var(--color-panel);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-bevel-in);
+  padding: 4px;
+}
+
+.retro-image-frame img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Hero image with hover glow */
+.retro-hero-image {
+  transition: box-shadow 0.2s ease;
+  max-height: 50vh;
+  width: fit-content;
+  margin: 0 auto;
+}
+
+.retro-hero-image img {
+  max-height: 50vh;
+  object-fit: contain;
+}
+
+.retro-hero-image:hover {
+  box-shadow: inset 2px 2px 0 var(--color-gray-dark),
+              inset -2px -2px 0 var(--color-white),
+              0 0 20px rgba(0, 0, 128, 0.3);
+}
+
+/* Screenshot gallery */
+.retro-gallery {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding: 0.5rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-gray-dark) var(--color-panel);
+}
+
+.retro-gallery::-webkit-scrollbar {
+  height: 8px;
+}
+
+.retro-gallery::-webkit-scrollbar-track {
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+}
+
+.retro-gallery::-webkit-scrollbar-thumb {
+  background: var(--color-gray-dark);
+  border: 1px solid var(--color-border);
+}
+
+.retro-gallery-item {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  transition: transform 0.15s ease;
+}
+
+.retro-gallery-item:hover {
+  transform: scale(1.03);
+}
+
+/* Empty state frame */
+.retro-empty-frame {
+  background: var(--color-surface-alt);
+  border: 2px dashed var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  min-height: 200px;
+}
+
+/* Wheel title image */
+.retro-wheel-title {
+  max-height: 80px;
+  width: auto;
+  max-width: 100%;
+  image-rendering: auto;
+}
+
+/* Info panel with subtle tint */
+.retro-info-panel {
+  background: #e8e8f0;
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-bevel-out);
+}
+
+/* Rating badge styles */
+.retro-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: 700;
+  padding: 0.125rem 0.5rem;
+  border: 2px solid var(--color-border);
+}
+
+.retro-rating-great {
+  background: #228b22;
+  color: white;
+}
+
+.retro-rating-good {
+  background: #6b8e23;
+  color: white;
+}
+
+.retro-rating-mixed {
+  background: #daa520;
+  color: black;
+}
+
+.retro-rating-poor {
+  background: #cd853f;
+  color: white;
+}
+
+.retro-rating-bad {
+  background: #b22222;
+  color: white;
+}
+
+/* GLightbox overrides for retro feel */
+.glightbox-clean .gslide-title {
+  font-family: var(--font-heading);
+  text-transform: uppercase;
+}
+
+.glightbox-clean .gclose,
+.glightbox-clean .gnext,
+.glightbox-clean .gprev {
+  background: var(--color-panel);
+  border: 2px solid var(--color-border);
+}
+
+/* ROM variant card for mobile */
+.retro-rom-card {
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-bevel-out);
+}
+
+.retro-rom-card-header {
+  background: var(--color-surface-alt);
+  border-bottom: 2px solid var(--color-border);
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* ROM table romset grouping */
+.romset-group-even {
+  background-color: rgba(200, 200, 210, 0.25);
+}
+
+.romset-group-start td {
+  border-top: 2px solid var(--color-border);
+}
+
+.romset-multi-rom {
+  border-left: 5px solid var(--color-teal);
+  box-shadow: inset 4px 0 8px -4px rgba(0, 128, 128, 0.4);
+}
+
+/* Action button group */
+.retro-action-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* ============================================
+   Details/Summary Arrow Animation
+   ============================================ */
+
+details .details-arrow {
+  transition: transform 0.2s ease;
+}
+
+details[open] .details-arrow {
+  transform: rotate(180deg);
+}
+
+/* Hide default marker */
+summary::-webkit-details-marker {
+  display: none;
+}
+
+/* ============================================
+   Collection Cover Fan Effect
+   ============================================ */
+
+.cover-fan > div:nth-child(1) { transform: rotate(-8deg) translateY(4px); }
+.cover-fan > div:nth-child(2) { transform: rotate(-4deg) translateY(0px); }
+.cover-fan > div:nth-child(3) { transform: rotate(0deg) translateY(-2px); }
+.cover-fan > div:nth-child(4) { transform: rotate(4deg) translateY(0px); }
+.cover-fan > div:nth-child(5) { transform: rotate(8deg) translateY(4px); }
+
+@media (hover: hover) {
+  .cover-fan > div:hover {
+    transform: scale(1.25) rotate(0deg) translateY(-4px) !important;
+    z-index: 50;
+  }
+}
+
+/* ============================================
+   Gold Stat Box (for Devices)
+   ============================================ */
+
+.retro-stat-gold {
+  background: #f0e8d0;
+}
+
+.retro-stat-gold .retro-stat-value {
+  color: #a08000;
+}
+
+/* ============================================
+   Radio Button (retro styled)
+   ============================================ */
+
+.retro-radio {
+  appearance: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  background: var(--color-white);
+  border: 2px solid var(--color-border);
+  border-radius: 50%;
+  cursor: pointer;
+  position: relative;
+  box-shadow: var(--shadow-bevel-in);
+  flex-shrink: 0;
+}
+
+.retro-radio:checked {
+  background: var(--color-white);
+}
+
+.retro-radio:checked::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 8px;
+  height: 8px;
+  background: var(--color-primary);
+  border-radius: 50%;
+}
+
+.retro-radio:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+/* ============================================
+   Styled Details/Summary
+   ============================================ */
+
+.retro-details {
+  border: 2px solid var(--color-border);
+  background: var(--color-panel);
+  box-shadow: var(--shadow-bevel-out);
+}
+
+.retro-details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: var(--color-surface-alt);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  font-weight: 600;
+  font-family: var(--font-heading);
+  font-size: 1.125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.retro-details[open] > summary {
+  border-bottom: 2px solid var(--color-border);
+}
+
+.retro-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.retro-details > summary:hover {
+  background: var(--color-bg);
+}
+
+/* ============================================
+   Connection Status Dots
+   ============================================ */
+
+.retro-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 2px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.retro-status-dot-success {
+  background: var(--color-success);
+  box-shadow: 0 0 4px var(--color-success);
+}
+
+.retro-status-dot-warning {
+  background: var(--color-gold);
+  box-shadow: 0 0 4px var(--color-gold);
+}
+
+.retro-status-dot-inactive {
+  background: var(--color-secondary);
+}
+
+/* ============================================
+   Code Block Styling
+   ============================================ */
+
+.retro-code {
+  font-family: var(--font-heading);
+  background: var(--color-bg);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-bevel-in);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  overflow-x: auto;
+}
+
+/* Inline code */
+.retro-code-inline {
+  font-family: var(--font-heading);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  padding: 0.125rem 0.375rem;
+  font-size: 0.875rem;
+}
+
+/* ============================================
+   Radio Card Selection (for device picker)
+   ============================================ */
+
+.retro-radio-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--color-border);
+  background: var(--color-panel);
+  cursor: pointer;
+  transition: background 0.1s ease, border-color 0.1s ease;
+}
+
+.retro-radio-card:hover {
+  background: var(--color-bg);
+}
+
+.retro-radio-card.selected {
+  border-color: var(--color-primary);
+  background: var(--color-bg);
+}
+
+/* ============================================
+   Badge Variants (Gold/Warning)
+   ============================================ */
+
+.retro-badge-gold {
+  background: var(--color-gold);
+  color: var(--color-text);
+}
+
+.retro-badge-warning {
+  background: #e6b000;
+  color: var(--color-text);
+}
+
+/* ============================================
+   Collection Card Styles
+   ============================================ */
+
+/* Collection card with gradient header */
+.retro-collection-card {
+  background: var(--color-panel);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-bevel-out);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.retro-collection-card:hover {
+  border-color: var(--color-primary);
+}
+
+.retro-collection-header {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-teal) 100%);
+  color: var(--color-white);
+  padding: 0.75rem 1rem;
+  border-bottom: 2px solid var(--color-border);
+}
+
+.retro-collection-header .retro-heading {
+  color: var(--color-white);
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+}
+
+.retro-collection-body {
+  padding: 1rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Mini stats for collection cards */
+.retro-mini-stats {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.retro-mini-stat {
+  background: var(--color-surface-alt);
+  border: 2px solid var(--color-border);
+  padding: 0.375rem 0.625rem;
+  text-align: center;
+  font-size: 0.75rem;
+  flex: 1;
+  box-shadow: inset 1px 1px 0 var(--color-white),
+              inset -1px -1px 0 var(--color-gray-dark);
+}
+
+.retro-mini-stat-value {
+  font-family: var(--font-heading);
+  font-size: 1.125rem;
+  color: var(--color-primary);
+  line-height: 1.2;
+}
+
+.retro-mini-stat-label {
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  letter-spacing: 0.5px;
+}
+
+.retro-mini-stat-success .retro-mini-stat-value {
+  color: var(--color-forest);
+}
+
+/* Enhanced cover fan */
+.cover-fan-lg > div {
+  width: 5.5rem;
+  height: 7.5rem;
+  border: 2px solid var(--color-border);
+  overflow: hidden;
+  background: var(--color-surface-alt);
+  box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.cover-fan-lg > div:nth-child(1) { transform: rotate(-10deg) translateY(8px); z-index: 1; }
+.cover-fan-lg > div:nth-child(2) { transform: rotate(-5deg) translateY(2px); z-index: 2; }
+.cover-fan-lg > div:nth-child(3) { transform: rotate(0deg) translateY(-2px); z-index: 3; }
+.cover-fan-lg > div:nth-child(4) { transform: rotate(5deg) translateY(2px); z-index: 2; }
+.cover-fan-lg > div:nth-child(5) { transform: rotate(10deg) translateY(8px); z-index: 1; }
+
+@media (hover: hover) {
+  .cover-fan-lg > div:hover {
+    transform: scale(1.15) rotate(0deg) translateY(-8px) !important;
+    z-index: 50;
+    box-shadow: 4px 4px 12px rgba(0, 0, 0, 0.3);
+  }
+}
+
+/* Collection card action buttons */
+.retro-collection-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.75rem;
+}
+
+/* ============================================
+   Sort Button Group
+   ============================================ */
+
+.retro-sort-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.retro-sort-btn {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--color-panel);
+  border: 2px solid var(--color-border);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.retro-sort-btn:hover {
+  background: var(--color-surface-alt);
+}
+
+.retro-sort-btn.active {
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+
+/* ============================================
+   Empty State Enhancement
+   ============================================ */
+
+.retro-empty-state {
+  text-align: center;
+  padding: 3rem 2rem;
+}
+
+.retro-empty-state-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.retro-empty-state-title {
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+}
+
+.retro-empty-state-text {
+  color: var(--color-text-muted);
+  margin-bottom: 1.5rem;
+}
+
+/* ============================================
+   Metadata Coverage Cards
+   ============================================ */
+
+.retro-coverage-card {
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+  padding: 1rem;
+  box-shadow: var(--shadow-bevel-out);
+}
+
+.retro-coverage-card.is-complete {
+  border-left: 4px solid var(--color-success);
+}
+
+.retro-coverage-card.has-missing {
+  border-left: 4px solid var(--color-gold);
+}
+
+/* ============================================
+   Batch Status Cards
+   ============================================ */
+
+.retro-batch-card {
+  background: var(--color-bg);
+  border: 2px solid var(--color-border);
+  padding: 1rem;
+}
+
+.retro-batch-card.batch-completed {
+  border-left: 4px solid var(--color-success);
+}
+
+.retro-batch-card.batch-cancelled {
+  border-left: 4px solid var(--color-gold);
+}
+
+.retro-batch-card.batch-failed {
+  border-left: 4px solid var(--color-danger);
+}
+
+/* Pulse border animation for active batches */
+.retro-pulse-border {
+  animation: pulse-border 2s ease-in-out infinite;
+}
+
+@keyframes pulse-border {
+  0%, 100% {
+    border-color: var(--color-border);
+  }
+  50% {
+    border-color: var(--color-primary);
+  }
+}
+
+/* ============================================
+   Progress Bar Enhancements
+   ============================================ */
+
+.retro-progress-labeled {
+  position: relative;
+}
+
+.retro-progress-animated .retro-progress-bar,
+.retro-progress-bar.retro-progress-animated {
+  background: linear-gradient(
+    90deg,
+    var(--color-primary) 0%,
+    var(--color-primary-light) 50%,
+    var(--color-primary) 100%
+  );
+  background-size: 200% 100%;
+  animation: progress-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes progress-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* ============================================
+   Badge Variants (Additional)
+   ============================================ */
+
+.retro-badge-danger {
+  background: var(--color-danger);
+  color: var(--color-white);
+}
+
+/* ============================================
+   Details Header (for collapsible sections)
+   ============================================ */
+
+.retro-details-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-bevel-out);
+  cursor: pointer;
+  font-family: var(--font-heading);
+  font-size: 1.125rem;
+  text-transform: uppercase;
+  list-style: none;
+}
+
+.retro-details-header::-webkit-details-marker {
+  display: none;
+}
+
+.retro-details[open] .retro-details-header {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.retro-details[open] .details-arrow {
+  transform: rotate(180deg);
+}
+
+.retro-details-body {
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+  border-top: none;
+  padding: 1rem;
+  box-shadow: inset 2px 0 0 var(--color-white),
+              inset -2px -2px 0 var(--color-gray-dark);
+}
+
+/* ============================================
+   Toast Notifications
+   ============================================ */
+
+.retro-toast {
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--color-border);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: 3px 3px 0 rgba(0,0,0,0.3);
+  min-width: 200px;
+  max-width: 400px;
+}
+
+.retro-toast-success {
+  background-color: var(--color-success);
+  color: white;
+}
+
+.retro-toast-error {
+  background-color: var(--color-danger);
+  color: white;
+}
+
+.retro-toast-info {
+  background-color: var(--color-teal);
+  color: white;
+}
+
+/* ============================================
+   Collection Picker Radio Card Variant
+   ============================================ */
+
+.retro-radio-card.selected-teal {
+  background: var(--color-teal);
+  border-color: var(--color-teal);
+  color: white;
+}
+
+.retro-radio-card.selected-teal .retro-badge {
+  background: rgba(255,255,255,0.2);
+  color: white;
+}
+
+/* ============================================
+   System Cards (Library Grid)
+   ============================================ */
+
+.retro-system-card {
+  background: var(--color-panel);
+  border: 3px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: inset 3px 3px 0 var(--color-white),
+              inset -3px -3px 0 var(--color-gray-dark),
+              4px 4px 0 rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  overflow: hidden;
+}
+
+.retro-system-card:hover {
+  transform: translateY(-3px);
+  box-shadow: inset 3px 3px 0 var(--color-white),
+              inset -3px -3px 0 var(--color-gray-dark),
+              6px 6px 0 rgba(0, 0, 0, 0.3);
+}
+
+.retro-system-card-static,
+.retro-system-card-static:hover {
+  transform: none;
+  cursor: default;
+}
+
+.retro-system-card-header {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 3px solid var(--color-border);
+  text-align: center;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.2),
+              inset 0 -2px 0 rgba(0, 0, 0, 0.2);
+}
+
+.retro-system-card-header h3 {
+  font-family: var(--font-heading);
+  font-size: 1.375rem;
+  color: var(--color-white);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+}
+
+.retro-system-card-body {
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  flex: 1;
+}
+
+/* When card body uses !items-start (form/content cards), stretch children to full width */
+.retro-system-card-body.\!items-start {
+  align-items: stretch;
+}
+
+.retro-system-card-body.\!items-start > * {
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .retro-system-card-body {
+    overflow-x: auto;
+  }
+}
+
+.retro-system-card-icon {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 0.5rem;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+.retro-system-card-games {
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  color: var(--color-primary);
+  line-height: 1.2;
+}
+
+.retro-system-card-roms {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-top: 0.125rem;
+}
+
+.retro-system-card-extensions {
+  font-size: 0.625rem;
+  color: var(--color-text-muted);
+  margin-top: 0.25rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* System Card Header Color Variants */
+.retro-header-magenta {
+  background: linear-gradient(180deg, #e040a0 0%, #c02080 100%);
+}
+
+.retro-header-blue {
+  background: linear-gradient(180deg, #4080e0 0%, #2060c0 100%);
+}
+
+.retro-header-purple {
+  background: linear-gradient(180deg, #a040c0 0%, #8020a0 100%);
+}
+
+.retro-header-teal {
+  background: linear-gradient(180deg, #40a0a0 0%, #208080 100%);
+}
+
+.retro-header-green {
+  background: linear-gradient(180deg, #40a060 0%, #208040 100%);
+}
+
+.retro-header-orange {
+  background: linear-gradient(180deg, #e08040 0%, #c06020 100%);
+}
+
+.retro-header-red {
+  background: linear-gradient(180deg, #e04040 0%, #c02020 100%);
+}
+
+.retro-header-navy {
+  background: linear-gradient(180deg, #4040c0 0%, #2020a0 100%);
+}
+
+.retro-header-gold {
+  background: linear-gradient(180deg, #d4a84b 0%, #b8922f 100%);
+}
+
+.retro-header-slate {
+  background: linear-gradient(180deg, #607080 0%, #405060 100%);
+}
+
+.retro-header-olive {
+  background: linear-gradient(180deg, #808040 0%, #606020 100%);
+}
+
+.retro-header-maroon {
+  background: linear-gradient(180deg, #a04060 0%, #803040 100%);
+}
+
+.retro-header-indigo {
+  background: linear-gradient(180deg, #6040a0 0%, #402080 100%);
+}
+
+.retro-header-coral {
+  background: linear-gradient(180deg, #e07060 0%, #c05040 100%);
+}
+
+.retro-header-cyan {
+  background: linear-gradient(180deg, #40a0c0 0%, #2080a0 100%);
+}
+
+.retro-header-gray {
+  background: linear-gradient(180deg, #808080 0%, #606060 100%);
+}
+
+/* Light header variants (for black text) */
+.retro-header-cream {
+  background: linear-gradient(180deg, #f5e6c8 0%, #e8d4a8 100%);
+}
+
+.retro-header-cream h3,
+.retro-header-cream span,
+.retro-header-cream svg {
+  color: var(--color-text);
+  text-shadow: none;
+  filter: none;
+}
+
+/* ============================================
+   Table Header (System Card Style)
+   ============================================ */
+
+.retro-table-header {
+  background: linear-gradient(180deg, #4040c0 0%, #2020a0 100%);
+  border-bottom: 3px solid var(--color-border);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.2),
+              inset 0 -2px 0 rgba(0, 0, 0, 0.2);
+}
+
+.retro-table-header th {
+  color: var(--color-white);
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
+}
+
+.retro-table-header a {
+  color: var(--color-white) !important;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
+}
+
+.retro-table-header a:hover {
+  color: #c0c0ff !important;
+}
+
+/* ============================================
+   Filter Components
+   ============================================ */
+
+/* Filter badge (count indicator) */
+.retro-filter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--color-danger);
+  color: var(--color-white);
+  border-radius: 9999px;
+}
+
+/* Filter dropdown menu */
+.retro-filter-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  margin-top: 0.25rem;
+  background: var(--color-panel);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-bevel-out), var(--shadow-popup);
+  max-height: 320px;
+  overflow: hidden;
+}
+
+.retro-filter-option {
+  transition: background 0.1s ease;
+}
+
+.retro-filter-option:hover {
+  background: var(--color-bg);
+}
+
+/* Filter chips (removable tags) */
+.retro-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--color-surface-alt);
+  border: 2px solid var(--color-border);
+  color: var(--color-text);
+}
+
+.retro-filter-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  transition: color 0.1s ease;
+}
+
+.retro-filter-chip button:hover {
+  color: var(--color-danger);
+}
+
+/* Chip color variants */
+.retro-filter-chip-system {
+  background: #d0d0e0;
+  border-color: var(--color-primary);
+}
+
+.retro-filter-chip-genre {
+  background: #d0e0d0;
+  border-color: var(--color-forest);
+}
+
+.retro-filter-chip-rating {
+  background: #e0e0d0;
+  border-color: var(--color-gold);
+}
+

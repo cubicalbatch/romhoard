@@ -1,0 +1,68 @@
+{
+  "slug": "knulli",
+  "name": "Knulli",
+  "description": "Configuration for Knulli CFW - Batocera fork for devices with proprietary kernels (RG35XX, TrimUI, etc.)",
+  "tags": ["knulli", "batocera", "emulationstation", "rg35xx", "rg28xx", "rg40xx", "trimui"],
+
+  "folders": {
+    "root_path": "roms/",
+    "system_paths": {
+      "gba": {"folder": "gba"},
+      "gbc": {"folder": "gbc"},
+      "gb": {"folder": "gb"},
+      "snes": {"folder": "snes"},
+      "nes": {"folder": "nes"},
+      "genesis": {"folder": "megadrive"},
+      "sms": {"folder": "mastersystem"},
+      "gg": {"folder": "gamegear"},
+      "psx": {"folder": "psx"},
+      "n64": {"folder": "n64"},
+      "nds": {"folder": "nds"},
+      "psp": {"folder": "psp"},
+      "arcade": {"folder": "mame"},
+      "fbneo": {"folder": "fbneo"},
+      "neogeo": {"folder": "neogeo"},
+      "neogeocd": {"folder": "neogeocd"},
+      "atari2600": {"folder": "atari2600"},
+      "atari5200": {"folder": "atari5200"},
+      "atari7800": {"folder": "atari7800"},
+      "lynx": {"folder": "lynx"},
+      "ngp": {"folder": "ngp"},
+      "ngpc": {"folder": "ngpc"},
+      "pcengine": {"folder": "pcengine"},
+      "pcenginecd": {"folder": "pcenginecd"},
+      "supergrafx": {"folder": "supergrafx"},
+      "wonderswan": {"folder": "wswan"},
+      "wonderswancolor": {"folder": "wswanc"},
+      "segacd": {"folder": "segacd"},
+      "sega32x": {"folder": "sega32x"},
+      "saturn": {"folder": "saturn"},
+      "dreamcast": {"folder": "dreamcast"},
+      "virtualboy": {"folder": "virtualboy"},
+      "coleco": {"folder": "colecovision"},
+      "intellivision": {"folder": "intellivision"},
+      "vectrex": {"folder": "vectrex"},
+      "msx": {"folder": "msx1"},
+      "dos": {"folder": "dos"},
+      "scummvm": {"folder": "scummvm"},
+      "fds": {"folder": "fds"},
+      "pokemini": {"folder": "pokemini"},
+      "gameandwatch": {"folder": "gameandwatch"},
+      "ports": {"folder": "ports"}
+    }
+  },
+
+  "images": {
+    "path_template": "{root_path}/{system}/images/{romname}-image.png",
+    "max_width": null,
+    "image_type": "mixed"
+  },
+
+  "transfer": {
+    "protocol": "sftp",
+    "port": 22,
+    "user": "root",
+    "password": "linux",
+    "path_prefix": "/userdata"
+  }
+}

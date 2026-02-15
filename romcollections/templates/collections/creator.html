@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% load retro_components %}
+
+{% block title %}{{ creator }}'s Collections - RomHoard{% endblock %}
+
+{% block content %}
+<div x-data="{
+    startDownloadWithDevice() {
+        $store.downloadManager.startDownload(`/collections/${$store.downloadManager.collectionCreator}/${$store.downloadManager.collectionSlug}/download/`, {});
+    },
+    startSend() {
+        $store.downloadManager.startSend(`/collections/${$store.downloadManager.collectionCreator}/${$store.downloadManager.collectionSlug}/send/`, {});
+    }
+}">
+<!-- Page Header -->
+<div class="mb-8">
+    <nav class="text-base text-[var(--color-text-muted)] mb-2">
+        <a href="{% url 'romcollections:collection_list' %}" class="hover:text-[var(--color-primary)]">Collections</a>
+        <span class="mx-2">/</span>
+        <span>{{ creator }}</span>
+    </nav>
+    <h1 class="retro-heading retro-heading-lg">Collections by {{ creator }}</h1>
+    <p class="text-[var(--color-text-muted)] mt-1">{{ total_collections }} collection{{ total_collections|pluralize }}</p>
+</div>
+
+<!-- Collections Grid -->
+{% if collections %}
+{% include "collections/_collection_grid.html" with collections=collections page_obj=page_obj page_param='page' %}
+{% else %}
+<p class="text-[var(--color-text-muted)] text-center py-8">No collections found.</p>
+{% endif %}
+
+<!-- Download/Send modals -->
+{% include "components/_download_modals.html" %}
+{% include "library/_send_modal.html" %}
+
+</div>
+{% endblock %}

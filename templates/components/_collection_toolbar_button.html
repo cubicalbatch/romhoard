@@ -1,0 +1,11 @@
+<!-- Add to Collection button for toolbar (separated from Send/Download) -->
+<button @click="addSelectedToCollection()"
+        class="retro-btn retro-btn-teal retro-btn-sm flex items-center gap-2">
+    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+    </svg>
+    <span class="hidden sm:inline">Add to Collection</span>
+</button>
+
+<!-- Visual divider between collection actions and send/download -->
+<div class="w-px h-6 bg-[var(--color-border)] hidden sm:block"></div>

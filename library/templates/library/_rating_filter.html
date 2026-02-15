@@ -1,0 +1,60 @@
+{# Rating filter with operator and value inputs #}
+<div class="flex gap-2">
+    {# Operator select #}
+    <select x-model="$store.searchFilters.ratingOp"
+            @change="if ($store.searchFilters.ratingMin) $store.searchFilters.search()"
+            class="retro-input py-1 px-2 text-base w-20">
+        <option value="">Any</option>
+        <option value="gte">&ge;</option>
+        <option value="lte">&le;</option>
+        <option value="eq">=</option>
+        <option value="between">Range</option>
+    </select>
+
+    {# Min value input #}
+    <input type="number"
+           x-model="$store.searchFilters.ratingMin"
+           @change="if ($store.searchFilters.ratingOp && $store.searchFilters.ratingMin) $store.searchFilters.search()"
+           :disabled="!$store.searchFilters.ratingOp"
+           min="0"
+           max="100"
+           placeholder="0"
+           class="retro-input py-1 px-2 text-base w-16 text-center"
+           :class="{ 'opacity-50': !$store.searchFilters.ratingOp }">
+
+    {# Max value input (only for 'between') #}
+    <template x-if="$store.searchFilters.ratingOp === 'between'">
+        <div class="flex items-center gap-2">
+            <span class="text-base">to</span>
+            <input type="number"
+                   x-model="$store.searchFilters.ratingMax"
+                   @change="if ($store.searchFilters.ratingMin && $store.searchFilters.ratingMax) $store.searchFilters.search()"
+                   min="0"
+                   max="100"
+                   placeholder="100"
+                   class="retro-input py-1 px-2 text-base w-16 text-center">
+        </div>
+    </template>
+</div>
+
+{# Quick presets #}
+<div class="mt-2 flex gap-1 flex-wrap">
+    <button type="button"
+            @click="$store.searchFilters.ratingOp = 'gte'; $store.searchFilters.ratingMin = 85; $store.searchFilters.ratingMax = null; $store.searchFilters.search()"
+            class="retro-btn retro-btn-sm text-base"
+            :class="{ 'retro-btn-success': $store.searchFilters.ratingOp === 'gte' && $store.searchFilters.ratingMin == 85 }">
+        85+
+    </button>
+    <button type="button"
+            @click="$store.searchFilters.ratingOp = 'gte'; $store.searchFilters.ratingMin = 70; $store.searchFilters.ratingMax = null; $store.searchFilters.search()"
+            class="retro-btn retro-btn-sm text-base"
+            :class="{ 'retro-btn-primary': $store.searchFilters.ratingOp === 'gte' && $store.searchFilters.ratingMin == 70 }">
+        70+
+    </button>
+    <button type="button"
+            @click="$store.searchFilters.ratingOp = ''; $store.searchFilters.ratingMin = null; $store.searchFilters.ratingMax = null; $store.searchFilters.search()"
+            class="retro-btn retro-btn-sm text-base"
+            :class="{ 'retro-btn-secondary': !$store.searchFilters.ratingOp }">
+        Any
+    </button>
+</div>

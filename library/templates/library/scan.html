@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block title %}Scan ROMs - RomHoard{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="mb-8">
+    <h1 class="retro-heading retro-heading-lg">Scan ROM Directory</h1>
+    <p class="text-[var(--color-text-muted)] mt-1">Enter the path to your ROM directory to scan and catalog files</p>
+</div>
+
+{% if error %}
+<div class="retro-system-card retro-system-card-static mb-6">
+    <div class="retro-system-card-header retro-header-red flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+        </svg>
+        <h3>Error</h3>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start">
+        <span class="text-[var(--color-danger)]">{{ error }}</span>
+    </div>
+</div>
+{% endif %}
+
+{% include "library/_saved_paths.html" %}
+
+<div id="scan-status-wrapper"
+     x-data="{
+         prevJobIds: null,
+         checkForCompletion() {
+             const data = document.getElementById('scan-status-data');
+             const currentIds = data ? data.dataset.activeJobIds : '';
+             if (this.prevJobIds !== null && this.prevJobIds !== '' && currentIds === '') {
+                 location.reload();
+             }
+             this.prevJobIds = currentIds;
+         }
+     }"
+     x-init="document.addEventListener('htmx:afterSwap', (e) => { if (e.detail.target.id === 'scan-status-container') checkForCompletion(); })">
+    {% include "library/_scan_status.html" %}
+</div>
+
+<!-- Scan Form -->
+<div class="retro-system-card retro-system-card-static mb-6">
+    <div class="retro-system-card-header retro-header-purple flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+        </svg>
+        <h3>Scan Configuration</h3>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start">
+        <form method="post" class="w-full">
+            {% csrf_token %}
+            <div class="mb-4">
+                <label for="path" class="block text-base font-medium text-[var(--color-text)] mb-2">
+                    Directory Path
+                </label>
+                <input
+                    type="text"
+                    name="path"
+                    id="path"
+                    value="{{ path|default:default_path }}"
+                    placeholder="Ex: /path/to/roms"
+                    class="retro-input w-full"
+                    required
+                >
+                <p class="mt-2 text-base text-[var(--color-text-muted)]">
+                    Enter the absolute path to your ROM directory. The scanner will recursively search all subdirectories.
+                </p>
+            </div>
+            <div class="mb-6 p-4 bg-[var(--color-bg)] border-2 border-[var(--color-border)]">
+                <label class="flex items-center space-x-3 cursor-pointer">
+                    <input
+                        type="checkbox"
+                        name="use_hasheous"
+                        id="use_hasheous"
+                        {% if not screenscraper_configured %}checked{% endif %}
+                        class="retro-checkbox"
+                    >
+                    <div>
+                        <span class="text-base font-medium text-[var(--color-text)]">Use Hasheous API</span>
+                        <p class="text-base text-[var(--color-text-muted)] mt-1">
+                            Enable Hasheous.org API lookup for ROM identification (fallback when No-Intro DAT is not available)
+                        </p>
+                    </div>
+                </label>
+            </div>
+            <div class="mb-6 p-4 bg-[var(--color-bg)] border-2 border-[var(--color-border)]">
+                <label class="flex items-center space-x-3 cursor-pointer">
+                    <input
+                        type="checkbox"
+                        name="fetch_metadata"
+                        id="fetch_metadata"
+                        checked
+                        class="retro-checkbox"
+                    >
+                    <div>
+                        <span class="text-base font-medium text-[var(--color-text)]">Fetch metadata</span>
+                        <p class="text-base text-[var(--color-text-muted)] mt-1">
+                            Queue game info and image downloads from ScreenScraper for new games.
+                            <strong class="text-[var(--color-text)]">Metadata fetches in the background after scan completes.</strong>
+                        </p>
+                    </div>
+                </label>
+            </div>
+            <div class="mb-6 p-4 bg-[var(--color-bg)] border-2 border-[var(--color-border)]"
+                 x-data="{ scheduleEnabled: false }">
+                <label class="flex items-center space-x-3 cursor-pointer">
+                    <input
+                        type="checkbox"
+                        name="schedule_enabled"
+                        id="schedule_enabled"
+                        x-model="scheduleEnabled"
+                        class="retro-checkbox"
+                    >
+                    <div>
+                        <span class="text-base font-medium text-[var(--color-text)]">Scan on a schedule</span>
+                        <p class="text-base text-[var(--color-text-muted)] mt-1">
+                            Automatically rescan this path periodically to pick up new ROMs.
+                        </p>
+                    </div>
+                </label>
+                <div x-show="scheduleEnabled" x-cloak class="mt-3 ml-8">
+                    <label for="schedule_interval" class="block text-base font-medium text-[var(--color-text)] mb-1">
+                        Scan frequency
+                    </label>
+                    <select
+                        name="schedule_interval"
+                        id="schedule_interval"
+                        class="retro-input w-auto"
+                    >
+                        <option value="hourly">Every hour</option>
+                        <option value="daily" selected>Every day</option>
+                        <option value="weekly">Every week</option>
+                        <option value="monthly">Every month</option>
+                    </select>
+                </div>
+            </div>
+            <button type="submit" class="retro-btn retro-btn-success flex items-center gap-2 py-3 text-lg">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                Start Scan
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Tips -->
+<div class="retro-system-card retro-system-card-static">
+    <div class="retro-system-card-header retro-header-teal flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <h3>Tips</h3>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start">
+        <ul class="text-[var(--color-text-muted)] text-base space-y-2">
+            <li>Organize ROMs by system folder (e.g., /roms/GBA/, /roms/SNES/) for best results</li>
+            <li>The scanner uses file extensions to detect systems. If a file has an ambiguous extension (like .bin), the folder name helps identify the system</li>
+            <li>Re-scanning the same directory is safe - existing files are skipped</li>
+            <li>Files that were previously scanned but no longer exist will be marked as "missing"</li>
+        </ul>
+    </div>
+</div>
+
+<!-- Destructive Actions -->
+<div class="retro-system-card retro-system-card-static mt-6">
+    <div class="retro-system-card-header retro-header-red flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+        </svg>
+        <h3>Destructive Actions</h3>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start">
+        <p class="text-[var(--color-text-muted)] text-base mb-4">
+            These actions cannot be undone. Use with caution.
+        </p>
+        <button
+            hx-post="{% url 'library:clear_library' %}"
+            hx-confirm="Are you sure you want to delete all games and ROMs from the database? This cannot be undone."
+            hx-target="body"
+            class="retro-btn retro-btn-danger"
+        >
+            Clear Library
+        </button>
+    </div>
+</div>
+{% endblock %}

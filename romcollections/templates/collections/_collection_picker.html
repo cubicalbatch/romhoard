@@ -1,0 +1,214 @@
+{% load retro_components %}
+<div x-data="{
+    open: false,
+    searchQuery: '',
+    menuStyle: {},
+    matchesSearch(name) {
+        return !this.searchQuery || name.toLowerCase().includes(this.searchQuery.toLowerCase())
+    },
+    hasMatchingPersonal() {
+        if (!this.searchQuery) return true;
+        const names = [{% for c in personal_collections %}'{{ c.name|escapejs|lower }}'{% if not forloop.last %}, {% endif %}{% endfor %}];
+        return names.some(name => name.includes(this.searchQuery.toLowerCase()));
+    },
+    hasMatchingCommunity() {
+        if (!this.searchQuery) return true;
+        const names = [{% for c in community_collections %}'{{ c.name|escapejs|lower }}'{% if not forloop.last %}, {% endif %}{% endfor %}];
+        return names.some(name => name.includes(this.searchQuery.toLowerCase()));
+    },
+    hasAnyMatch() {
+        return this.hasMatchingPersonal() || this.hasMatchingCommunity();
+    },
+    updateMenuPosition() {
+        const trigger = this.$refs.trigger;
+        if (!trigger) return;
+        const rect = trigger.getBoundingClientRect();
+        this.menuStyle = {
+            position: 'fixed',
+            top: (rect.bottom + 2) + 'px',
+            left: rect.left + 'px',
+            width: rect.width + 'px'
+        };
+    },
+    openDropdown() {
+        this.open = true;
+        this.updateMenuPosition();
+        this.$nextTick(() => {
+            this.$refs.searchInput?.focus();
+        });
+    },
+    closeDropdown() {
+        this.open = false;
+        this.searchQuery = '';
+    }
+}"
+x-init="if ($store.collectionPicker.selectedSlug === null) {
+    {% if favorites_collection %}
+    $store.collectionPicker.selectedCreator = '{{ favorites_collection.creator|escapejs }}';
+    $store.collectionPicker.selectedSlug = '{{ favorites_collection.slug|escapejs }}';
+    $store.collectionPicker.selectedName = '{{ favorites_collection.name|escapejs }}';
+    {% else %}
+    $store.collectionPicker.selectedCreator = '';
+    $store.collectionPicker.selectedSlug = '';
+    {% endif %}
+}"
+@click.outside="closeDropdown()"
+@keydown.escape.window="if (open) closeDropdown()">
+    <label class="block text-base font-medium text-[var(--color-text)] mb-3">
+        Select Collection
+    </label>
+
+    {% if personal_collections or community_collections %}
+    <!-- Dropdown -->
+    <div class="retro-select-dropdown">
+        <!-- Trigger Button -->
+        <button type="button"
+                x-ref="trigger"
+                @click="open ? closeDropdown() : openDropdown()"
+                :aria-expanded="open"
+                class="retro-select-trigger">
+            <div class="trigger-content">
+                <!-- Placeholder when no selection -->
+                <template x-if="$store.collectionPicker.selectedSlug === ''">
+                    <span class="retro-select-placeholder">Select a collection...</span>
+                </template>
+
+                <!-- Show selected collection (personal) -->
+                {% for collection in personal_collections %}
+                <template x-if="$store.collectionPicker.selectedCreator === '{{ collection.creator }}' && $store.collectionPicker.selectedSlug === '{{ collection.slug }}'">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-[var(--color-teal)] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                            </svg>
+                            <span class="font-medium text-[var(--color-text)] truncate">{{ collection.name }}</span>
+                            <span class="retro-badge text-base">{{ collection.entry_count }}</span>
+                        </div>
+                    </div>
+                </template>
+                {% endfor %}
+
+                <!-- Show selected collection (community) -->
+                {% for collection in community_collections %}
+                <template x-if="$store.collectionPicker.selectedCreator === '{{ collection.creator }}' && $store.collectionPicker.selectedSlug === '{{ collection.slug }}'">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-[var(--color-teal)] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                            </svg>
+                            <span class="font-medium text-[var(--color-text)] truncate">{{ collection.name }}</span>
+                            <span class="retro-badge text-base">{{ collection.entry_count }}</span>
+                        </div>
+                    </div>
+                </template>
+                {% endfor %}
+            </div>
+            <!-- Chevron -->
+            <svg class="trigger-chevron" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+        </button>
+
+        <!-- Dropdown Menu -->
+        <div x-show="open"
+             x-transition:enter="transition ease-out duration-100"
+             x-transition:enter-start="opacity-0 -translate-y-1"
+             x-transition:enter-end="opacity-100 translate-y-0"
+             x-transition:leave="transition ease-in duration-75"
+             x-transition:leave-start="opacity-100 translate-y-0"
+             x-transition:leave-end="opacity-0 -translate-y-1"
+             :style="menuStyle"
+             class="retro-select-menu">
+
+            <!-- Search Input -->
+            <div class="p-2 border-b border-[var(--color-border)]">
+                <input type="text"
+                       x-ref="searchInput"
+                       x-model="searchQuery"
+                       placeholder="Search collections..."
+                       class="retro-input w-full py-1.5 text-base"
+                       @keydown.stop>
+            </div>
+
+            <!-- Collection Options -->
+            <div>
+                {% if personal_collections %}
+                <!-- Personal Section Header -->
+                <div x-show="hasMatchingPersonal()"
+                     class="px-3 py-1.5 text-base font-semibold text-[var(--color-text-muted)] uppercase tracking-wider bg-[var(--color-surface-alt)] border-b border-[var(--color-border)]">
+                    Personal
+                </div>
+
+                <!-- Personal Collections -->
+                {% for collection in personal_collections %}
+                {% with is_existing=collection.slug|in_set:existing_collection_slugs %}
+                <div x-show="matchesSearch('{{ collection.name|escapejs }}')"
+                     {% if not is_existing %}@click="$store.collectionPicker.selectedCreator = '{{ collection.creator }}'; $store.collectionPicker.selectedSlug = '{{ collection.slug }}'; $store.collectionPicker.selectedName = '{{ collection.name|escapejs }}'; closeDropdown()"{% endif %}
+                     :class="{ 'selected': $store.collectionPicker.selectedCreator === '{{ collection.creator }}' && $store.collectionPicker.selectedSlug === '{{ collection.slug }}' }"
+                     class="retro-select-option {% if is_existing %}disabled{% endif %}">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-4 h-4 {% if is_existing %}text-[var(--color-text-muted)]{% else %}text-[var(--color-teal)]{% endif %} flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                            </svg>
+                            <span class="font-medium {% if is_existing %}text-[var(--color-text-muted)]{% else %}text-[var(--color-text)]{% endif %} truncate">{{ collection.name }}</span>
+                            <span class="retro-badge text-base">{{ collection.entry_count }}</span>
+                            {% if is_existing %}
+                            <span class="retro-badge text-base bg-[var(--color-surface-alt)] text-[var(--color-text-muted)]">Already added</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endwith %}
+                {% endfor %}
+                {% endif %}
+
+                {% if community_collections %}
+                <!-- Community Section Header -->
+                <div x-show="hasMatchingCommunity()"
+                     class="px-3 py-1.5 text-base font-semibold text-[var(--color-text-muted)] uppercase tracking-wider bg-[var(--color-surface-alt)] border-b border-[var(--color-border)]{% if personal_collections %} border-t{% endif %}">
+                    Community
+                </div>
+
+                <!-- Community Collections -->
+                {% for collection in community_collections %}
+                {% with is_existing=collection.slug|in_set:existing_collection_slugs %}
+                <div x-show="matchesSearch('{{ collection.name|escapejs }}')"
+                     {% if not is_existing %}@click="$store.collectionPicker.selectedCreator = '{{ collection.creator }}'; $store.collectionPicker.selectedSlug = '{{ collection.slug }}'; $store.collectionPicker.selectedName = '{{ collection.name|escapejs }}'; closeDropdown()"{% endif %}
+                     :class="{ 'selected': $store.collectionPicker.selectedCreator === '{{ collection.creator }}' && $store.collectionPicker.selectedSlug === '{{ collection.slug }}' }"
+                     class="retro-select-option {% if is_existing %}disabled{% endif %}">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-4 h-4 {% if is_existing %}text-[var(--color-text-muted)]{% else %}text-[var(--color-teal)]{% endif %} flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                            </svg>
+                            <span class="font-medium {% if is_existing %}text-[var(--color-text-muted)]{% else %}text-[var(--color-text)]{% endif %} truncate">{{ collection.name }}</span>
+                            <span class="retro-badge text-base">{{ collection.entry_count }}</span>
+                            {% if is_existing %}
+                            <span class="retro-badge text-base bg-[var(--color-surface-alt)] text-[var(--color-text-muted)]">Already added</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endwith %}
+                {% endfor %}
+                {% endif %}
+
+                <!-- No results message -->
+                <div x-show="searchQuery && !hasAnyMatch()"
+                     class="px-3 py-4 text-center text-base text-[var(--color-text-muted)]">
+                    No collections found
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <!-- No collections -->
+    <div class="p-4 text-center text-[var(--color-text-muted)] bg-[var(--color-bg)] border-2 border-dashed border-[var(--color-border)]">
+        <p class="mb-2">No collections yet</p>
+        <a href="{% url 'romcollections:collection_create' %}" target="_blank" class="text-[var(--color-primary)] hover:underline text-base">
+            Create a collection &rarr;
+        </a>
+    </div>
+    {% endif %}
+</div>

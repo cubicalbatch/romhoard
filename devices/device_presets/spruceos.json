@@ -1,0 +1,212 @@
+{
+  "slug": "spruceos",
+  "name": "SpruceOS",
+  "description": "Configuration for SpruceOS on Miyoo Mini Plus devices",
+  "tags": [
+    "spruceos",
+    "miyoo",
+    "miyoo-mini-plus"
+  ],
+  "folders": {
+    "root_path": "Roms/",
+    "system_paths": {
+      "gba": {
+        "folder": "GBA"
+      },
+      "gbc": {
+        "folder": "GBC"
+      },
+      "gb": {
+        "folder": "GB"
+      },
+      "snes": {
+        "folder": "SFC"
+      },
+      "nes": {
+        "folder": "FC"
+      },
+      "genesis": {
+        "folder": "MD"
+      },
+      "sms": {
+        "folder": "MS"
+      },
+      "gg": {
+        "folder": "GG"
+      },
+      "psx": {
+        "folder": "PS"
+      },
+      "n64": {
+        "folder": "N64"
+      },
+      "nds": {
+        "folder": "NDS"
+      },
+      "psp": {
+        "folder": "PSP"
+      },
+      "arcade": {
+        "folder": "ARCADE"
+      },
+      "fbneo": {
+        "folder": "FBNEO"
+      },
+      "neogeo": {
+        "folder": "NEOGEO"
+      },
+      "neogeocd": {
+        "folder": "NEOCD"
+      },
+      "atari2600": {
+        "folder": "ATARI"
+      },
+      "atari5200": {
+        "folder": "FIFTYTWOHUNDRED"
+      },
+      "atari7800": {
+        "folder": "SEVENTYEIGHTHUNDRED"
+      },
+      "atari800": {
+        "folder": "EIGHTHUNDRED"
+      },
+      "lynx": {
+        "folder": "LYNX"
+      },
+      "ngp": {
+        "folder": "NGP"
+      },
+      "ngpc": {
+        "folder": "NGPC"
+      },
+      "pcengine": {
+        "folder": "PCE"
+      },
+      "pcenginecd": {
+        "folder": "PCECD"
+      },
+      "supergrafx": {
+        "folder": "SGFX"
+      },
+      "wonderswan": {
+        "folder": "WS"
+      },
+      "wonderswancolor": {
+        "folder": "WSC"
+      },
+      "segacd": {
+        "folder": "SEGACD"
+      },
+      "sega32x": {
+        "folder": "THIRTYTWOX"
+      },
+      "dreamcast": {
+        "folder": "DC"
+      },
+      "virtualboy": {
+        "folder": "VB"
+      },
+      "coleco": {
+        "folder": "COLECO"
+      },
+      "intellivision": {
+        "folder": "INTELLIVISION"
+      },
+      "vectrex": {
+        "folder": "VECTREX"
+      },
+      "msx": {
+        "folder": "MSX"
+      },
+      "dos": {
+        "folder": "DOS"
+      },
+      "scummvm": {
+        "folder": "SCUMMVM"
+      },
+      "fds": {
+        "folder": "FDS"
+      },
+      "pokemini": {
+        "folder": "POKE"
+      },
+      "gameandwatch": {
+        "folder": "GW"
+      },
+      "amstradcpc": {
+        "folder": "CPC"
+      },
+      "c64": {
+        "folder": "COMMODORE"
+      },
+      "amiga": {
+        "folder": "AMIGA"
+      },
+      "atarist": {
+        "folder": "ATARIST"
+      },
+      "zxspectrum": {
+        "folder": "ZXS"
+      },
+      "sgb": {
+        "folder": "SGB"
+      },
+      "cps1": {
+        "folder": "CPS1"
+      },
+      "cps2": {
+        "folder": "CPS2"
+      },
+      "cps3": {
+        "folder": "CPS3"
+      },
+      "pico8": {
+        "folder": "PICO8"
+      },
+      "segasgone": {
+        "folder": "SEGASGONE"
+      },
+      "x68000": {
+        "folder": "X68000"
+      },
+      "vic20": {
+        "folder": "VIC20"
+      },
+      "supervision": {
+        "folder": "SUPERVISION"
+      },
+      "satellaview": {
+        "folder": "SATELLAVIEW"
+      },
+      "sufami": {
+        "folder": "SUFAMI"
+      },
+      "megaduck": {
+        "folder": "MEGADUCK"
+      },
+      "fairchild": {
+        "folder": "FAIRCHILD"
+      },
+      "videopac": {
+        "folder": "VIDEOPAC"
+      },
+      "odyssey": {
+        "folder": "ODYSSEY"
+      },
+      "arduboy": {
+        "folder": "ARDUBOY"
+      }
+    }
+  },
+  "images": {
+    "path_template": "{root_path}/{system}/Imgs/{romname}.png",
+    "max_width": 250,
+    "image_type": "cover"
+  },
+  "transfer": {
+    "protocol": "ftp",
+    "port": 21,
+    "anonymous": true,
+    "path_prefix": "/"
+  }
+}

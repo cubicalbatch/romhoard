@@ -1,0 +1,29 @@
+{# Status filter toggle buttons #}
+<div class="flex gap-1">
+    <button type="button"
+            @click="$store.searchFilters.setMatchStatus('all')"
+            class="retro-btn retro-btn-sm flex-1"
+            :class="{ 'retro-btn-primary': $store.searchFilters.matchStatus === 'all' }">
+        All
+    </button>
+    <button type="button"
+            @click="$store.searchFilters.setMatchStatus('in_library')"
+            class="retro-btn retro-btn-sm flex-1"
+            :class="{ 'retro-btn-success': $store.searchFilters.matchStatus === 'in_library' }">
+        <svg class="h-3 w-3 inline-block mr-1" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+        </svg>
+        <span class="hidden sm:inline">In Library</span>
+        <span class="sm:hidden">Have</span>
+    </button>
+    <button type="button"
+            @click="$store.searchFilters.setMatchStatus('not_in_library')"
+            class="retro-btn retro-btn-sm flex-1"
+            :class="{ 'bg-amber-600 text-white border-amber-700': $store.searchFilters.matchStatus === 'not_in_library' }">
+        <svg class="h-3 w-3 inline-block mr-1" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+        </svg>
+        <span class="hidden sm:inline">Missing</span>
+        <span class="sm:hidden">Need</span>
+    </button>
+</div>

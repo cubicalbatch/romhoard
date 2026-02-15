@@ -1,0 +1,51 @@
+{# Inline game rename input form #}
+{# Variables: game, saved (optional) #}
+<div x-data="{
+         name: '{{ game.name|escapejs }}',
+         editing: false,
+         saved: {{ saved|yesno:'true,false' }}
+     }"
+     class="flex flex-wrap items-center gap-2">
+
+    <template x-if="!editing">
+        <button @click="editing = true"
+                class="px-4 py-2 text-base border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-text-muted)] transition-colors">
+            Rename Game
+        </button>
+    </template>
+
+    <template x-if="editing">
+        <form method="post"
+              action="{% url 'library:rename_game' game.pk %}"
+              hx-post="{% url 'library:rename_game' game.pk %}"
+              hx-target="closest div[x-data]"
+              hx-swap="outerHTML"
+              class="flex flex-wrap items-center gap-2">
+            {% csrf_token %}
+            <input type="text"
+                   name="name"
+                   x-model="name"
+                   placeholder="Game name"
+                   class="retro-input text-base"
+                   style="min-width: 300px;"
+                   required
+                   autofocus>
+            <button type="submit"
+                    class="retro-btn retro-btn-sm retro-btn-primary">
+                Save
+            </button>
+            <button type="button"
+                    @click="editing = false; name = '{{ game.name|escapejs }}'"
+                    class="text-base text-[var(--color-text-muted)] hover:text-[var(--color-danger)]">
+                Cancel
+            </button>
+        </form>
+    </template>
+
+    <span x-show="saved && !editing"
+          x-transition
+          class="text-base text-[var(--color-success)]"
+          x-init="setTimeout(() => saved = false, 3000)">
+        Renamed!
+    </span>
+</div>

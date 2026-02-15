@@ -1,0 +1,56 @@
+<div class="retro-modal-header" x-data>
+    <h3 class="retro-modal-title">{{ game.name }}</h3>
+    <button @click="$store.modals.close('romset-download')" class="retro-modal-close">&times;</button>
+</div>
+<div class="retro-modal-body">
+    <p class="text-base text-[var(--color-text-muted)] mb-4">
+        {% if rom_set.region %}{{ rom_set.region }}{% else %}No Region{% endif %}
+        {% if rom_set.revision %}({{ rom_set.revision }}){% endif %}
+        - {{ rom_count }} file{{ rom_count|pluralize }}
+    </p>
+
+    <p class="text-base font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-3">Individual Files</p>
+    <div class="space-y-2 mb-6">
+        {% for rom in roms %}
+        <a href="{% url 'library:download_rom' rom.pk %}"
+            class="flex items-center justify-between p-4 bg-[var(--color-bg)] hover:bg-[var(--color-white)] transition-colors group">
+            <div class="flex flex-col min-w-0 pr-4">
+                <span class="text-base font-medium text-[var(--color-text)] truncate">
+                    {{ rom.file_name }}
+                </span>
+                <div class="flex items-center gap-2 mt-1">
+                    {% if rom.disc %}
+                    <span class="text-base font-semibold px-1.5 py-0.5 bg-[var(--color-primary)]/10 text-[var(--color-primary)] rounded">
+                        Disc {{ rom.disc }}</span>
+                    {% endif %}
+                    <span class="text-base text-[var(--color-text-muted)]">
+                        {% if rom.file_size < 1048576 %}{% widthratio rom.file_size 1024 1 %} KB
+                        {% else %}
+                        {% widthratio rom.file_size 1048576 1 %} MB{% endif %} </span>
+                    {% if rom.is_archived %}
+                    <span class="retro-badge retro-badge-primary">Archived</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="flex-shrink-0 text-[var(--color-text-muted)] group-hover:text-[var(--color-primary)] transition-colors">
+                <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+<div class="retro-modal-footer" x-data>
+    <p class="text-base text-[var(--color-text-muted)] mr-auto">
+        Need all files at once?
+    </p>
+    <button @click="$store.romsetPicker.start('{{ csrf_token }}')" class="retro-btn retro-btn-success flex items-center gap-2">
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+        </svg>
+        Download All as ZIP
+    </button>
+</div>

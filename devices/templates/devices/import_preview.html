@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+
+{% block title %}Preview Import - RomHoard{% endblock %}
+
+{% block content %}
+<div>
+    <!-- Header -->
+    <div class="mb-8 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <div>
+            <h2 class="retro-heading retro-heading-lg">Preview Import</h2>
+            <p class="text-[var(--color-text-muted)] mt-1">Review the device configuration before importing</p>
+        </div>
+    </div>
+
+    {% if existing_device and not overwrite %}
+    <div class="retro-system-card retro-system-card-static mb-6" x-data="{ willOverwrite: false }">
+        <div class="retro-system-card-header retro-header-red flex items-center gap-2 !text-left" x-show="!willOverwrite">
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <h3>Device Already Exists</h3>
+        </div>
+        <div class="retro-system-card-header retro-header-gold flex items-center gap-2 !text-left" x-show="willOverwrite" x-cloak>
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <h3>Will Overwrite Existing</h3>
+        </div>
+        <div class="retro-system-card-body !text-left !items-start">
+            <p class="text-[var(--color-danger)] mb-3" x-show="!willOverwrite">
+                A device named <strong>{{ existing_device.name }}</strong> already exists with this slug.
+            </p>
+            <p class="text-[var(--color-warning)] mb-3" x-show="willOverwrite" x-cloak>
+                The existing device <strong>{{ existing_device.name }}</strong> will be replaced.
+            </p>
+            <label class="retro-checkbox-container flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" name="overwrite" value="1" class="retro-checkbox" x-model="willOverwrite"
+                       form="confirm-form">
+                <div>
+                    <span class="font-medium">Overwrite existing</span>
+                    <p class="text-base text-[var(--color-text-muted)]">Replace the existing device with the imported one.</p>
+                </div>
+            </label>
+        </div>
+    </div>
+    {% elif existing_device and overwrite %}
+    <div class="retro-system-card retro-system-card-static mb-6">
+        <div class="retro-system-card-header retro-header-gold flex items-center gap-2 !text-left">
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <h3>Will Overwrite Existing</h3>
+        </div>
+        <div class="retro-system-card-body !text-left !items-start">
+            <p class="text-[var(--color-warning)]">
+                The existing device <strong>{{ existing_device.name }}</strong> will be replaced with the imported configuration.
+            </p>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Device Preview -->
+    <div class="retro-system-card retro-system-card-static mb-6">
+        <div class="retro-system-card-header retro-header-orange flex items-center gap-2 !text-left">
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 18h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+            </svg>
+            <h3>Device Details</h3>
+        </div>
+        <div class="retro-system-card-body !text-left !items-start">
+            <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+                <div>
+                    <dt class="text-base text-[var(--color-text-muted)] uppercase tracking-wider mb-1">Name</dt>
+                    <dd class="font-medium">{{ device_data.name }}</dd>
+                </div>
+                <div>
+                    <dt class="text-base text-[var(--color-text-muted)] uppercase tracking-wider mb-1">Slug</dt>
+                    <dd><code class="retro-code-inline">{{ device_data.slug }}</code></dd>
+                </div>
+                <div>
+                    <dt class="text-base text-[var(--color-text-muted)] uppercase tracking-wider mb-1">Root Path</dt>
+                    <dd><code class="retro-code-inline">{{ device_data.root_path|default:"Roms/" }}</code></dd>
+                </div>
+                <div>
+                    <dt class="text-base text-[var(--color-text-muted)] uppercase tracking-wider mb-1">System Paths</dt>
+                    <dd class="font-medium">{{ system_paths_count }} configured</dd>
+                </div>
+                <div>
+                    <dt class="text-base text-[var(--color-text-muted)] uppercase tracking-wider mb-1">WiFi Support</dt>
+                    <dd>
+                        {% if device_data.has_wifi %}
+                        <span class="text-[var(--color-success)]">Yes</span>
+                        {% else %}
+                        <span class="text-[var(--color-text-muted)]">No</span>
+                        {% endif %}
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-base text-[var(--color-text-muted)] uppercase tracking-wider mb-1">Include Images</dt>
+                    <dd>
+                        {% if device_data.include_images %}
+                        <span class="text-[var(--color-success)]">Yes ({{ device_data.image_type|default:"cover" }})</span>
+                        {% else %}
+                        <span class="text-[var(--color-text-muted)]">No</span>
+                        {% endif %}
+                    </dd>
+                </div>
+                {% if device_data.description %}
+                <div class="sm:col-span-2">
+                    <dt class="text-base text-[var(--color-text-muted)] uppercase tracking-wider mb-1">Description</dt>
+                    <dd class="text-base">{{ device_data.description|truncatewords:50 }}</dd>
+                </div>
+                {% endif %}
+            </dl>
+        </div>
+    </div>
+
+    <!-- Source URL -->
+    <div class="retro-system-card retro-system-card-static mb-6">
+        <div class="retro-system-card-header retro-header-teal flex items-center gap-2 !text-left">
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+            </svg>
+            <h3>Source</h3>
+        </div>
+        <div class="retro-system-card-body !text-left !items-start">
+            <code class="retro-code-inline text-base break-all">{{ url }}</code>
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <form method="POST" id="confirm-form" class="flex flex-col-reverse sm:flex-row gap-3">
+        {% csrf_token %}
+        <button type="submit" name="action" value="cancel" class="retro-btn text-center">
+            Cancel
+        </button>
+        <button type="submit" name="action" value="confirm"
+                class="retro-btn retro-btn-primary flex items-center justify-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+            </svg>
+            Confirm Import
+        </button>
+    </form>
+</div>
+{% endblock %}

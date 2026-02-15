@@ -1,0 +1,50 @@
+{# Genre multi-select dropdown for collection #}
+<div class="relative" x-data="{ searchQuery: '', genresLoaded: false }">
+    {# Trigger button #}
+    <button @click="genreDropdownOpen = !genreDropdownOpen; if(genreDropdownOpen) { $nextTick(() => { $refs.genreSearch?.focus(); genresLoaded = false; htmx.ajax('GET', '{% url 'romcollections:collection_filter_genres' collection.creator collection.slug %}?system=' + $store.searchFilters.systems.map(s => s.slug).join(','), {target: '#collection-genre-options', swap: 'innerHTML'}); genresLoaded = true; }) }"
+            type="button"
+            class="retro-select-trigger w-full"
+            :aria-expanded="genreDropdownOpen">
+        <div class="trigger-content truncate">
+            <template x-if="$store.searchFilters.genres.length === 0">
+                <span class="text-[var(--color-text-muted)] italic">Any genre</span>
+            </template>
+            <template x-if="$store.searchFilters.genres.length === 1">
+                <span x-text="$store.searchFilters.genres[0].name"></span>
+            </template>
+            <template x-if="$store.searchFilters.genres.length > 1">
+                <span x-text="$store.searchFilters.genres.length + ' genres selected'"></span>
+            </template>
+        </div>
+        <svg class="trigger-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+        </svg>
+    </button>
+
+    {# Dropdown menu #}
+    <div x-show="genreDropdownOpen"
+         x-transition:enter="transition ease-out duration-100"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100"
+         x-transition:leave="transition ease-in duration-75"
+         x-transition:leave-start="opacity-100 scale-100"
+         x-transition:leave-end="opacity-0 scale-95"
+         @click.away="genreDropdownOpen = false"
+         class="retro-filter-dropdown">
+        {# Search input #}
+        <div class="p-2 border-b-2 border-[var(--color-border)]">
+            <input type="text"
+                   x-ref="genreSearch"
+                   x-model="searchQuery"
+                   @input.debounce.200ms="htmx.ajax('GET', '{% url 'romcollections:collection_filter_genres' collection.creator collection.slug %}?q=' + searchQuery + '&system=' + $store.searchFilters.systems.map(s => s.slug).join(','), {target: '#collection-genre-options', swap: 'innerHTML'})"
+                   placeholder="Search genres..."
+                   class="retro-input w-full text-base py-1">
+        </div>
+
+        {# Options list #}
+        <div id="collection-genre-options"
+             class="max-h-60 overflow-y-auto">
+            <div class="p-4 text-center text-base text-[var(--color-text-muted)]">Loading...</div>
+        </div>
+    </div>
+</div>

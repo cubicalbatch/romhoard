@@ -1,0 +1,55 @@
+{% if active_migration_job %}
+<div class="mt-4 p-4 bg-[var(--color-surface-alt)] rounded-lg w-full"
+     hx-get="{% url 'library:image_migration_status' %}"
+     hx-trigger="every 2s"
+     hx-swap="outerHTML">
+    <div class="flex items-center gap-3 mb-3">
+        <div class="animate-spin h-5 w-5 border-2 border-[var(--color-primary)] border-t-transparent rounded-full"></div>
+        <span class="font-medium text-[var(--color-text)]">
+            {% if active_migration_job.action == 'move' %}Moving{% elif active_migration_job.action == 'delete' %}Deleting{% else %}Processing{% endif %} images...
+        </span>
+    </div>
+    <div class="retro-progress mb-2">
+        <div class="retro-progress-bar" style="width: {{ active_migration_job.progress_percent }}%"></div>
+    </div>
+    <div class="text-base text-[var(--color-text-muted)]">
+        {{ active_migration_job.processed_images }} / {{ active_migration_job.total_images }} images processed
+        {% if active_migration_job.skipped_images > 0 %}
+        <span class="text-[var(--color-gold)]">({{ active_migration_job.skipped_images }} skipped)</span>
+        {% endif %}
+    </div>
+</div>
+{% elif recent_migration_job %}
+<div class="mt-4 p-4 bg-[var(--color-surface-alt)] rounded-lg w-full">
+    <div class="flex items-center gap-2 mb-2">
+        {% if recent_migration_job.status == 'completed' %}
+        <svg class="w-5 h-5 text-[var(--color-success)]" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+        </svg>
+        <span class="font-medium text-[var(--color-success)]">
+            Image {% if recent_migration_job.action == 'move' %}migration{% elif recent_migration_job.action == 'delete' %}deletion{% else %}update{% endif %} completed
+        </span>
+        {% else %}
+        <svg class="w-5 h-5 text-[var(--color-error)]" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+        </svg>
+        <span class="font-medium text-[var(--color-error)]">Image migration failed</span>
+        {% endif %}
+    </div>
+    <div class="text-base text-[var(--color-text-muted)]">
+        {% if recent_migration_job.action == 'move' %}
+        Moved {{ recent_migration_job.processed_images }} images
+        {% if recent_migration_job.skipped_images > 0 %}, {{ recent_migration_job.skipped_images }} skipped (already existed){% endif %}
+        {% if recent_migration_job.failed_images > 0 %}, {{ recent_migration_job.failed_images }} failed{% endif %}
+        {% elif recent_migration_job.action == 'delete' %}
+        Deleted {{ recent_migration_job.processed_images }} images
+        {% if recent_migration_job.failed_images > 0 %}, {{ recent_migration_job.failed_images }} failed{% endif %}
+        {% else %}
+        Processed {{ recent_migration_job.processed_images }} images
+        {% endif %}
+        {% if recent_migration_job.error_message %}
+        <p class="mt-1 text-[var(--color-error)]">{{ recent_migration_job.error_message }}</p>
+        {% endif %}
+    </div>
+</div>
+{% endif %}

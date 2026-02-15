@@ -1,0 +1,5 @@
+{# Spinner: include with optional size="sm|md|lg", message="text" #}
+<div class="flex flex-col items-center justify-center py-4">
+    <div class="animate-spin {% if size == 'sm' %}h-6 w-6{% elif size == 'lg' %}h-12 w-12{% else %}h-8 w-8{% endif %} border-4 border-[var(--color-primary)] border-t-transparent rounded-full"></div>
+    {% if message %}<p class="mt-4 text-[var(--color-text-muted)]">{{ message }}</p>{% endif %}
+</div>

@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Home - RomHoard{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<div class="retro-system-card retro-system-card-static mb-8">
+    <div class="retro-system-card-header retro-header-purple">
+        <h1>Welcome to RomHoard</h1>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start py-6">
+        <p class="text-lg text-[var(--color-text-muted)]">Your self-hosted ROM library manager</p>
+    </div>
+</div>
+
+<!-- Stats Grid -->
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+    <div class="retro-system-card retro-system-card-static">
+        <div class="retro-system-card-header retro-header-navy">
+            <h3>Systems</h3>
+        </div>
+        <div class="retro-system-card-body">
+            <div class="text-5xl font-bold text-[var(--color-primary)]" style="font-family: var(--font-heading);">{{ total_systems }}</div>
+            <div class="text-base text-[var(--color-text-muted)] mt-1">platforms in your library</div>
+        </div>
+    </div>
+
+    <div class="retro-system-card retro-system-card-static">
+        <div class="retro-system-card-header retro-header-teal">
+            <h3>Games</h3>
+        </div>
+        <div class="retro-system-card-body">
+            <div class="text-5xl font-bold text-[var(--color-teal)]" style="font-family: var(--font-heading);">{{ total_games }}</div>
+            <div class="text-base text-[var(--color-text-muted)] mt-1">unique titles</div>
+        </div>
+    </div>
+
+    <div class="retro-system-card retro-system-card-static">
+        <div class="retro-system-card-header retro-header-magenta">
+            <h3>ROMs</h3>
+        </div>
+        <div class="retro-system-card-body">
+            <div class="text-5xl font-bold text-[var(--color-purple)]" style="font-family: var(--font-heading);">{{ total_roms }}</div>
+            <div class="text-base text-[var(--color-text-muted)] mt-1">total ROM files</div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="retro-system-card retro-system-card-static mb-8">
+    <div class="retro-system-card-header retro-header-green flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+        <h3>Quick Actions</h3>
+    </div>
+    <div class="retro-system-card-body !items-start !text-left">
+        <div class="flex flex-col sm:flex-row gap-3 w-full">
+            <a href="{% url 'library:scan' %}" class="retro-btn retro-btn-primary flex-1 text-center flex items-center justify-center gap-2 py-3">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                Scan ROM Directory
+            </a>
+            <a href="{% url 'library:system_list' %}" class="retro-btn retro-btn-teal flex-1 text-center flex items-center justify-center gap-2 py-3">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                </svg>
+                Browse Library
+            </a>
+        </div>
+    </div>
+</div>
+
+{% if total_games == 0 %}
+<!-- Getting Started -->
+<div class="retro-system-card retro-system-card-static">
+    <div class="retro-system-card-header retro-header-orange flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <h3>Getting Started</h3>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start">
+        <p class="text-[var(--color-text)]">
+            Your library is currently empty. To get started, scan your ROM directory to populate the library.
+        </p>
+        <a href="{% url 'library:scan' %}" class="retro-btn retro-btn-primary mt-4">
+            Start Scanning
+        </a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

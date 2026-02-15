@@ -1,0 +1,45 @@
+{% load retro_components %}
+
+{# Reusable device picker + download progress modals. #}
+{# By default, confirm calls `startDownloadWithDevice()` on the current Alpine scope. #}
+
+{% retro_modal id=device_picker_id|default:"device-picker" title=device_picker_title|default:"Download" %}
+<div class="retro-modal-body" x-data="{ showGames: false }"
+     @modal-opened.window="if($event.detail.id === '{{ device_picker_id|default:'device-picker' }}') showGames = false"
+     @modal-closed.window="if($event.detail.id === '{{ device_picker_id|default:'device-picker' }}') showGames = false">
+    <!-- Game count + expandable list -->
+    <div class="mb-4 pb-3 border-b border-[var(--color-border)]"
+         x-show="$store.downloadManager.matchedCount > 0">
+        <p class="text-[var(--color-text)]">
+            <span class="font-bold" x-text="$store.downloadManager.matchedCount"></span>
+            <span x-text="$store.downloadManager.matchedCount === 1 ? 'game' : 'games'"></span>
+            will be included.
+        </p>
+        <button @click="showGames = !showGames; if(showGames) $store.downloadManager.loadGamePreview('download-games-preview')"
+                class="text-base text-[var(--color-primary)] hover:underline mt-2 flex items-center gap-1">
+            <svg class="h-4 w-4 transition-transform" :class="showGames && 'rotate-90'" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+            </svg>
+            <span x-text="showGames ? 'Hide games' : 'Show games'"></span>
+        </button>
+        <div x-show="showGames" x-collapse class="mt-2" id="download-games-preview"></div>
+    </div>
+
+    <!-- Device picker -->
+    <div hx-get="{% url 'devices:device_picker' %}" hx-trigger="load" hx-swap="innerHTML"></div>
+</div>
+<div class="retro-modal-footer">
+    <button @click="$store.modals.close('{{ device_picker_id|default:'device-picker' }}')" class="retro-btn">
+        {{ device_picker_cancel_text|default:"Cancel" }}
+    </button>
+    <button @click="{{ device_picker_confirm_click|default:'startDownloadWithDevice()'|safe }}" class="retro-btn retro-btn-success">
+        {{ device_picker_confirm_text|default:"Download" }}
+    </button>
+</div>
+{% endretro_modal %}
+
+{% retro_modal id=download_progress_id|default:"download-progress" title="" close_btn=download_progress_close_btn|default:True %}
+<div class="retro-modal-body">
+    <div id="{{ download_modal_content_id|default:'download-modal-content' }}"></div>
+</div>
+{% endretro_modal %}
