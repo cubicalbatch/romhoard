@@ -23,7 +23,7 @@ Collections are game lists you can share, export, and sync to devices. Create a 
 
 ## Collection Hub
 
-Browse and download community-curated collections at [romhoard.cubical.fyi](https://romhoard.cubical.fyi). Find ready-made lists like "Best GBA RPGs" or "Hidden SNES Gems" and import them directly into your library. Collections are just game lists—no ROMs are uploaded or downloaded.
+Browse and download community-curated collections at [romhoard.cubical.fyi](https://romhoard.cubical.fyi). Find ready-made lists like "Best GBA RPGs" or "Hidden SNES Gems" and import them directly into your library. Collections are just game lists, no ROMs are uploaded or downloaded.
 
 You can also export your own collections and share them with the community. Build something great? Upload it to the hub for others to discover.
 
@@ -32,6 +32,20 @@ You can also export your own collections and share them with the community. Buil
 Select games or an entire collection and send them directly to your handheld over FTP or SFTP. RomHoard maps systems to the right folders based on device presets, so ROMs end up where your emulator expects them, with the images.
 
 ![Send to Device](documentation/screenshots/send-modal.png)
+
+## Why RomHoard?
+
+RomHoard didn't start as a ROM manager. The original idea was to discover and share curated game lists, because having 2000 ROMs and not knowing what to play is a real problem.
+
+I wanted to send those collections straight to my retro handhelds. Turns out you need to manage ROMs to do that, so here we are.
+
+### RomHoard vs Romm
+
+[Romm](https://romm.app/) is great if you want to carefully curate your library with metadata from lots of sources.
+
+RomHoard is collections-first: discover curated lists, share your own, and send them to your devices. The ROM management exists to support that.
+
+You can run both, they're good neighbors.
 
 ## Installation
 
@@ -71,20 +85,6 @@ Open http://localhost:6766 in your browser.
 Most things are configured through the web UI. For ScreenScraper metadata fetching, you'll need a free account at [screenscraper.fr](https://www.screenscraper.fr/).
 
 See [documentation/docker.md](documentation/docker.md) for environment variables and advanced configuration.
-
-## Why RomHoard?
-
-RomHoard didn't start as a ROM manager. The original idea was to discover and share curated game lists—because having 2000 ROMs and not knowing what to play is a real problem.
-
-Then I wanted to send those collections straight to my retro handhelds. Turns out you need to manage ROMs to do that, so here we are.
-
-### RomHoard vs Romm
-
-[Romm](https://romm.app/) is great if you want to carefully curate your library with metadata from lots of sources.
-
-RomHoard is collections-first: discover curated lists, share your own, and send them to your devices. The ROM management exists to support that.
-
-You can run both—they're good neighbors.
 
 ## Tech Stack
 
