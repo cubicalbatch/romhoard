@@ -171,7 +171,7 @@
             </svg>
             Send
         </button>
-        <button @click="startExportWithImages()"
+        <button @click="$store.modals.open('export-picker')"
                 class="retro-btn retro-btn-primary flex items-center gap-2">
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -243,7 +243,7 @@
         </svg>
         Send
     </button>
-    <button @click="startExportWithImages()"
+    <button @click="$store.modals.open('export-picker')"
             class="retro-btn retro-btn-primary flex items-center gap-2 justify-center">
         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -531,7 +531,7 @@
 </div>
 {% endretro_modal %}
 
-<!-- Export picker modal (kept for potential future use, but main Export button now goes directly to ZIP) -->
+<!-- Export picker modal -->
 {% retro_modal id="export-picker" title="Export Collection" %}
 <div class="retro-modal-body">
     <p class="mb-4 text-[var(--color-text-muted)]">Choose how to export "{{ collection.name }}":</p>
