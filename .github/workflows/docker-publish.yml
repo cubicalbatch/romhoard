@@ -9,7 +9,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: ${{ github.repository }}-app
 
 jobs:
   build-and-push:
@@ -62,7 +62,7 @@ jobs:
       - name: Delete old package versions
         uses: actions/delete-package-versions@v5
         with:
-          package-name: romhoard
+          package-name: romhoard-app
           package-type: container
           min-versions-to-keep: 10
           delete-only-untagged-versions: false
