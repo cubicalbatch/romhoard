@@ -55,6 +55,10 @@ class Collection(models.Model):
         blank=True,
     )
 
+    # Source tracking for URL imports
+    source_url = models.URLField(max_length=2000, blank=True, null=True)
+    last_synced_at = models.DateTimeField(blank=True, null=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

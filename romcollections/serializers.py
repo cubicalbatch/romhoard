@@ -411,6 +411,7 @@ def import_collection(
     creator_override: str | None = None,
     force_public: bool = False,
     force_community: bool = False,
+    source_url: str | None = None,
 ) -> dict[str, Any]:
     """Import a collection from JSON data.
 
@@ -424,6 +425,7 @@ def import_collection(
         creator_override: If provided, use this as the creator instead of JSON value
         force_public: If True, set is_public=True regardless of JSON value
         force_community: If True, set is_community=True regardless of JSON value
+        source_url: If provided, save as the collection's source URL for syncing
 
     Returns:
         Dict with keys:
@@ -469,6 +471,10 @@ def import_collection(
     else:
         collection.is_community = collection_data.get("is_community", True)
     collection.tags = collection_data.get("tags", [])
+    # Save source URL for syncing
+    if source_url:
+        collection.source_url = source_url
+        collection.last_synced_at = timezone.now()
     collection.save()
 
     # Track stats
@@ -587,6 +593,7 @@ def import_collection_with_images(
     creator_override: str | None = None,
     force_public: bool = False,
     force_community: bool = False,
+    source_url: str | None = None,
 ) -> dict[str, Any]:
     """Import a collection from a ZIP file with images.
 
@@ -601,6 +608,7 @@ def import_collection_with_images(
         creator_override: If provided, use this as the creator instead of JSON value
         force_public: If True, set is_public=True regardless of JSON value
         force_community: If True, set is_community=True regardless of JSON value
+        source_url: Optional URL the collection was imported from
 
     Returns:
         Dict with keys:
@@ -632,6 +640,7 @@ def import_collection_with_images(
             creator_override=creator_override,
             force_public=force_public,
             force_community=force_community,
+            source_url=source_url,
         )
         collection = result["collection"]
 

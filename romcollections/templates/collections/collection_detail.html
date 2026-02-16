@@ -179,6 +179,17 @@
             </svg>
             Export
         </button>
+        {% if collection.source_url %}
+        <form method="post" action="{% url 'romcollections:sync_collection' collection.creator collection.slug %}" class="inline">
+            {% csrf_token %}
+            <button type="submit" class="retro-btn retro-btn-teal flex items-center gap-2">
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                Sync
+            </button>
+        </form>
+        {% endif %}
         <a href="{% url 'romcollections:collection_edit' collection.creator collection.slug %}"
            class="retro-btn flex items-center gap-2">
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -207,6 +218,14 @@
     <p class="text-base text-[var(--color-text-muted)] mb-2">Created by <a href="{% url 'romcollections:creator_page' collection.creator %}" class="text-[var(--color-text)] font-bold hover:text-[var(--color-primary)] hover:underline">{{ collection.creator }}</a> · {{ collection.created_at|date:"Y/m/d" }}</p>
     {% else %}
     <p class="text-base text-[var(--color-text-muted)] mb-2">{{ collection.created_at|date:"Y/m/d" }}</p>
+    {% endif %}
+    {% if collection.source_url %}
+    <p class="text-base text-[var(--color-text-muted)] mb-2">
+        Source: <a href="{{ collection.source_url }}" class="hover:text-[var(--color-primary)] hover:underline" target="_blank" rel="noopener">{{ collection.source_url|truncatechars:50 }}</a>
+        {% if collection.last_synced_at %}
+        · Last synced {{ collection.last_synced_at|date:"Y/m/d H:i" }}
+        {% endif %}
+    </p>
     {% endif %}
     {% if collection.tags %}
     <div class="flex flex-wrap gap-1">
@@ -251,6 +270,17 @@
         </svg>
         Export
     </button>
+    {% if collection.source_url %}
+    <form method="post" action="{% url 'romcollections:sync_collection' collection.creator collection.slug %}" class="inline">
+        {% csrf_token %}
+        <button type="submit" class="retro-btn retro-btn-teal flex items-center gap-2 justify-center">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            Sync
+        </button>
+    </form>
+    {% endif %}
     <a href="{% url 'romcollections:collection_edit' collection.creator collection.slug %}"
        class="retro-btn flex items-center gap-2 justify-center">
         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

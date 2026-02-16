@@ -1306,7 +1306,7 @@ def import_collection(request):
     import tempfile
     import zipfile
 
-    from romhoard.url_fetch import URLFetchError, fetch_json_from_url
+    from romhoard.url_fetch import URLFetchError, fetch_json_from_url, fetch_zip_from_url
 
     from .serializers import validate_import_data
 
@@ -1315,28 +1315,97 @@ def import_collection(request):
         uploaded_file = request.FILES.get("file")
         overwrite = request.POST.get("overwrite") == "on"
 
-        # URL import - fetch and show preview
+        # URL import - fetch and show preview (or import directly for ZIPs)
         if url:
-            try:
-                data = fetch_json_from_url(url)
-                validate_import_data(data)
+            # Check if URL points to a ZIP file
+            is_zip_url = url.lower().endswith(".zip") or "/download" in url.lower()
 
-                # Store in session for preview
-                token = uuid.uuid4().hex
-                request.session[f"import_collection_{token}"] = {
-                    "data": data,
-                    "url": url,
-                    "overwrite": overwrite,
-                }
+            if is_zip_url:
+                # Handle ZIP URL - download and import directly
+                try:
+                    with tempfile.NamedTemporaryFile(
+                        delete=False, suffix=".zip"
+                    ) as tmp:
+                        tmp_path = tmp.name
 
-                return redirect("romcollections:import_collection_preview", token=token)
+                    try:
+                        fetch_zip_from_url(url, tmp_path)
 
-            except URLFetchError as e:
-                context = {"error": f"Failed to fetch URL: {e}"}
-                return render(request, "collections/import.html", context)
-            except SerializerImportError as e:
-                context = {"error": str(e)}
-                return render(request, "collections/import.html", context)
+                        # Validate ZIP before importing
+                        validation = validate_collection_zip(tmp_path)
+                        if not validation.is_valid:
+                            error_msg = "Import failed: " + "; ".join(validation.errors)
+                            context = {"error": error_msg}
+                            return render(request, "collections/import.html", context)
+
+                        # Show warnings from validation
+                        for warning in validation.warnings:
+                            messages.warning(request, warning)
+
+                        # Show info about what's being imported
+                        for info in validation.info:
+                            messages.info(request, info)
+
+                        result = import_collection_with_images(
+                            tmp_path, overwrite=overwrite, source_url=url
+                        )
+                        collection = result["collection"]
+
+                        # Show info about imports
+                        entries_imported = result.get("entries_imported", 0)
+                        images_imported = result.get("images_imported", 0)
+
+                        info_parts = [f"Imported {entries_imported} entries"]
+                        if images_imported > 0:
+                            info_parts.append(f"imported {images_imported} image(s)")
+
+                        messages.success(
+                            request,
+                            f"Successfully imported collection '{collection.name}'. "
+                            + ", ".join(info_parts),
+                        )
+
+                        # Trigger cover generation if no cover was imported
+                        if not collection.has_cover:
+                            generate_collection_cover.defer(collection.id)
+
+                        return redirect(collection)
+                    finally:
+                        # Clean up temp file
+                        if os.path.exists(tmp_path):
+                            os.unlink(tmp_path)
+
+                except URLFetchError as e:
+                    context = {"error": f"Failed to fetch URL: {e}"}
+                    return render(request, "collections/import.html", context)
+                except zipfile.BadZipFile:
+                    context = {"error": "Invalid ZIP file"}
+                    return render(request, "collections/import.html", context)
+                except SerializerImportError as e:
+                    context = {"error": str(e)}
+                    return render(request, "collections/import.html", context)
+            else:
+                # Handle JSON URL - fetch and show preview
+                try:
+                    data = fetch_json_from_url(url)
+                    validate_import_data(data)
+
+                    # Store in session for preview
+                    token = uuid.uuid4().hex
+                    request.session[f"import_collection_{token}"] = {
+                        "data": data,
+                        "url": url,
+                        "overwrite": overwrite,
+                    }
+
+                    return redirect("romcollections:import_collection_preview", token=token)
+
+                except URLFetchError as e:
+                    context = {"error": f"Failed to fetch URL: {e}"}
+                    return render(request, "collections/import.html", context)
+                except SerializerImportError as e:
+                    context = {"error": str(e)}
+                    return render(request, "collections/import.html", context)
 
         # File upload - import directly (existing behavior)
         if not uploaded_file:
@@ -1509,7 +1578,7 @@ def import_collection_preview(request, token):
 
             # Perform the import
             try:
-                result = serialize_import(data, overwrite=overwrite)
+                result = serialize_import(data, overwrite=overwrite, source_url=url)
                 collection = result["collection"]
 
                 # Clean up session
@@ -1558,6 +1627,56 @@ def import_collection_preview(request, token):
         "existing_collection": existing,
     }
     return render(request, "collections/import_preview.html", context)
+
+
+@require_POST
+def sync_collection_from_source(request, creator, slug):
+    """Re-fetch collection from its source URL and update."""
+    from romhoard.url_fetch import URLFetchError, fetch_json_from_url
+
+    from .serializers import validate_import_data
+
+    collection = get_object_or_404(Collection, creator=creator, slug=slug)
+
+    if not collection.source_url:
+        messages.error(request, "This collection has no source URL.")
+        return redirect("romcollections:collection_detail", creator=creator, slug=slug)
+
+    try:
+        data = fetch_json_from_url(collection.source_url)
+        validate_import_data(data)
+        result = serialize_import(
+            data,
+            overwrite=True,
+            source_url=collection.source_url,
+        )
+
+        # Show warnings for invalid systems
+        for warning in result.get("warnings", []):
+            messages.warning(request, warning)
+
+        # Show info about games created
+        games_created = result.get("games_created", 0)
+        metadata_jobs = result.get("metadata_jobs_queued", 0)
+        entries_imported = result.get("entries_imported", 0)
+
+        info_parts = [f"Synced {entries_imported} entries"]
+        if games_created > 0:
+            info_parts.append(f"created {games_created} new game(s)")
+        if metadata_jobs > 0:
+            info_parts.append(f"queued {metadata_jobs} metadata lookup(s)")
+
+        messages.success(request, ". ".join(info_parts) + ".")
+
+        # Auto-generate cover if collection has matched games with images
+        maybe_generate_cover(result["collection"])
+
+    except URLFetchError as e:
+        messages.error(request, f"Failed to fetch source: {e}")
+    except SerializerImportError as e:
+        messages.error(request, f"Sync failed: {e}")
+
+    return redirect("romcollections:collection_detail", creator=creator, slug=slug)
 
 
 @require_POST

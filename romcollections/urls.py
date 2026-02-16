@@ -43,6 +43,7 @@ urlpatterns = [
         views.collection_filter_genres,
         name="collection_filter_genres",
     ),
+    path("<slug:creator>/<slug:slug>/sync/", views.sync_collection_from_source, name="sync_collection"),
     path("<slug:creator>/<slug:slug>/adopt/", views.adopt_collection, name="adopt_collection"),
     path("<slug:creator>/<slug:slug>/unadopt/", views.unadopt_collection, name="unadopt_collection"),
     path("<slug:creator>/<slug:slug>/edit/", views.collection_edit, name="collection_edit"),

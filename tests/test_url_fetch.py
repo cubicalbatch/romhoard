@@ -8,8 +8,10 @@ import httpx
 from romhoard.url_fetch import (
     URLFetchError,
     fetch_json_from_url,
+    fetch_zip_from_url,
     validate_url,
-    MAX_SIZE_BYTES,
+    MAX_JSON_SIZE_BYTES,
+    MAX_ZIP_SIZE_BYTES,
 )
 
 
@@ -92,7 +94,7 @@ class TestFetchJsonFromUrl:
     def test_rejects_oversized_content_by_header(self):
         """Test that oversized content is rejected via content-length header."""
         mock_response = MagicMock()
-        mock_response.headers = {"content-length": str(MAX_SIZE_BYTES + 1)}
+        mock_response.headers = {"content-length": str(MAX_JSON_SIZE_BYTES + 1)}
         mock_response.raise_for_status = MagicMock()
 
         with patch("romhoard.url_fetch.httpx.Client") as mock_client:
@@ -106,7 +108,7 @@ class TestFetchJsonFromUrl:
         """Test that oversized content is rejected after download."""
         mock_response = MagicMock()
         mock_response.headers = {}  # No content-length header
-        mock_response.content = b"x" * (MAX_SIZE_BYTES + 1)
+        mock_response.content = b"x" * (MAX_JSON_SIZE_BYTES + 1)
         mock_response.raise_for_status = MagicMock()
 
         with patch("romhoard.url_fetch.httpx.Client") as mock_client:
@@ -375,3 +377,95 @@ class TestDeviceUrlImport:
         device = Device.objects.get(slug="confirm-device")
         assert device.name == "Confirm Device"
         assert device.system_paths == {"gba": "GBA"}
+
+
+class TestFetchZipFromUrl:
+    """Tests for fetching ZIP files from URLs."""
+
+    def test_fetches_valid_zip(self, tmp_path):
+        """Test successful ZIP fetch."""
+        zip_content = b"PK\x03\x04test zip content"
+        dest_path = tmp_path / "test.zip"
+
+        mock_response = MagicMock()
+        mock_response.headers = {"content-length": str(len(zip_content))}
+        mock_response.iter_bytes = MagicMock(return_value=[zip_content])
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("romhoard.url_fetch.httpx.Client") as mock_client:
+            mock_stream = MagicMock()
+            mock_stream.__enter__ = MagicMock(return_value=mock_response)
+            mock_stream.__exit__ = MagicMock(return_value=False)
+            mock_client.return_value.__enter__.return_value.stream.return_value = (
+                mock_stream
+            )
+            fetch_zip_from_url("https://example.com/collection.zip", str(dest_path))
+
+        assert dest_path.exists()
+        assert dest_path.read_bytes() == zip_content
+
+    def test_rejects_oversized_zip_by_header(self, tmp_path):
+        """Test that oversized ZIP is rejected via content-length header."""
+        dest_path = tmp_path / "test.zip"
+
+        mock_response = MagicMock()
+        mock_response.headers = {"content-length": str(MAX_ZIP_SIZE_BYTES + 1)}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("romhoard.url_fetch.httpx.Client") as mock_client:
+            mock_stream = MagicMock()
+            mock_stream.__enter__ = MagicMock(return_value=mock_response)
+            mock_stream.__exit__ = MagicMock(return_value=False)
+            mock_client.return_value.__enter__.return_value.stream.return_value = (
+                mock_stream
+            )
+            with pytest.raises(URLFetchError, match="too large"):
+                fetch_zip_from_url("https://example.com/large.zip", str(dest_path))
+
+    def test_rejects_oversized_zip_during_streaming(self, tmp_path):
+        """Test that oversized ZIP is rejected during download."""
+        dest_path = tmp_path / "test.zip"
+
+        # Simulate streaming chunks that exceed max size
+        chunk_size = 10 * 1024 * 1024  # 10MB chunks
+        num_chunks = (MAX_ZIP_SIZE_BYTES // chunk_size) + 2
+        chunks = [b"x" * chunk_size for _ in range(num_chunks)]
+
+        mock_response = MagicMock()
+        mock_response.headers = {}  # No content-length header
+        mock_response.iter_bytes = MagicMock(return_value=iter(chunks))
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("romhoard.url_fetch.httpx.Client") as mock_client:
+            mock_stream = MagicMock()
+            mock_stream.__enter__ = MagicMock(return_value=mock_response)
+            mock_stream.__exit__ = MagicMock(return_value=False)
+            mock_client.return_value.__enter__.return_value.stream.return_value = (
+                mock_stream
+            )
+            with pytest.raises(URLFetchError, match="too large"):
+                fetch_zip_from_url("https://example.com/huge.zip", str(dest_path))
+
+    def test_handles_timeout(self, tmp_path):
+        """Test that timeouts are handled."""
+        dest_path = tmp_path / "test.zip"
+
+        with patch("romhoard.url_fetch.httpx.Client") as mock_client:
+            mock_client.return_value.__enter__.return_value.stream.side_effect = (
+                httpx.TimeoutException("Connection timed out")
+            )
+            with pytest.raises(URLFetchError, match="timed out"):
+                fetch_zip_from_url("https://example.com/slow.zip", str(dest_path))
+
+    def test_handles_http_errors(self, tmp_path):
+        """Test that HTTP errors are handled."""
+        dest_path = tmp_path / "test.zip"
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+
+        with patch("romhoard.url_fetch.httpx.Client") as mock_client:
+            mock_client.return_value.__enter__.return_value.stream.side_effect = (
+                httpx.HTTPStatusError("Not found", request=None, response=mock_response)
+            )
+            with pytest.raises(URLFetchError, match="HTTP error 404"):
+                fetch_zip_from_url("https://example.com/missing.zip", str(dest_path))
