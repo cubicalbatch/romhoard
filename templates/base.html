@@ -9,28 +9,29 @@
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="{% static 'favicon.png' %}">
 
-    <!-- Google Fonts: VT323 (headings) + Public Sans (body) -->
+    {% if USE_BUNDLED_ASSETS %}
+    <!-- Bundled assets (Docker/offline mode) -->
+    <link rel="stylesheet" href="{% static 'vendor/css/fonts.css' %}">
+    <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
+    <link rel="stylesheet" href="{% static 'css/retro.css' %}">
+    <link rel="stylesheet" href="{% static 'vendor/css/glightbox.min.css' %}">
+    <script src="{% static 'vendor/js/htmx-1.9.10.min.js' %}"></script>
+    <script src="{% static 'vendor/js/glightbox.min.js' %}"></script>
+    <script src="{% static 'js/alpine-app.js' %}?v=4"></script>
+    <script defer src="{% static 'vendor/js/alpine-3.15.0.min.js' %}"></script>
+    {% else %}
+    <!-- CDN assets (development mode) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=VT323&display=swap" rel="stylesheet">
-
-    <!-- Tailwind CSS (layout utilities only) -->
     <script src="https://cdn.tailwindcss.com"></script>
-
-    <!-- Custom Retro Styles -->
     <link rel="stylesheet" href="{% static 'css/retro.css' %}">
-
-    <!-- HTMX via CDN -->
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-
-    <!-- GLightbox for image galleries -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/glightbox/dist/css/glightbox.min.css">
     <script src="https://cdn.jsdelivr.net/npm/glightbox/dist/js/glightbox.min.js"></script>
-
-    <!-- Alpine.js stores (must load before Alpine, no defer so listener registers first) -->
     <script src="{% static 'js/alpine-app.js' %}?v=4"></script>
-    <!-- Alpine.js -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.0/dist/cdn.min.js"></script>
+    {% endif %}
 
     <!-- RomHoard Shared Utilities -->
     <script src="{% static 'js/romhoard-utils.js' %}"></script>

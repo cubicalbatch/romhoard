@@ -62,6 +62,10 @@ SECRET_KEY = _get_secret_key()
 # Set DEBUG=false in production
 DEBUG = os.environ.get("DEBUG", "true").lower() in ("true", "1", "yes")
 
+# Use bundled assets (Docker) vs CDN (development)
+# Set USE_BUNDLED_ASSETS=true in Docker to serve local JS/CSS/fonts instead of CDN
+USE_BUNDLED_ASSETS = os.environ.get("USE_BUNDLED_ASSETS", "false").lower() in ("true", "1", "yes")
+
 # ALLOWED_HOSTS can be set via environment variable (comma-separated)
 # Example: ALLOWED_HOSTS=example.com,www.example.com
 # Default: accept any host (single-user self-hosted app)
@@ -108,6 +112,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "romhoard.context_processors.bundled_assets",
             ],
         },
     },

@@ -1,0 +1,11 @@
+{
+  "name": "romhoard-tailwind",
+  "private": true,
+  "description": "Tailwind CSS build for RomHoard Docker image",
+  "scripts": {
+    "build:css": "tailwindcss -i static/css/tailwind-input.css -o static/css/tailwind.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.0"
+  }
+}
