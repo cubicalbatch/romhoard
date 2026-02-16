@@ -1,5 +1,27 @@
 # =============================================================================
-# Stage 1: Builder - Install dependencies and compile wheels
+# Stage 1: Tailwind CSS Builder - Compile CSS from templates
+# =============================================================================
+FROM node:20-slim AS tailwind-builder
+
+WORKDIR /app
+
+# Copy package files and install dependencies
+COPY package.json ./
+RUN npm install
+
+# Copy Tailwind config and source files
+COPY tailwind.config.js ./
+COPY static/ static/
+COPY templates/ templates/
+COPY library/templates/ library/templates/
+COPY romcollections/templates/ romcollections/templates/
+COPY devices/templates/ devices/templates/
+
+# Build minified Tailwind CSS
+RUN npx tailwindcss -i static/css/tailwind-input.css -o static/css/tailwind.css --minify
+
+# =============================================================================
+# Stage 2: Python Builder - Install dependencies and compile wheels
 # =============================================================================
 FROM python:3.13-slim-bookworm AS builder
 
@@ -26,7 +48,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-editable
 
 # =============================================================================
-# Stage 2: Runtime - Minimal production image
+# Stage 3: Runtime - Minimal production image
 # =============================================================================
 FROM python:3.13-slim-bookworm
 
@@ -47,6 +69,9 @@ COPY --from=builder /app/.venv /app/.venv
 
 # Copy application code
 COPY . .
+
+# Copy built Tailwind CSS from tailwind-builder stage
+COPY --from=tailwind-builder /app/static/css/tailwind.css /app/static/css/tailwind.css
 
 # Copy and setup entrypoint
 COPY --chmod=755 docker/docker-entrypoint.sh /usr/local/bin/
@@ -76,6 +101,8 @@ ENV PATH="/app/.venv/bin:$PATH" \
     ROM_LIBRARY_ROOT=/roms \
     IMAGE_STORAGE_PATH=/app/data/metadata \
     DEBUG=false \
+    # Use bundled assets instead of CDN for offline support
+    USE_BUNDLED_ASSETS=true \
     # Supervisor process defaults
     GUNICORN_WORKERS=2 \
     GUNICORN_THREADS=4 \

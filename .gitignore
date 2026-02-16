@@ -13,6 +13,11 @@ build/
 venv/
 ENV/
 
+# Node.js (Tailwind build)
+node_modules/
+package-lock.json
+static/css/tailwind.css
+
 # Django
 *.log
 db.sqlite3

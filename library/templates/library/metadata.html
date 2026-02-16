@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load retro_components %}
+{% load static retro_components %}
 
 {% block title %}Settings - RomHoard{% endblock %}
 
@@ -799,7 +799,11 @@ document.addEventListener('DOMContentLoaded', () => {
 </div>
 
 <!-- SortableJS for Region Preferences -->
+{% if USE_BUNDLED_ASSETS %}
+<script src="{% static 'vendor/js/sortable-1.15.0.min.js' %}"></script>
+{% else %}
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+{% endif %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const regionList = document.getElementById('region-list');
