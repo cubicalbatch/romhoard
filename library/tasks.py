@@ -868,6 +868,21 @@ def auto_fetch_system_icons() -> dict:
     return {"status": "completed", **result}
 
 
+@app.task(queue=QUEUE_BACKGROUND)
+def recalculate_all_default_romsets() -> dict:
+    """Recalculate default ROMSet for all games after region preference change."""
+    from .romset_scoring import recalculate_default_romset
+
+    games = Game.objects.prefetch_related("rom_sets__roms")
+    total = games.count()
+    changed = 0
+    for game in games.iterator(chunk_size=100):
+        if recalculate_default_romset(game):
+            changed += 1
+    logger.info(f"Recalculated default ROMSets: {changed}/{total} changed")
+    return {"total": total, "changed": changed}
+
+
 @app.task(queue=QUEUE_USER_ACTIONS, pass_context=True)
 def process_upload_job(context: job_context.JobContext, upload_job_id: int) -> dict:
     """Process uploaded files - detect systems, handle duplicates, create DB records."""

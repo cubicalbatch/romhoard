@@ -63,6 +63,11 @@ urlpatterns = [
     path("settings/", views.metadata_page, name="metadata"),
     path("settings/status/", views.metadata_status, name="metadata_status"),
     path(
+        "settings/region-preferences/",
+        views.save_region_preferences,
+        name="save_region_preferences",
+    ),
+    path(
         "settings/image-migration-status/",
         views.image_migration_status,
         name="image_migration_status",

@@ -404,7 +404,7 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
 </div>
 
-<!-- Hero Stats Dashboard -->
+
 <div class="retro-system-card retro-system-card-static mb-8">
     <div class="retro-system-card-header retro-header-teal flex items-center gap-2 !text-left">
         <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -683,6 +683,56 @@ document.addEventListener('DOMContentLoaded', () => {
 </div>
 {% endif %}
 
+<!-- Region Preferences for Default ROM -->
+{% if region_order %}
+<div class="retro-system-card retro-system-card-static mb-8"
+     x-data="{
+         open: localStorage.getItem('regionPrefsOpen') === 'true',
+         toggle() {
+             this.open = !this.open;
+             localStorage.setItem('regionPrefsOpen', this.open);
+         }
+     }">
+    <div class="retro-system-card-header retro-header-gold flex items-center justify-between gap-2 !text-left cursor-pointer select-none"
+         @click="toggle()">
+        <div class="flex items-center gap-2">
+            <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
+            </svg>
+            <h3>Region Preferences for Default ROM</h3>
+        </div>
+        <svg class="w-4 h-4 text-white transition-transform duration-200" :class="open ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start" x-show="open" x-collapse x-cloak>
+        <p class="text-[var(--color-text-muted)] text-base mb-4">
+            Drag regions to set preference order. The first region is most preferred when selecting default ROMs for games.
+        </p>
+
+        <form method="post" action="{% url 'library:save_region_preferences' %}" class="w-full">
+            {% csrf_token %}
+            <ul id="region-list" class="space-y-2 mb-4 w-full max-w-md">
+                {% for region in region_order %}
+                <li class="flex items-center gap-3 p-2.5 bg-[var(--color-surface-alt)] border border-[var(--color-border)] rounded cursor-move select-none hover:border-[var(--color-primary)] transition-colors"
+                    data-region="{{ region }}">
+                    <svg class="w-4 h-4 text-[var(--color-text-muted)] flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 8h16M4 16h16"/>
+                    </svg>
+                    {{ region|region_flag }}
+                    <span class="text-[var(--color-text)] font-medium">{{ region }}</span>
+                    <input type="hidden" name="region_order[]" value="{{ region }}">
+                </li>
+                {% endfor %}
+            </ul>
+            <button type="submit" class="retro-btn retro-btn-primary">
+                Save &amp; Recalculate Defaults
+            </button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
 <!-- System Metadata Card -->
 <div class="retro-system-card retro-system-card-static mb-8">
     <div class="retro-system-card-header retro-header-magenta flex items-center gap-2 !text-left">
@@ -747,4 +797,29 @@ document.addEventListener('DOMContentLoaded', () => {
         </ul>
     </div>
 </div>
+
+<!-- SortableJS for Region Preferences -->
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const regionList = document.getElementById('region-list');
+    if (regionList) {
+        new Sortable(regionList, {
+            animation: 150,
+            ghostClass: 'opacity-50',
+            onSort: function() {
+                // Update hidden input values to match new order
+                const items = regionList.querySelectorAll('li');
+                items.forEach(function(item) {
+                    const input = item.querySelector('input[name="region_order[]"]');
+                    if (input) {
+                        input.value = item.dataset.region;
+                    }
+                });
+            }
+        });
+    }
+});
+</script>
+
 {% endblock %}

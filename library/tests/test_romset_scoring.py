@@ -6,6 +6,7 @@ from library.models import Game, ROM, ROMSet, Setting, System
 from library.romset_scoring import (
     STANDALONE_ARCHIVE_BONUS,
     calculate_romset_score,
+    get_all_known_regions,
     get_best_romset,
     get_region_priorities,
     get_region_score,
@@ -63,6 +64,34 @@ class TestRegionScoring(TestCase):
 
             score = get_region_score("Germany")
             self.assertEqual(score, 999)
+        finally:
+            Setting.objects.filter(key="region_priorities").delete()
+
+    def test_list_format_priorities(self):
+        """List-format preferences should generate correct descending scores."""
+        Setting.objects.create(
+            key="region_priorities",
+            value=["Europe", "USA", "Japan", "World"],
+        )
+        try:
+            priorities = get_region_priorities()
+            self.assertEqual(priorities["Europe"], 1000)
+            self.assertEqual(priorities["USA"], 900)
+            self.assertEqual(priorities["Japan"], 800)
+            self.assertEqual(priorities["World"], 700)
+        finally:
+            Setting.objects.filter(key="region_priorities").delete()
+
+    def test_list_format_europe_first_ranks_correctly(self):
+        """Europe-first list preference should rank EUR ROM above USA."""
+        Setting.objects.create(
+            key="region_priorities",
+            value=["Europe", "USA", "Japan"],
+        )
+        try:
+            score_eu = get_region_score("Europe")
+            score_usa = get_region_score("USA")
+            self.assertGreater(score_eu, score_usa)
         finally:
             Setting.objects.filter(key="region_priorities").delete()
 
@@ -384,3 +413,81 @@ class TestRecalculateDefault(TestCase):
         self.assertTrue(changed)
         self.game.refresh_from_db()
         self.assertEqual(self.game.default_rom_set, rs_usa)
+
+    def test_europe_first_preference_changes_default(self):
+        """With Europe-first preference, Europe ROM should become default."""
+        rs_usa = ROMSet.objects.create(game=self.game, region="USA", source_path="/usa")
+        ROM.objects.create(
+            rom_set=rs_usa,
+            file_path="/roms/usa.rom",
+            file_name="usa.rom",
+            file_size=1000,
+        )
+
+        rs_eu = ROMSet.objects.create(
+            game=self.game, region="Europe", source_path="/eu"
+        )
+        ROM.objects.create(
+            rom_set=rs_eu,
+            file_path="/roms/eu.rom",
+            file_name="eu.rom",
+            file_size=1000,
+        )
+
+        # Set USA as default initially
+        self.game.default_rom_set = rs_usa
+        self.game.save()
+
+        # Change region preference to Europe-first
+        Setting.objects.create(
+            key="region_priorities",
+            value=["Europe", "USA", "Japan", "World"],
+        )
+        try:
+            changed = recalculate_default_romset(self.game)
+            self.assertTrue(changed)
+            self.game.refresh_from_db()
+            self.assertEqual(self.game.default_rom_set, rs_eu)
+        finally:
+            Setting.objects.filter(key="region_priorities").delete()
+
+
+class TestGetAllKnownRegions(TestCase):
+    """Tests for get_all_known_regions function."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.system = System.objects.create(
+            name="Test System",
+            slug="test-regions",
+            extensions=[".rom"],
+            folder_names=["test"],
+        )
+
+    def test_includes_default_regions(self):
+        """Should always include the four default regions."""
+        regions = get_all_known_regions()
+        for r in ["USA", "Europe", "Japan", "World"]:
+            self.assertIn(r, regions)
+
+    def test_includes_database_regions(self):
+        """Should include unique regions from ROMSets in the database."""
+        game = Game.objects.create(name="Test Game", system=self.system)
+        ROMSet.objects.create(game=game, region="Brazil")
+        regions = get_all_known_regions()
+        self.assertIn("Brazil", regions)
+
+    def test_splits_multi_region_strings(self):
+        """Should split multi-region strings and include each part."""
+        game = Game.objects.create(name="Test Game 2", system=self.system)
+        ROMSet.objects.create(game=game, region="Korea, Taiwan")
+        regions = get_all_known_regions()
+        self.assertIn("Korea", regions)
+        self.assertIn("Taiwan", regions)
+
+    def test_no_duplicates(self):
+        """Should not include duplicate regions."""
+        game = Game.objects.create(name="Test Game 3", system=self.system)
+        ROMSet.objects.create(game=game, region="USA")
+        regions = get_all_known_regions()
+        self.assertEqual(regions.count("USA"), 1)

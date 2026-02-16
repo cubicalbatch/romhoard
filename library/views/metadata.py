@@ -280,6 +280,16 @@ def metadata_page(request):
         status__in=[ImageMigrationJob.STATUS_COMPLETED, ImageMigrationJob.STATUS_FAILED]
     ).first()
 
+    # Region preferences for default ROM selection
+    from ..romset_scoring import get_all_known_regions, get_region_priorities
+
+    priorities = get_region_priorities()
+    region_order = sorted(
+        get_all_known_regions(),
+        key=lambda r: priorities.get(r, 200),
+        reverse=True,
+    )
+
     context = {
         "screenscraper_username": screenscraper_username,
         "screenscraper_configured": screenscraper_configured,
@@ -303,6 +313,7 @@ def metadata_page(request):
         "fetching_all": fetching_all,
         "active_migration_job": active_migration_job,
         "recent_migration_job": recent_migration_job,
+        "region_order": region_order,
     }
     return render(request, "library/metadata.html", context)
 
@@ -766,3 +777,20 @@ def set_screenscraper_id(request, pk):
         )
 
     return redirect("library:game_detail", pk=pk)
+
+
+@require_POST
+def save_region_preferences(request):
+    """Save region preference order and trigger recalculation."""
+    from ..queues import PRIORITY_LOW
+    from ..tasks import recalculate_all_default_romsets
+
+    region_order = request.POST.getlist("region_order[]")
+    if region_order:
+        Setting.set("region_priorities", region_order)
+        recalculate_all_default_romsets.configure(priority=PRIORITY_LOW).defer()
+        messages.success(
+            request,
+            "Region preferences saved. Default ROMs are being recalculated in the background.",
+        )
+    return redirect("library:metadata")

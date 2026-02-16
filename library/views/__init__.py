@@ -57,6 +57,7 @@ from .metadata import (
     metadata_page,
     metadata_status,
     revalidate_screenscraper,
+    save_region_preferences,
     set_screenscraper_id,
     start_metadata_job,
     system_metadata_status,
@@ -142,6 +143,7 @@ __all__ = [
     "games_missing_metadata",
     "hash_lookup",
     "set_screenscraper_id",
+    "save_region_preferences",
     # Game
     "delete_game",
     "rename_game",

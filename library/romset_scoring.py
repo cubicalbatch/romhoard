@@ -25,12 +25,32 @@ NO_BASE_GAME_PENALTY = -5000
 
 
 def get_region_priorities() -> dict[str, int]:
-    """Get region priority scores from settings or defaults."""
+    """Get region priorities - generates scores from ordered list or dict."""
     try:
         setting = Setting.objects.get(key="region_priorities")
+        if isinstance(setting.value, list):
+            # Generate scores: first=1000, second=900, etc.
+            return {region: 1000 - (i * 100) for i, region in enumerate(setting.value)}
         return setting.value
     except Setting.DoesNotExist:
         return DEFAULT_REGION_PRIORITIES
+
+
+def get_all_known_regions() -> list[str]:
+    """Get all known regions: defaults + unique regions from database."""
+    from .models import ROMSet
+
+    default_regions = list(DEFAULT_REGION_PRIORITIES.keys())
+    db_regions = (
+        ROMSet.objects.exclude(region="").values_list("region", flat=True).distinct()
+    )
+    all_regions = default_regions[:]
+    for region in db_regions:
+        for r in region.split(","):
+            r = r.strip()
+            if r and r not in all_regions:
+                all_regions.append(r)
+    return all_regions
 
 
 def get_region_score(region: str) -> int:
