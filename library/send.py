@@ -5,6 +5,7 @@ import logging
 import os
 from dataclasses import dataclass
 from io import BytesIO
+from pathlib import Path
 from typing import Callable, Optional
 
 import paramiko
@@ -108,6 +109,35 @@ class FTPClient(TransferClient):
         self.password = password
         self.use_tls = use_tls
         self.ftp: Optional[ftplib.FTP] = None
+        self._current_dir: str = ""
+
+    def _cwd_to(self, target_dir: str) -> None:
+        """Change to target directory, using relative path if possible."""
+        if self._current_dir == target_dir:
+            return
+        if not target_dir:
+            self.ftp.cwd("/")
+            self._current_dir = ""
+            return
+
+        if self._current_dir and target_dir.startswith(self._current_dir + "/"):
+            relative = target_dir[len(self._current_dir) + 1 :]
+            for part in relative.split("/"):
+                if part:
+                    self.ftp.cwd(part)
+                    self._current_dir = (
+                        f"{self._current_dir}/{part}" if self._current_dir else part
+                    )
+            return
+
+        self.ftp.cwd("/")
+        self._current_dir = ""
+        for part in target_dir.strip("/").split("/"):
+            if part:
+                self.ftp.cwd(part)
+                self._current_dir = (
+                    f"{self._current_dir}/{part}" if self._current_dir else part
+                )
 
     def connect(self) -> tuple[bool, str]:
         """Connect and authenticate."""
@@ -122,13 +152,14 @@ class FTPClient(TransferClient):
             else:
                 self.ftp = ftplib.FTP()
             self.ftp.connect(self.host, self.port, timeout=30)
-            # Anonymous login when user is empty
+            self.ftp.set_pasv(True)
             if self.user:
                 self.ftp.login(self.user, self.password)
             else:
-                self.ftp.login()  # ftplib defaults to anonymous
+                self.ftp.login()
             if self.use_tls:
-                self.ftp.prot_p()  # Enable data channel encryption
+                self.ftp.prot_p()
+            self._current_dir = ""
             logger.debug(
                 f"{protocol}: Connected successfully to {self.host}:{self.port}"
             )
@@ -144,7 +175,6 @@ class FTPClient(TransferClient):
         protocol = "FTPS" if self.use_tls else "FTP"
         logger.debug(f"{protocol}: Testing write permissions at {test_path}")
         try:
-            # Ensure parent directory exists first
             parts = test_path.rstrip("/").split("/")
             parent_dir = "/".join(parts[:-1])
             filename = parts[-1]
@@ -154,13 +184,11 @@ class FTPClient(TransferClient):
 
             test_data = b"RomHoard test"
             test_file = BytesIO(test_data)
-            # Use just the filename since ensure_directory already navigated there
             self.ftp.storbinary(f"STOR {filename}", test_file)
-            # Try to delete the test file
             try:
                 self.ftp.delete(filename)
             except Exception:
-                pass  # OK if delete fails
+                pass
             logger.debug(f"{protocol}: Write test successful at {test_path}")
             return True, ""
         except Exception as e:
@@ -169,39 +197,41 @@ class FTPClient(TransferClient):
 
     def get_remote_size(self, remote_path: str) -> Optional[int]:
         """Get remote file size, or None if doesn't exist."""
+        parts = remote_path.rstrip("/").split("/")
+        filename = parts[-1]
+        parent_dir = "/".join(parts[:-1])
+
+        self._cwd_to(parent_dir)
+
         try:
-            return self.ftp.size(remote_path)
+            return self.ftp.size(filename)
         except ftplib.error_perm:
             return None
 
     def ensure_directory(self, remote_path: str) -> None:
-        """Create remote directory tree if needed.
+        """Create remote directory tree if needed."""
+        if not remote_path:
+            return
 
-        Changes into each directory after creating it to ensure proper
-        path handling on FTP servers that require CWD before operations.
-        Always starts from the root to ensure consistency.
-        """
-        # Start from root to ensure predictable behavior
-        try:
-            self.ftp.cwd("/")
-        except ftplib.error_perm:
-            pass  # Some servers might not like CWD / if it's the default already
+        self._cwd_to("")
 
         parts = remote_path.strip("/").split("/")
         for part in parts:
             if not part:
                 continue
             try:
-                # Try to change into the directory first
                 self.ftp.cwd(part)
+                self._current_dir = (
+                    f"{self._current_dir}/{part}" if self._current_dir else part
+                )
             except ftplib.error_perm:
-                # Directory doesn't exist, create it
                 try:
                     self.ftp.mkd(part)
-                    # Change into the newly created directory
                     self.ftp.cwd(part)
+                    self._current_dir = (
+                        f"{self._current_dir}/{part}" if self._current_dir else part
+                    )
                 except ftplib.error_perm:
-                    # Failed to create, ignore and continue
                     pass
 
     def upload_file(
@@ -602,62 +632,66 @@ def send_games_to_device(
         for game, rom in rom_files:
             progress.current_file = rom.file_name
 
-            # Use get_rom_file to handle both loose and archived ROMs
-            try:
-                with get_rom_file(rom) as (local_path, actual_filename):
-                    # Build remote path using sanitized names
-                    game_name_safe = _sanitize_filename(game.name)
-                    filename_safe = _sanitize_filename(actual_filename)
+            # Determine actual filename without extraction
+            if rom.is_archived:
+                actual_filename = Path(rom.path_in_archive).name
+            else:
+                actual_filename = rom.file_name
 
-                    # Build relative path (system folder + optional game folder + filename)
-                    system_folder = device.get_system_folder(game.system.slug)
-                    if device.use_game_folders_for_system(game.system.slug):
-                        relative_path = (
-                            f"{system_folder}/{game_name_safe}/{filename_safe}"
-                        )
-                    else:
-                        relative_path = f"{system_folder}/{filename_safe}"
+            # Build remote path using sanitized names
+            game_name_safe = _sanitize_filename(game.name)
+            filename_safe = _sanitize_filename(actual_filename)
 
-                    # Get full remote path including transfer_path_prefix
-                    remote_path = device.get_effective_transfer_path(relative_path)
+            # Build relative path (system folder + optional game folder + filename)
+            system_folder = device.get_system_folder(game.system.slug)
+            if device.use_game_folders_for_system(game.system.slug):
+                relative_path = f"{system_folder}/{game_name_safe}/{filename_safe}"
+            else:
+                relative_path = f"{system_folder}/{filename_safe}"
 
-                    # Check if file already exists with same size
-                    local_size = os.path.getsize(local_path)
-                    remote_size = client.get_remote_size(remote_path)
-                    if remote_size is not None and remote_size == local_size:
-                        # Skip - same size
-                        result = FileResult(
-                            game_id=game.pk,
-                            filename=actual_filename,
-                            remote_path=remote_path,
-                            success=True,
-                            skipped=True,
-                            bytes=local_size,
-                        )
-                        skipped.append(result)
-                        progress.files_skipped += 1
-                        logger.info(f"Skipped {actual_filename} (same size)")
+            # Get full remote path including transfer_path_prefix
+            remote_path = device.get_effective_transfer_path(relative_path)
 
-                        # Still upload image even if ROM was skipped
-                        if device.include_images:
-                            image_result = _upload_game_image(
-                                client=client,
-                                game=game,
-                                rom_filename=actual_filename,
-                                device=device,
-                                progress=progress,
-                            )
-                            if image_result:
-                                image_results.append(image_result)
-                                # Increment files processed for image
-                                # files_uploaded/skipped/failed are incremented inside _upload_game_image
-                                # but we want to trigger progress callback
-                                if progress_callback:
-                                    progress_callback(progress)
+            # Check if file already exists with same size (BEFORE extraction)
+            remote_size = client.get_remote_size(remote_path)
+            if remote_size is not None and remote_size == rom.file_size:
+                # Skip - same size, no need to extract
+                result = FileResult(
+                    game_id=game.pk,
+                    filename=actual_filename,
+                    remote_path=remote_path,
+                    success=True,
+                    skipped=True,
+                    bytes=rom.file_size,
+                )
+                skipped.append(result)
+                progress.files_skipped += 1
+                logger.info(f"Skipped {actual_filename} (same size)")
 
+                # Still upload image even if ROM was skipped
+                if device.include_images:
+                    image_result = _upload_game_image(
+                        client=client,
+                        game=game,
+                        rom_filename=actual_filename,
+                        device=device,
+                        progress=progress,
+                    )
+                    if image_result:
+                        image_results.append(image_result)
                         if progress_callback:
                             progress_callback(progress)
-                        continue
+
+                if progress_callback:
+                    progress_callback(progress)
+                continue
+
+            # Need to upload - now extract the ROM
+            try:
+                with get_rom_file(rom) as (local_path, extracted_filename):
+                    # Use extracted filename in case it differs
+                    actual_filename = extracted_filename
+                    local_size = os.path.getsize(local_path)
 
                     # Ensure remote directory exists
                     remote_dir = "/".join(remote_path.split("/")[:-1])
@@ -688,7 +722,6 @@ def send_games_to_device(
                                 f"Upload attempt {attempt + 1}/{max_retries} failed for {actual_filename}: {e}"
                             )
                             if attempt < max_retries - 1:
-                                # Wait a bit before retry
                                 import time
 
                                 time.sleep(1)
@@ -716,7 +749,6 @@ def send_games_to_device(
                             )
                             if image_result:
                                 image_results.append(image_result)
-                                # Increment files processed for image
                                 if progress_callback:
                                     progress_callback(progress)
                     else:
@@ -735,10 +767,6 @@ def send_games_to_device(
 
                     if progress_callback:
                         progress_callback(progress)
-
-                    # Note: We don't increment for image failure here if the ROM failed,
-                    # as image upload is only attempted if ROM access succeeded.
-                    # This is consistent with current logic.
 
             except (FileNotFoundError, IOError, OSError) as e:
                 # File missing or extraction failed
