@@ -287,6 +287,9 @@ class Device(models.Model):
         prefix = self.transfer_path_prefix.rstrip("/")
         root = self.root_path.strip("/")
 
+        # Determine if we should treat this as an absolute path
+        is_absolute = self.transfer_path_prefix.startswith("/")
+
         if prefix:
             path = f"{prefix}/{root}" if root else prefix
         else:
@@ -294,6 +297,9 @@ class Device(models.Model):
 
         if relative_path:
             path = f"{path}/{relative_path.lstrip('/')}"
+
+        if is_absolute and not path.startswith("/"):
+            path = f"/{path}"
 
         return path
 

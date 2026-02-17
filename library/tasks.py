@@ -258,8 +258,8 @@ def create_download_bundle(download_job_id: int) -> dict:
         raise
 
 
-@app.task(queue=QUEUE_USER_ACTIONS)
-def run_send_upload(send_job_id: int) -> dict:
+@app.task(queue=QUEUE_USER_ACTIONS, pass_context=True)
+def run_send_upload(context: job_context.JobContext, send_job_id: int) -> dict:
     """Background task to upload games or specific ROMs to device via FTP/SFTP."""
     from devices.models import Device
 
@@ -272,7 +272,10 @@ def run_send_upload(send_job_id: int) -> dict:
     job.save()
 
     def update_progress(progress: SendProgress) -> None:
-        """Update job progress in database."""
+        """Update job progress in database and check for abortion."""
+        if context.should_abort():
+            raise JobAborted()
+
         SendJob.objects.filter(pk=send_job_id).update(
             files_uploaded=progress.files_uploaded,
             files_skipped=progress.files_skipped,
@@ -679,7 +682,9 @@ def identify_rom(context: job_context.JobContext, rom_id: int) -> dict:
         raise JobAborted()
 
     try:
-        rom = ROM.objects.select_related("rom_set", "rom_set__game", "rom_set__game__system").get(pk=rom_id)
+        rom = ROM.objects.select_related(
+            "rom_set", "rom_set__game", "rom_set__game__system"
+        ).get(pk=rom_id)
     except ROM.DoesNotExist:
         # ROM was deleted since the scan - this is fine, just skip
         logger.info(f"ROM {rom_id} no longer exists, skipping identification")

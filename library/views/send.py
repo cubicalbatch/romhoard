@@ -14,7 +14,7 @@ def start_send(request, slug):
     """Start sending selected games or specific ROMs to a device via FTP/SFTP.
 
     POST body: {
-        "game_ids": [1, 2, 3, ...],  # Send all ROMs from these games
+        "game_ids": [1, 2, 3, ...],  # Send default ROMs from these games
         "rom_ids": [1, 2, 3, ...],   # OR send specific ROMs (takes precedence)
         "device_id": 123,
         "transfer_type": "sftp", "transfer_host": "...", ...
@@ -76,34 +76,51 @@ def start_send(request, slug):
 
     system = get_object_or_404(System, slug=slug)
 
-    # Handle ROM-specific send (takes precedence over game_ids)
+    from ..send import get_send_files
+
+    # Calculate games and ROMs to send
     if rom_ids:
         # Validate ROMs exist and belong to the system
-        valid_roms = ROM.objects.filter(pk__in=rom_ids, rom_set__game__system=system)
-        if not valid_roms.exists():
+        valid_roms = list(
+            ROM.objects.filter(pk__in=rom_ids, rom_set__game__system=system)
+        )
+        if not valid_roms:
             return JsonResponse({"error": "No valid ROMs selected"}, status=400)
-
-        files_total = valid_roms.count()
-        valid_rom_ids = list(valid_roms.values_list("pk", flat=True))
-        valid_game_ids = []
+        valid_games = None
     else:
         # Validate games exist and belong to the system
-        valid_games = Game.objects.filter(pk__in=game_ids, system=system)
-        if not valid_games.exists():
+        valid_games = list(Game.objects.filter(pk__in=game_ids, system=system))
+        if not valid_games:
             return HttpResponse("No valid games selected", status=400)
+        valid_roms = None
 
-        # Count total ROM files to upload
-        files_total = ROM.objects.filter(rom_set__game__in=valid_games).count()
-        valid_game_ids = list(valid_games.values_list("pk", flat=True))
-        valid_rom_ids = []
+    # Use the utility to collect all files (ROMs + optionally images) to count total
+    all_send_items = get_send_files(
+        games=valid_games,
+        roms=valid_roms,
+        include_images=device.include_images,
+        device=device,
+    )
+
+    files_total = len(all_send_items)
+    if device.include_images:
+        # Each item in all_send_items is (game, rom, image_path)
+        # We count the ROM itself, and if image_path is set, we count the image too
+        files_total = len(all_send_items) + sum(
+            1 for g, r, img in all_send_items if img
+        )
 
     if files_total == 0:
         return HttpResponse("No ROM files to upload", status=400)
 
+    # Prepare IDs for the job
+    job_game_ids = [g.pk for g in valid_games] if valid_games else []
+    job_rom_ids = [r.pk for r in valid_roms] if valid_roms else []
+
     # Create job
     job = SendJob.objects.create(
-        game_ids=valid_game_ids,
-        rom_ids=valid_rom_ids,
+        game_ids=job_game_ids,
+        rom_ids=job_rom_ids,
         device=device,
         files_total=files_total,
         task_id="pending",
