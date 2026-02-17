@@ -3,18 +3,53 @@
 import ftplib
 import logging
 import os
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 import paramiko
+
+if TYPE_CHECKING:
+    from library.send import TransferClient
 
 from devices.models import Device
 from library.download import get_rom_file
 from library.models import Game, ROM
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def keepalive_during(client: "TransferClient", interval: float = 15.0):
+    """Send keepalive commands in background during long operations.
+
+    This prevents FTP/SFTP server timeouts during lengthy ROM extraction.
+    A background thread sends periodic NOOP/stat commands to keep the
+    connection alive.
+
+    Args:
+        client: TransferClient instance to keep alive
+        interval: Seconds between keepalive commands (default: 15)
+    """
+    stop_event = threading.Event()
+
+    def keepalive_loop():
+        while not stop_event.wait(timeout=interval):
+            if not client.send_keepalive():
+                logger.warning("Keepalive failed, connection may be lost")
+                break
+
+    thread = threading.Thread(target=keepalive_loop, daemon=True, name="keepalive")
+    thread.start()
+
+    try:
+        yield
+    finally:
+        stop_event.set()
+        thread.join(timeout=2.0)
 
 
 @dataclass
@@ -95,6 +130,19 @@ class TransferClient:
     def close(self) -> None:
         """Close connection."""
         raise NotImplementedError
+
+    def is_connected(self) -> bool:
+        """Check if connection is still alive."""
+        raise NotImplementedError
+
+    def send_keepalive(self) -> bool:
+        """Send a keepalive command. Returns True if successful."""
+        raise NotImplementedError
+
+    def reconnect(self) -> tuple[bool, str]:
+        """Close and reconnect. Returns (success, error_msg)."""
+        self.close()
+        return self.connect()
 
 
 class FTPClient(TransferClient):
@@ -269,6 +317,25 @@ class FTPClient(TransferClient):
                 self.ftp.quit()
             except Exception:
                 pass
+            self.ftp = None
+
+    def is_connected(self) -> bool:
+        """Check if FTP connection is still alive by testing it."""
+        if not self.ftp:
+            return False
+        # Actually test the connection
+        return self.send_keepalive()
+
+    def send_keepalive(self) -> bool:
+        """Send NOOP command to keep FTP connection alive."""
+        if not self.ftp:
+            return False
+        try:
+            self.ftp.voidcmd("NOOP")
+            return True
+        except Exception as e:
+            logger.debug(f"FTP keepalive failed: {e}")
+            return False
 
 
 class SFTPClient(TransferClient):
@@ -380,11 +447,31 @@ class SFTPClient(TransferClient):
                 self.sftp.close()
             except Exception:
                 pass
+            self.sftp = None
         if self.client:
             try:
                 self.client.close()
             except Exception:
                 pass
+            self.client = None
+
+    def is_connected(self) -> bool:
+        """Check if SFTP connection is still alive by testing it."""
+        if not self.sftp or not self.client:
+            return False
+        # Actually test the connection - transport.is_active() is unreliable
+        return self.send_keepalive()
+
+    def send_keepalive(self) -> bool:
+        """Send stat command to keep SFTP connection alive."""
+        if not self.sftp:
+            return False
+        try:
+            self.sftp.stat(".")
+            return True
+        except Exception as e:
+            logger.debug(f"SFTP keepalive failed: {e}")
+            return False
 
 
 def create_transfer_client(device: Device) -> TransferClient:
@@ -686,87 +773,110 @@ def send_games_to_device(
                     progress_callback(progress)
                 continue
 
-            # Need to upload - now extract the ROM
+            # Need to upload - now extract the ROM (with keepalive during extraction)
             try:
-                with get_rom_file(rom) as (local_path, extracted_filename):
-                    # Use extracted filename in case it differs
-                    actual_filename = extracted_filename
-                    local_size = os.path.getsize(local_path)
+                with keepalive_during(client):
+                    with get_rom_file(rom) as (local_path, extracted_filename):
+                        # Use extracted filename in case it differs
+                        actual_filename = extracted_filename
+                        local_size = os.path.getsize(local_path)
 
-                    # Ensure remote directory exists
-                    remote_dir = "/".join(remote_path.split("/")[:-1])
-                    if remote_dir:
-                        client.ensure_directory(remote_dir)
+                        # Ensure remote directory exists
+                        remote_dir = "/".join(remote_path.split("/")[:-1])
+                        if remote_dir:
+                            client.ensure_directory(remote_dir)
 
-                    # Upload with retries
-                    last_error = ""
-                    upload_success = False
-                    for attempt in range(max_retries):
-                        try:
-                            bytes_before = progress.bytes_uploaded
-
-                            def file_progress(bytes_transferred, total_bytes):
-                                progress.bytes_uploaded = (
-                                    bytes_before + bytes_transferred
+                        # Upload with retries
+                        last_error = ""
+                        upload_success = False
+                        for attempt in range(max_retries):
+                            try:
+                                # Check connection before upload, reconnect if needed
+                                logger.debug(
+                                    f"Attempt {attempt + 1}: checking connection..."
                                 )
-                                if progress_callback:
-                                    progress_callback(progress)
+                                if not client.is_connected():
+                                    logger.info(
+                                        "Connection lost, attempting reconnect..."
+                                    )
+                                    success, error = client.reconnect()
+                                    if not success:
+                                        logger.warning(f"Reconnect failed: {error}")
+                                        last_error = f"Reconnect failed: {error}"
+                                        continue
+                                    logger.info("Reconnected successfully")
+                                    # Re-navigate to directory after reconnect
+                                    if remote_dir:
+                                        client.ensure_directory(remote_dir)
 
-                            client.upload_file(local_path, remote_path, file_progress)
-                            upload_success = True
-                            progress.bytes_uploaded = bytes_before + local_size
-                            break
-                        except Exception as e:
-                            last_error = str(e)
-                            logger.warning(
-                                f"Upload attempt {attempt + 1}/{max_retries} failed for {actual_filename}: {e}"
+                                bytes_before = progress.bytes_uploaded
+
+                                def file_progress(bytes_transferred, total_bytes):
+                                    progress.bytes_uploaded = (
+                                        bytes_before + bytes_transferred
+                                    )
+                                    if progress_callback:
+                                        progress_callback(progress)
+
+                                client.upload_file(
+                                    local_path, remote_path, file_progress
+                                )
+                                upload_success = True
+                                progress.bytes_uploaded = bytes_before + local_size
+                                break
+                            except Exception as e:
+                                last_error = str(e)
+                                logger.warning(
+                                    f"Upload attempt {attempt + 1}/{max_retries} failed for {actual_filename}: {e}"
+                                )
+                                if attempt < max_retries - 1:
+                                    import time
+
+                                    time.sleep(1)
+
+                        if upload_success:
+                            result = FileResult(
+                                game_id=game.pk,
+                                filename=actual_filename,
+                                remote_path=remote_path,
+                                success=True,
+                                bytes=local_size,
                             )
-                            if attempt < max_retries - 1:
-                                import time
-
-                                time.sleep(1)
-
-                    if upload_success:
-                        result = FileResult(
-                            game_id=game.pk,
-                            filename=actual_filename,
-                            remote_path=remote_path,
-                            success=True,
-                            bytes=local_size,
-                        )
-                        uploaded.append(result)
-                        progress.files_uploaded += 1
-                        logger.info(f"Uploaded {actual_filename} -> {remote_path}")
-
-                        # Upload image for this game if enabled
-                        if device.include_images:
-                            image_result = _upload_game_image(
-                                client=client,
-                                game=game,
-                                rom_filename=actual_filename,
-                                device=device,
-                                progress=progress,
+                            uploaded.append(result)
+                            progress.files_uploaded += 1
+                            logger.info(
+                                f"Uploaded {actual_filename} -> {remote_path}"
                             )
-                            if image_result:
-                                image_results.append(image_result)
-                                if progress_callback:
-                                    progress_callback(progress)
-                    else:
-                        result = FileResult(
-                            game_id=game.pk,
-                            filename=actual_filename,
-                            remote_path=remote_path,
-                            success=False,
-                            error=last_error,
-                        )
-                        failed.append(result)
-                        progress.files_failed += 1
-                        logger.error(
-                            f"Failed to upload {actual_filename}: {last_error}"
-                        )
 
-                    if progress_callback:
-                        progress_callback(progress)
+                            # Upload image for this game if enabled
+                            if device.include_images:
+                                image_result = _upload_game_image(
+                                    client=client,
+                                    game=game,
+                                    rom_filename=actual_filename,
+                                    device=device,
+                                    progress=progress,
+                                )
+                                if image_result:
+                                    image_results.append(image_result)
+                                    if progress_callback:
+                                        progress_callback(progress)
+                        else:
+                            result = FileResult(
+                                game_id=game.pk,
+                                filename=actual_filename,
+                                remote_path=remote_path,
+                                success=False,
+                                error=last_error,
+                            )
+                            failed.append(result)
+                            progress.files_failed += 1
+                            logger.error(
+                                f"Failed to upload {actual_filename}: {last_error}"
+                            )
+
+                        if progress_callback:
+                            progress_callback(progress)
 
             except (FileNotFoundError, IOError, OSError) as e:
                 # File missing or extraction failed
