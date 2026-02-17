@@ -17,8 +17,14 @@ DEFAULT_REGION_PRIORITIES = {
 }
 DEFAULT_REGION_SCORE = 200
 
-# Scoring weights
-STANDALONE_ARCHIVE_BONUS = 100
+# Archive scoring (higher = better)
+LOOSE_FILE_BONUS = 150              # Best: direct file access
+SINGLE_ROM_ARCHIVE_BONUS = 100      # Good: small archive to extract
+ARCHIVE_PENALTY_PER_ROM = 2         # Penalty multiplier for multi-ROM archives
+MAX_ARCHIVE_PENALTY = 75            # Cap to avoid overwhelming region scores
+
+# Legacy alias for backward compatibility
+STANDALONE_ARCHIVE_BONUS = SINGLE_ROM_ARCHIVE_BONUS
 
 # Switch content type penalty - disqualify update/DLC-only ROMSets
 NO_BASE_GAME_PENALTY = -5000
@@ -101,27 +107,49 @@ def get_content_type_penalty(rom_set: ROMSet) -> int:
     return 0
 
 
+def get_archive_score(rom_set: ROMSet) -> int:
+    """Calculate archive-based score for a ROMSet.
+
+    Tiers:
+    - Loose files: +150 (no extraction needed)
+    - Single-ROM archives: +100 (small archive)
+    - Multi-ROM archives: penalty based on size (capped at -75)
+
+    For multi-ROM ROMSets, returns the worst (minimum) score.
+    """
+    roms = rom_set.roms.all()
+    if not roms.exists():
+        return 0
+
+    scores = []
+    for rom in roms:
+        if not rom.archive_path:
+            scores.append(LOOSE_FILE_BONUS)
+        else:
+            archive_rom_count = ROM.objects.filter(
+                archive_path=rom.archive_path
+            ).count()
+            if archive_rom_count == 1:
+                scores.append(SINGLE_ROM_ARCHIVE_BONUS)
+            else:
+                penalty = min(
+                    archive_rom_count * ARCHIVE_PENALTY_PER_ROM,
+                    MAX_ARCHIVE_PENALTY
+                )
+                scores.append(-penalty)
+
+    return min(scores)
+
+
 def is_standalone_archive(rom_set: ROMSet) -> bool:
     """Check if ROMSet's ROMs are in standalone archives.
+
+    Deprecated: Use get_archive_score() instead for more granular scoring.
 
     A standalone archive contains only this game's ROMs, making downloads
     faster and cleaner than extracting from multi-game collections.
     """
-    roms = rom_set.roms.all()
-    if not roms.exists():
-        return False
-
-    for rom in roms:
-        if not rom.archive_path:
-            # Loose file - treat as standalone (best case)
-            continue
-
-        # Count total ROMs sharing this archive
-        archive_rom_count = ROM.objects.filter(archive_path=rom.archive_path).count()
-        if archive_rom_count > 1:
-            return False
-
-    return True
+    return get_archive_score(rom_set) >= SINGLE_ROM_ARCHIVE_BONUS
 
 
 def calculate_romset_score(rom_set: ROMSet) -> int:
@@ -134,9 +162,9 @@ def calculate_romset_score(rom_set: ROMSet) -> int:
     # Region score
     score += get_region_score(rom_set.region)
 
-    # Standalone archive bonus
-    if rom_set.roms.exists() and is_standalone_archive(rom_set):
-        score += STANDALONE_ARCHIVE_BONUS
+    # Archive score (replaces standalone bonus)
+    if rom_set.roms.exists():
+        score += get_archive_score(rom_set)
 
     # Switch content type penalty (update/DLC-only ROMSets)
     score += get_content_type_penalty(rom_set)

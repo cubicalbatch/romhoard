@@ -4,9 +4,14 @@ from django.test import TestCase
 
 from library.models import Game, ROM, ROMSet, Setting, System
 from library.romset_scoring import (
+    ARCHIVE_PENALTY_PER_ROM,
+    LOOSE_FILE_BONUS,
+    MAX_ARCHIVE_PENALTY,
+    SINGLE_ROM_ARCHIVE_BONUS,
     STANDALONE_ARCHIVE_BONUS,
     calculate_romset_score,
     get_all_known_regions,
+    get_archive_score,
     get_best_romset,
     get_region_priorities,
     get_region_score,
@@ -167,6 +172,224 @@ class TestStandaloneArchiveDetection(TestCase):
         self.assertFalse(is_standalone_archive(rom_set))
 
 
+class TestArchiveScoring(TestCase):
+    """Tests for archive-based scoring with tiered penalties."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.system = System.objects.create(
+            name="Test System",
+            slug="test-archive-scoring",
+            extensions=[".rom"],
+            folder_names=["test"],
+        )
+        cls.game = Game.objects.create(name="Archive Test Game", system=cls.system)
+
+    def test_loose_file_beats_single_archive(self):
+        """Loose file should score higher than single-ROM archive."""
+        # Loose file
+        rs_loose = ROMSet.objects.create(
+            game=self.game, region="USA", source_path="/loose"
+        )
+        ROM.objects.create(
+            rom_set=rs_loose,
+            file_path="/roms/game.rom",
+            file_name="game.rom",
+            file_size=1000,
+            archive_path="",
+        )
+
+        # Single-ROM archive
+        rs_archive = ROMSet.objects.create(
+            game=self.game, region="USA", source_path="/single-archive"
+        )
+        ROM.objects.create(
+            rom_set=rs_archive,
+            file_path="/roms/game.zip!game.rom",
+            file_name="game.rom",
+            file_size=1000,
+            archive_path="/roms/game.zip",
+        )
+
+        score_loose = get_archive_score(rs_loose)
+        score_archive = get_archive_score(rs_archive)
+
+        self.assertEqual(score_loose, LOOSE_FILE_BONUS)  # 150
+        self.assertEqual(score_archive, SINGLE_ROM_ARCHIVE_BONUS)  # 100
+        self.assertGreater(score_loose, score_archive)
+
+    def test_single_archive_beats_multi_archive(self):
+        """Single-ROM archive should score higher than multi-ROM archive."""
+        # Single-ROM archive
+        rs_single = ROMSet.objects.create(
+            game=self.game, region="USA", source_path="/single"
+        )
+        ROM.objects.create(
+            rom_set=rs_single,
+            file_path="/roms/single.zip!game.rom",
+            file_name="game.rom",
+            file_size=1000,
+            archive_path="/roms/single.zip",
+        )
+
+        # Multi-ROM archive (10 ROMs)
+        rs_multi = ROMSet.objects.create(
+            game=self.game, region="USA", source_path="/multi10"
+        )
+        ROM.objects.create(
+            rom_set=rs_multi,
+            file_path="/roms/multi10.zip!game.rom",
+            file_name="game.rom",
+            file_size=1000,
+            archive_path="/roms/multi10.zip",
+        )
+        # Add 9 more ROMs to the same archive
+        for i in range(9):
+            other_game = Game.objects.create(
+                name=f"Other Game {i}", system=self.system
+            )
+            other_rs = ROMSet.objects.create(game=other_game, region="USA")
+            ROM.objects.create(
+                rom_set=other_rs,
+                file_path=f"/roms/multi10.zip!other{i}.rom",
+                file_name=f"other{i}.rom",
+                file_size=1000,
+                archive_path="/roms/multi10.zip",
+            )
+
+        score_single = get_archive_score(rs_single)
+        score_multi = get_archive_score(rs_multi)
+
+        self.assertEqual(score_single, SINGLE_ROM_ARCHIVE_BONUS)  # 100
+        self.assertEqual(score_multi, -(10 * ARCHIVE_PENALTY_PER_ROM))  # -20
+        self.assertGreater(score_single, score_multi)
+
+    def test_archive_penalty_scales_with_size(self):
+        """Archive penalty should scale with number of ROMs."""
+        # Create archives with different sizes
+        for size in [5, 20]:
+            rs = ROMSet.objects.create(
+                game=self.game, region="USA", source_path=f"/size{size}"
+            )
+            archive_path = f"/roms/archive{size}.zip"
+            ROM.objects.create(
+                rom_set=rs,
+                file_path=f"{archive_path}!game.rom",
+                file_name="game.rom",
+                file_size=1000,
+                archive_path=archive_path,
+            )
+            # Add other ROMs to make archive the specified size
+            for i in range(size - 1):
+                other_game = Game.objects.create(
+                    name=f"Size{size} Other {i}", system=self.system
+                )
+                other_rs = ROMSet.objects.create(game=other_game, region="USA")
+                ROM.objects.create(
+                    rom_set=other_rs,
+                    file_path=f"{archive_path}!other{i}.rom",
+                    file_name=f"other{i}.rom",
+                    file_size=1000,
+                    archive_path=archive_path,
+                )
+
+        rs5 = ROMSet.objects.get(source_path="/size5")
+        rs20 = ROMSet.objects.get(source_path="/size20")
+
+        score5 = get_archive_score(rs5)
+        score20 = get_archive_score(rs20)
+
+        # 5 ROMs = -10, 20 ROMs = -40
+        self.assertEqual(score5, -(5 * ARCHIVE_PENALTY_PER_ROM))
+        self.assertEqual(score20, -(20 * ARCHIVE_PENALTY_PER_ROM))
+        self.assertGreater(score5, score20)  # -10 > -40
+
+    def test_archive_penalty_capped(self):
+        """Archive penalty should be capped at MAX_ARCHIVE_PENALTY."""
+        # Create a large archive (100+ ROMs)
+        rs = ROMSet.objects.create(
+            game=self.game, region="USA", source_path="/huge"
+        )
+        archive_path = "/roms/huge.zip"
+        ROM.objects.create(
+            rom_set=rs,
+            file_path=f"{archive_path}!game.rom",
+            file_name="game.rom",
+            file_size=1000,
+            archive_path=archive_path,
+        )
+        # Add 99 more ROMs (total 100)
+        for i in range(99):
+            other_game = Game.objects.create(
+                name=f"Huge Other {i}", system=self.system
+            )
+            other_rs = ROMSet.objects.create(game=other_game, region="USA")
+            ROM.objects.create(
+                rom_set=other_rs,
+                file_path=f"{archive_path}!other{i}.rom",
+                file_name=f"other{i}.rom",
+                file_size=1000,
+                archive_path=archive_path,
+            )
+
+        score = get_archive_score(rs)
+
+        # 100 * 2 = 200, but capped at 75
+        self.assertEqual(score, -MAX_ARCHIVE_PENALTY)  # -75
+
+    def test_multi_rom_romset_uses_worst_score(self):
+        """Multi-ROM ROMSet should use the worst (minimum) score."""
+        # ROMSet with one loose file and one in a big archive
+        rs = ROMSet.objects.create(
+            game=self.game, region="USA", source_path="/mixed"
+        )
+
+        # First ROM: loose file (score 150)
+        ROM.objects.create(
+            rom_set=rs,
+            file_path="/roms/game-disc1.rom",
+            file_name="game-disc1.rom",
+            file_size=1000,
+            archive_path="",
+        )
+
+        # Second ROM: in multi-ROM archive (10 ROMs)
+        archive_path = "/roms/mixed-archive.zip"
+        ROM.objects.create(
+            rom_set=rs,
+            file_path=f"{archive_path}!game-disc2.rom",
+            file_name="game-disc2.rom",
+            file_size=1000,
+            archive_path=archive_path,
+        )
+        # Add 9 more ROMs to the archive
+        for i in range(9):
+            other_game = Game.objects.create(
+                name=f"Mixed Other {i}", system=self.system
+            )
+            other_rs = ROMSet.objects.create(game=other_game, region="USA")
+            ROM.objects.create(
+                rom_set=other_rs,
+                file_path=f"{archive_path}!other{i}.rom",
+                file_name=f"other{i}.rom",
+                file_size=1000,
+                archive_path=archive_path,
+            )
+
+        score = get_archive_score(rs)
+
+        # Should use the worst score: -20 (10-ROM archive) not 150 (loose)
+        self.assertEqual(score, -(10 * ARCHIVE_PENALTY_PER_ROM))
+
+    def test_empty_romset_returns_zero(self):
+        """Empty ROMSet should return 0."""
+        rs = ROMSet.objects.create(
+            game=self.game, region="USA", source_path="/empty-archive"
+        )
+        score = get_archive_score(rs)
+        self.assertEqual(score, 0)
+
+
 class TestRomsetScoring(TestCase):
     """Tests for ROMSet score calculation."""
 
@@ -221,10 +444,10 @@ class TestRomsetScoring(TestCase):
         score_standalone = calculate_romset_score(rs_standalone)
         score_multi = calculate_romset_score(rs_multi)
 
-        # USA (1000) + standalone bonus (100) = 1100
-        # USA (1000) = 1000
-        self.assertEqual(score_standalone, 1000 + STANDALONE_ARCHIVE_BONUS)
-        self.assertEqual(score_multi, 1000)
+        # USA (1000) + single-ROM archive bonus (100) = 1100
+        # USA (1000) + penalty for 2-ROM archive (-4) = 996
+        self.assertEqual(score_standalone, 1000 + SINGLE_ROM_ARCHIVE_BONUS)
+        self.assertEqual(score_multi, 1000 - (2 * ARCHIVE_PENALTY_PER_ROM))
         self.assertGreater(score_standalone, score_multi)
 
     def test_usa_multi_archive_beats_europe_standalone(self):
@@ -265,9 +488,9 @@ class TestRomsetScoring(TestCase):
         score_usa = calculate_romset_score(rs_usa)
         score_eu = calculate_romset_score(rs_eu)
 
-        # USA (1000) > Europe (800) + standalone (100) = 900
-        self.assertEqual(score_usa, 1000)
-        self.assertEqual(score_eu, 800 + STANDALONE_ARCHIVE_BONUS)
+        # USA (1000) - 2-ROM penalty (4) = 996 > Europe (800) + single archive (100) = 900
+        self.assertEqual(score_usa, 1000 - (2 * ARCHIVE_PENALTY_PER_ROM))
+        self.assertEqual(score_eu, 800 + SINGLE_ROM_ARCHIVE_BONUS)
         self.assertGreater(score_usa, score_eu)
 
 
