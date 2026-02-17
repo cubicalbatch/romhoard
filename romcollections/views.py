@@ -25,7 +25,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from devices.models import Device
 from django.conf import settings
-from library.models import DownloadJob, Game, ROM, SendJob, System
+from library.models import DownloadJob, Game, SendJob, System
 from library.tasks import create_download_bundle, run_send_upload
 
 from .models import Collection, CollectionEntry, CoverJob, ExportJob
@@ -36,11 +36,13 @@ from .search import (
     _build_relevance_annotations,
     _compute_matched_counts_bulk,
 )
-from .serializers import ImportError as SerializerImportError
-from .serializers import ValidationResult, export_collection as serialize_export
-from .serializers import import_collection as serialize_import
-from .serializers import validate_collection_zip
-from .serializers import import_collection_with_images
+from .serializers import (
+    ImportError as SerializerImportError,
+    export_collection as serialize_export,
+    import_collection as serialize_import,
+    import_collection_with_images,
+    validate_collection_zip,
+)
 from .tasks import create_collection_export, generate_collection_cover
 
 # Character limits for text fields
@@ -1306,7 +1308,11 @@ def import_collection(request):
     import tempfile
     import zipfile
 
-    from romhoard.url_fetch import URLFetchError, fetch_json_from_url, fetch_zip_from_url
+    from romhoard.url_fetch import (
+        URLFetchError,
+        fetch_json_from_url,
+        fetch_zip_from_url,
+    )
 
     from .serializers import validate_import_data
 
@@ -1398,7 +1404,9 @@ def import_collection(request):
                         "overwrite": overwrite,
                     }
 
-                    return redirect("romcollections:import_collection_preview", token=token)
+                    return redirect(
+                        "romcollections:import_collection_preview", token=token
+                    )
 
                 except URLFetchError as e:
                     context = {"error": f"Failed to fetch URL: {e}"}
@@ -1792,13 +1800,27 @@ def send_collection(request, creator, slug):
         return HttpResponse("No matched games to send", status=400)
 
     # Create SendJob
-    game_ids = [g.pk for g in matched_games]
+    from library.send import get_send_files
 
-    # Count total ROM files to upload
-    files_total = ROM.objects.filter(rom_set__game__in=matched_games).count()
+    # Use the utility to collect all files (ROMs + optionally images) to count total
+    all_send_items = get_send_files(
+        games=matched_games,
+        include_images=device.include_images,
+        device=device,
+    )
+
+    files_total = len(all_send_items)
+    if device.include_images:
+        # Each item in all_send_items is (game, rom, image_path)
+        # We count the ROM itself, and if image_path is set, we count the image too
+        files_total = len(all_send_items) + sum(
+            1 for g, r, img in all_send_items if img
+        )
 
     if files_total == 0:
         return HttpResponse("No ROM files to upload", status=400)
+
+    game_ids = [g.pk for g in matched_games]
 
     job = SendJob.objects.create(
         game_ids=game_ids,

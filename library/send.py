@@ -388,6 +388,62 @@ def _sanitize_filename(name: str) -> str:
     return name
 
 
+def get_send_files(
+    games: Optional[list[Game]] = None,
+    roms: Optional[list[ROM]] = None,
+    include_images: bool = False,
+    device: Optional[Device] = None,
+) -> list[tuple[Game, ROM, Optional[str]]]:
+    """
+    Collect all files (ROMs and optionally images) to be sent to a device.
+
+    This consolidates the selection logic for both single game/ROM sends
+    and collection-wide sends.
+
+    Args:
+        games: List of games to collect ROMs/images for.
+        roms: Specific list of ROMs to send (takes precedence over games).
+        include_images: Whether to include images in the results.
+        device: Optional device instance for image path/type configuration.
+
+    Returns:
+        List of (Game, ROM, Optional[remote_image_path]) tuples.
+        If a ROM has an associated image to be sent, remote_image_path is set.
+    """
+    from .multidownload import get_default_romset
+
+    files = []
+    rom_list = []
+
+    if roms:
+        # 1. Use specific ROMs provided (already select_related in the task usually)
+        for r in roms:
+            rom_list.append((r.rom_set.game, r))
+    elif games:
+        # 2. Collect ROMs from default ROMSet only (like downloads)
+        for game in games:
+            rom_set = get_default_romset(game)
+            if rom_set:
+                for r in rom_set.roms.all():
+                    rom_list.append((game, r))
+
+    # 3. Add images if requested
+    for game, rom in rom_list:
+        image_remote_path = None
+        if include_images and device:
+            # Building remote path here for counting/verification consistency
+            # However, iter_game_files / get_rom_file might change the final actual_filename
+            # so we'll just flag that an image is INTENDED for this ROM.
+            # We use the ROM filename as the key.
+            image_remote_path = device.get_effective_image_path(
+                game.system.slug, rom.file_name
+            )
+
+        files.append((game, rom, image_remote_path))
+
+    return files
+
+
 def _upload_game_image(
     client: TransferClient,
     game: Game,
@@ -504,29 +560,26 @@ def send_games_to_device(
     failed = []
     image_results = []
 
-    # 1. Collect all ROM files to upload
-    rom_files = []
-    if roms:
-        # Use specific ROMs provided
-        for rom in roms:
-            rom_files.append((rom.rom_set.game, rom))
-    else:
-        # Collect ROMs from default ROMSet only (like downloads)
-        from .multidownload import get_default_romset
+    # 1. Collect all ROM files and images to upload
+    all_items = get_send_files(
+        games=games,
+        roms=roms,
+        include_images=device.include_images,
+        device=device,
+    )
 
-        for game in games:
-            rom_set = get_default_romset(game)
-            if rom_set:
-                for rom in rom_set.roms.all():
-                    rom_files.append((game, rom))
-
-    if not rom_files:
+    if not all_items:
         return uploaded, skipped, failed, image_results
 
-    # 2. Calculate total bytes using stored file_size (works for archived ROMs too)
+    # Calculate totals
+    rom_files = [(game, rom) for game, rom, img in all_items]
     total_bytes = sum(rom.file_size for game, rom in rom_files)
+    total_files = len(rom_files)
+    if device.include_images:
+        # Each ROM might have 1 image (if configured and available)
+        total_files += sum(1 for game, rom, img in all_items if img)
 
-    progress = SendProgress(files_total=len(rom_files), bytes_total=total_bytes)
+    progress = SendProgress(files_total=total_files, bytes_total=total_bytes)
 
     # 3. Create transfer client and connect
     client = create_transfer_client(device)
@@ -596,6 +649,11 @@ def send_games_to_device(
                             )
                             if image_result:
                                 image_results.append(image_result)
+                                # Increment files processed for image
+                                # files_uploaded/skipped/failed are incremented inside _upload_game_image
+                                # but we want to trigger progress callback
+                                if progress_callback:
+                                    progress_callback(progress)
 
                         if progress_callback:
                             progress_callback(progress)
@@ -658,6 +716,9 @@ def send_games_to_device(
                             )
                             if image_result:
                                 image_results.append(image_result)
+                                # Increment files processed for image
+                                if progress_callback:
+                                    progress_callback(progress)
                     else:
                         result = FileResult(
                             game_id=game.pk,
@@ -674,6 +735,10 @@ def send_games_to_device(
 
                     if progress_callback:
                         progress_callback(progress)
+
+                    # Note: We don't increment for image failure here if the ROM failed,
+                    # as image upload is only attempted if ROM access succeeded.
+                    # This is consistent with current logic.
 
             except (FileNotFoundError, IOError, OSError) as e:
                 # File missing or extraction failed
