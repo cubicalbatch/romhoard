@@ -195,6 +195,30 @@
       },
       "arduboy": {
         "folder": "ARDUBOY"
+      },
+      "chai": {
+        "folder": "CHAI"
+      },
+      "fake08": {
+        "folder": "FAKE08"
+      },
+      "mame2003plus": {
+        "folder": "MAME2003PLUS"
+      },
+      "msu1": {
+        "folder": "MSU1"
+      },
+      "msumd": {
+        "folder": "MSUMD"
+      },
+      "openbor": {
+        "folder": "OPENBOR"
+      },
+      "snesalt": {
+        "folder": "SNES"
+      },
+      "tic80": {
+        "folder": "TIC"
       }
     }
   },
@@ -204,9 +228,10 @@
     "image_type": "cover"
   },
   "transfer": {
-    "protocol": "ftp",
-    "port": 21,
-    "anonymous": true,
-    "path_prefix": "/"
+    "protocol": "sftp",
+    "port": 22,
+    "user": "spruce",
+    "password": "happygaming",
+    "path_prefix": "/mnt/SDCARD"
   }
 }

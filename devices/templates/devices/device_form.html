@@ -74,25 +74,24 @@
                     });
                 }
 
-                // Apply transfer config - use $nextTick since fields are in conditional template
+                // Apply transfer config - update Alpine store directly
                 if (data.transfer && this.hasWifi) {
-                    this.$nextTick(() => {
-                        if (data.transfer.protocol) {
-                            document.querySelector('[name=transfer_type]').value = data.transfer.protocol;
-                        }
-                        if (data.transfer.port) {
-                            document.querySelector('[name=transfer_port]').value = data.transfer.port;
-                        }
-                        if (data.transfer.user) {
-                            document.querySelector('[name=transfer_user]').value = data.transfer.user;
-                        }
-                        if (data.transfer.password) {
-                            document.querySelector('[name=transfer_password]').value = data.transfer.password;
-                        }
-                        if (data.transfer.path_prefix) {
-                            document.querySelector('[name=transfer_path_prefix]').value = data.transfer.path_prefix;
-                        }
-                    });
+                    const store = Alpine.store('transferConfig');
+                    if (data.transfer.protocol) {
+                        store.type = data.transfer.protocol;
+                    }
+                    if (data.transfer.port) {
+                        store.port = data.transfer.port;
+                    }
+                    if (data.transfer.user) {
+                        store.user = data.transfer.user;
+                    }
+                    if (data.transfer.password) {
+                        store.password = data.transfer.password;
+                    }
+                    if (data.transfer.path_prefix) {
+                        store.pathPrefix = data.transfer.path_prefix;
+                    }
                 }
             } catch (e) {
                 console.error('Failed to load preset:', e);
