@@ -39,6 +39,8 @@
          startSendForGame() {
              if (!this.singleGameSend) return;
              const { gameId, systemSlug } = this.singleGameSend;
+             this.singleGameSend = null;
+             $store.modals.close('send-single-game');
              $store.downloadManager.startSend(`/library/${systemSlug}/send/`, { game_ids: [gameId] });
          },
 

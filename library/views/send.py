@@ -14,7 +14,7 @@ def start_send(request, slug):
     """Start sending selected games or specific ROMs to a device via FTP/SFTP.
 
     POST body: {
-        "game_ids": [1, 2, 3, ...],  # Send all ROMs from these games
+        "game_ids": [1, 2, 3, ...],  # Send default ROMs from these games
         "rom_ids": [1, 2, 3, ...],   # OR send specific ROMs (takes precedence)
         "device_id": 123,
         "transfer_type": "sftp", "transfer_host": "...", ...
@@ -23,6 +23,7 @@ def start_send(request, slug):
     """
     from devices.models import Device
 
+    from ..multidownload import get_default_romset
     from ..queues import PRIORITY_CRITICAL
     from ..tasks import run_send_upload
 
@@ -92,8 +93,13 @@ def start_send(request, slug):
         if not valid_games.exists():
             return HttpResponse("No valid games selected", status=400)
 
-        # Count total ROM files to upload
-        files_total = ROM.objects.filter(rom_set__game__in=valid_games).count()
+        # Count ROM files from default ROMSet only (like downloads)
+        files_total = 0
+        for game in valid_games:
+            rom_set = get_default_romset(game)
+            if rom_set:
+                files_total += rom_set.roms.count()
+
         valid_game_ids = list(valid_games.values_list("pk", flat=True))
         valid_rom_ids = []
 

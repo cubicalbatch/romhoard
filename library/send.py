@@ -144,12 +144,21 @@ class FTPClient(TransferClient):
         protocol = "FTPS" if self.use_tls else "FTP"
         logger.debug(f"{protocol}: Testing write permissions at {test_path}")
         try:
+            # Ensure parent directory exists first
+            parts = test_path.rstrip("/").split("/")
+            parent_dir = "/".join(parts[:-1])
+            filename = parts[-1]
+
+            if parent_dir:
+                self.ensure_directory(parent_dir)
+
             test_data = b"RomHoard test"
             test_file = BytesIO(test_data)
-            self.ftp.storbinary(f"STOR {test_path}", test_file)
+            # Use just the filename since ensure_directory already navigated there
+            self.ftp.storbinary(f"STOR {filename}", test_file)
             # Try to delete the test file
             try:
-                self.ftp.delete(test_path)
+                self.ftp.delete(filename)
             except Exception:
                 pass  # OK if delete fails
             logger.debug(f"{protocol}: Write test successful at {test_path}")
@@ -166,17 +175,34 @@ class FTPClient(TransferClient):
             return None
 
     def ensure_directory(self, remote_path: str) -> None:
-        """Create remote directory tree if needed."""
+        """Create remote directory tree if needed.
+
+        Changes into each directory after creating it to ensure proper
+        path handling on FTP servers that require CWD before operations.
+        Always starts from the root to ensure consistency.
+        """
+        # Start from root to ensure predictable behavior
+        try:
+            self.ftp.cwd("/")
+        except ftplib.error_perm:
+            pass  # Some servers might not like CWD / if it's the default already
+
         parts = remote_path.strip("/").split("/")
-        current = ""
         for part in parts:
-            current = f"{current}/{part}" if current else part
+            if not part:
+                continue
             try:
-                self.ftp.mkd(current)
-            except (ftplib.error_perm, ftplib.error_temp):
-                # Directory likely exists, continue
-                # Note: Some devices (e.g., Miyoo) return 4xx instead of 5xx
-                pass
+                # Try to change into the directory first
+                self.ftp.cwd(part)
+            except ftplib.error_perm:
+                # Directory doesn't exist, create it
+                try:
+                    self.ftp.mkd(part)
+                    # Change into the newly created directory
+                    self.ftp.cwd(part)
+                except ftplib.error_perm:
+                    # Failed to create, ignore and continue
+                    pass
 
     def upload_file(
         self,
@@ -194,13 +220,17 @@ class FTPClient(TransferClient):
             if progress_callback:
                 progress_callback(bytes_sent[0], file_size)
 
+        # Use only the filename since ensure_directory already navigated there
+        filename = remote_path.split("/")[-1]
         with open(local_path, "rb") as f:
-            self.ftp.storbinary(f"STOR {remote_path}", f, callback=callback)
+            self.ftp.storbinary(f"STOR {filename}", f, callback=callback)
 
     def upload_data(self, data: BytesIO, remote_path: str) -> None:
         """Upload data from BytesIO to remote path."""
         data.seek(0)
-        self.ftp.storbinary(f"STOR {remote_path}", data)
+        # Use only the filename since ensure_directory already navigated there
+        filename = remote_path.split("/")[-1]
+        self.ftp.storbinary(f"STOR {filename}", data)
 
     def close(self) -> None:
         """Close connection."""
@@ -470,9 +500,12 @@ def send_games_to_device(
         for rom in roms:
             rom_files.append((rom.rom_set.game, rom))
     else:
-        # Collect all ROMs from games
+        # Collect ROMs from default ROMSet only (like downloads)
+        from .multidownload import get_default_romset
+
         for game in games:
-            for rom_set in game.rom_sets.all():
+            rom_set = get_default_romset(game)
+            if rom_set:
                 for rom in rom_set.roms.all():
                     rom_files.append((game, rom))
 
