@@ -307,10 +307,21 @@ class SFTPClient(TransferClient):
 
     def ensure_directory(self, remote_path: str) -> None:
         """Create remote directory tree if needed."""
+        is_absolute = remote_path.startswith("/")
         parts = remote_path.strip("/").split("/")
-        current = ""
+        current = "/" if is_absolute else ""
+
         for part in parts:
-            current = f"{current}/{part}" if current else part
+            if not part:
+                continue
+
+            if current == "/":
+                current = f"/{part}"
+            elif current:
+                current = f"{current}/{part}"
+            else:
+                current = part
+
             try:
                 self.sftp.mkdir(current)
             except IOError:

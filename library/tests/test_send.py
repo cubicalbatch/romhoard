@@ -31,6 +31,7 @@ class TestFTPClientTestWrite:
 
         # Simulate directories not existing: cwd raises error, mkd succeeds
         from ftplib import error_perm
+
         mock_ftp.cwd.side_effect = error_perm("Directory does not exist")
 
         # Test path with subdirectory
@@ -105,6 +106,35 @@ class TestSFTPClientTestWrite:
 
         # Check that open was called for writing
         assert mock_sftp.open.called
+
+    def test_sftp_ensure_directory_absolute_path(self):
+        """Verify that ensure_directory handles absolute paths correctly."""
+        from library.send import SFTPClient
+
+        client = SFTPClient(
+            host="test.example.com",
+            port=22,
+            user="user",
+            password="pass",
+        )
+
+        mock_sftp = MagicMock()
+        client.sftp = mock_sftp
+
+        # Test absolute path
+        test_path = "/mnt/SDCARD/Roms/5200"
+
+        # Call ensure_directory
+        client.ensure_directory(test_path)
+
+        # Verify mkdir was called with absolute paths
+        calls = [call.args[0] for call in mock_sftp.mkdir.call_args_list]
+        assert "/mnt" in calls
+        assert "/mnt/SDCARD" in calls
+        assert "/mnt/SDCARD/Roms" in calls
+        assert "/mnt/SDCARD/Roms/5200" in calls
+        # Ensure no relative paths were tried
+        assert "mnt" not in calls
 
 
 class TestSendGamesToDevice:
