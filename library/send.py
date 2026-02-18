@@ -249,7 +249,10 @@ class FTPClient(TransferClient):
         filename = parts[-1]
         parent_dir = "/".join(parts[:-1])
 
-        self._cwd_to(parent_dir)
+        try:
+            self._cwd_to(parent_dir)
+        except ftplib.error_perm:
+            return None
 
         try:
             return self.ftp.size(filename)
