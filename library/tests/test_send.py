@@ -294,6 +294,84 @@ class TestSendGamesToDevice:
                 )
 
 
+class TestFTPClientGetRemoteSize:
+    """Test FTPClient.get_remote_size() handles missing directories gracefully."""
+
+    def test_get_remote_size_returns_none_when_directory_missing(self):
+        """Bug: get_remote_size raises 550 when parent directory doesn't exist.
+
+        When sending to a new console system for the first time, the system
+        folder doesn't exist on the FTP server yet. get_remote_size should
+        return None (file doesn't exist) instead of raising an error.
+        """
+        from ftplib import error_perm
+
+        from library.send import FTPClient
+
+        client = FTPClient(
+            host="test.example.com",
+            port=21,
+            user="user",
+            password="pass",
+            use_tls=False,
+        )
+
+        mock_ftp = MagicMock()
+        client.ftp = mock_ftp
+
+        # Simulate the system folder not existing: cwd raises 550
+        mock_ftp.cwd.side_effect = error_perm("550 Failed to change directory.")
+
+        # Should return None, not raise an exception
+        result = client.get_remote_size("/Roms/SG1000/Game.sg")
+        assert result is None
+
+    def test_get_remote_size_returns_none_when_file_missing(self):
+        """get_remote_size should return None when directory exists but file doesn't."""
+        from ftplib import error_perm
+
+        from library.send import FTPClient
+
+        client = FTPClient(
+            host="test.example.com",
+            port=21,
+            user="user",
+            password="pass",
+            use_tls=False,
+        )
+
+        mock_ftp = MagicMock()
+        client.ftp = mock_ftp
+
+        # Directory exists (cwd succeeds), but file doesn't (size raises error_perm)
+        mock_ftp.cwd.return_value = None
+        mock_ftp.size.side_effect = error_perm("550 File not found.")
+
+        result = client.get_remote_size("/Roms/SG1000/Game.sg")
+        assert result is None
+
+    def test_get_remote_size_returns_size_when_file_exists(self):
+        """get_remote_size should return file size when file exists."""
+        from library.send import FTPClient
+
+        client = FTPClient(
+            host="test.example.com",
+            port=21,
+            user="user",
+            password="pass",
+            use_tls=False,
+        )
+
+        mock_ftp = MagicMock()
+        client.ftp = mock_ftp
+
+        mock_ftp.cwd.return_value = None
+        mock_ftp.size.return_value = 12345
+
+        result = client.get_remote_size("/Roms/SG1000/Game.sg")
+        assert result == 12345
+
+
 class TestFTPClientKeepalive:
     """Test FTPClient keepalive methods."""
 
