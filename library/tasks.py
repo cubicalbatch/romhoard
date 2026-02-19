@@ -559,6 +559,7 @@ def run_metadata_job_for_game(
     finally:
         # Check if batch is complete
         _check_batch_completion(job.batch)
+        _trigger_cover_for_collections_if_done(job.game)
 
 
 def _check_batch_completion(batch):
@@ -575,6 +576,50 @@ def _check_batch_completion(batch):
         batch.status = MetadataBatch.STATUS_COMPLETED
         batch.completed_at = timezone.now()
         batch.save()
+
+
+def _trigger_cover_for_collections_if_done(game: Game) -> None:
+    """Queue cover generation for collections containing this game, once all
+    their pending metadata jobs have finished.
+
+    Called after each metadata job reaches a terminal state. When the last
+    pending job for any collection completes, this triggers cover generation
+    so the collage can use images from all matched games.
+    """
+    try:
+        from romcollections.models import Collection, CollectionEntry
+        from romcollections.tasks import maybe_generate_cover
+
+        # Find all collections that contain this game (by name+system match)
+        collection_ids = list(
+            CollectionEntry.objects.filter(
+                game_name__iexact=game.name,
+                system_slug=game.system.slug,
+            )
+            .values_list("collection_id", flat=True)
+            .distinct()
+        )
+
+        for col_id in collection_ids:
+            # Check if any game in this collection still has a pending/running job
+            col_entries = CollectionEntry.objects.filter(collection_id=col_id)
+            still_pending = False
+            for ce in col_entries:
+                matched = Game.objects.filter(
+                    name__iexact=ce.game_name, system__slug=ce.system_slug
+                ).first()
+                if matched and MetadataJob.objects.filter(
+                    game=matched,
+                    status__in=[MetadataJob.STATUS_PENDING, MetadataJob.STATUS_RUNNING],
+                ).exists():
+                    still_pending = True
+                    break
+
+            if not still_pending:
+                col = Collection.objects.get(pk=col_id)
+                maybe_generate_cover(col)
+    except Exception:
+        logger.exception(f"Error checking cover generation for game {game}")
 
 
 @app.task(queue=QUEUE_USER_ACTIONS)

@@ -436,6 +436,71 @@ def generate_collection_cover(cover_job_id: int) -> dict:
         raise
 
 
+def maybe_generate_cover(collection: "Collection") -> "CoverJob | None":
+    """Trigger cover generation for a collection if it has matched games with images.
+
+    This is a non-blocking operation that queues a background task.
+    Should be called after importing a collection or adding entries.
+
+    Uses transaction and select_for_update to prevent concurrent job creation.
+
+    Args:
+        collection: Collection to generate cover for
+
+    Returns:
+        CoverJob if generation was queued, None otherwise
+    """
+    import uuid
+
+    from django.db import transaction
+
+    from .cover_utils import get_sample_game_images
+
+    # Skip if collection already has a cover
+    if collection.has_cover:
+        return None
+
+    # Check if collection has any games with images (outside transaction for speed)
+    sample_images = get_sample_game_images(collection, limit=1)
+    if not sample_images:
+        return None
+
+    # Use transaction with select_for_update to prevent race condition
+    with transaction.atomic():
+        # Re-fetch collection with lock to prevent concurrent modifications
+        locked_collection = Collection.objects.select_for_update().get(pk=collection.pk)
+
+        # Double-check after acquiring lock
+        if locked_collection.has_cover:
+            return None
+
+        # Check for existing pending/running cover job
+        existing_job = locked_collection.cover_jobs.filter(
+            status__in=[CoverJob.STATUS_PENDING, CoverJob.STATUS_RUNNING]
+        ).first()
+        if existing_job:
+            return None
+
+        # Create cover generation job
+        job = CoverJob.objects.create(
+            collection=locked_collection,
+            task_id=f"pending-{uuid.uuid4().hex}",
+            job_type=CoverJob.JOB_TYPE_GENERATE,
+            image_type=Collection.COVER_TYPE_COVER,
+        )
+
+    # Queue task outside transaction (defer happens after commit)
+    from library.queues import PRIORITY_LOW
+
+    job_id = generate_collection_cover.configure(priority=PRIORITY_LOW).defer(
+        cover_job_id=job.pk
+    )
+    job.task_id = str(job_id)
+    job.save()
+
+    return job
+
+
 @app.task(queue=QUEUE_BACKGROUND, queueing_lock="cleanup_old_cover_jobs")
 def cleanup_old_cover_jobs(max_age_days: int = 7) -> int:
     """Delete old completed/failed cover jobs.
