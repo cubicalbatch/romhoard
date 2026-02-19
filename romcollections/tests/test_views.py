@@ -1504,6 +1504,58 @@ class TestUpdateEntryNotesView:
         entry.refresh_from_db()
         assert entry.notes == original_notes  # Unchanged
 
+    def test_update_entry_notes_has_roms_context(self, client, collection, game):
+        """Test that has_roms context is correctly passed when game has ROMs."""
+        # Create an entry that matches the game (which has a ROMSet)
+        entry = CollectionEntry.objects.create(
+            collection=collection,
+            game_name="Super Mario World",
+            system_slug="snes",
+            position=0,
+        )
+        response = client.post(
+            reverse(
+                "romcollections:update_entry_notes",
+                kwargs={
+                    "creator": collection.creator,
+                    "slug": collection.slug,
+                    "pk": entry.pk,
+                },
+            ),
+            {"notes": "Test notes"},
+        )
+        assert response.status_code == 200
+        # The game has ROMs, so "In Library" should be shown
+        assert b"In Library" in response.content
+        assert b"Not in Library" not in response.content
+
+    def test_update_entry_notes_has_roms_false(self, client, collection, system):
+        """Test that has_roms=False when game has no ROMs."""
+        # Create a game without any ROMSets
+        game_no_roms = Game.objects.create(name="Super Mario World", system=system)
+        # Create an entry that matches this game
+        entry = CollectionEntry.objects.create(
+            collection=collection,
+            game_name="Super Mario World",
+            system_slug="snes",
+            position=0,
+        )
+        response = client.post(
+            reverse(
+                "romcollections:update_entry_notes",
+                kwargs={
+                    "creator": collection.creator,
+                    "slug": collection.slug,
+                    "pk": entry.pk,
+                },
+            ),
+            {"notes": "Test notes"},
+        )
+        assert response.status_code == 200
+        # The game has no ROMs, so "Not in Library" should be shown
+        assert b"Not in Library" in response.content
+        assert b"In Library" not in response.content
+
 
 class TestExportCollectionView:
     def test_export_json(self, client, collection_with_entry):

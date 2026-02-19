@@ -1106,12 +1106,14 @@ def update_entry_notes(request, creator, slug, pk):
 
     # Get matched game info for rendering
     matched_game = entry.get_matched_game()
+    has_roms = matched_game.rom_sets.exists() if matched_game else False
     system = System.objects.filter(slug=entry.system_slug).first()
 
     context = {
         "entry": entry,
         "matched_game": matched_game,
         "is_matched": matched_game is not None,
+        "has_roms": has_roms,
         "system": system,
         "collection": collection,
     }
