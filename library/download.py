@@ -149,7 +149,7 @@ def create_romset_bundle(rom_set: ROMSet) -> tuple[str, str]:
         missing_files = []
         added_files = 0
 
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zipf:
             for rom in available_roms:
                 try:
                     with get_rom_file(rom) as (rom_path, rom_filename):

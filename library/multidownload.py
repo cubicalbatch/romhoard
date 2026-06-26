@@ -166,7 +166,7 @@ def create_multi_game_bundle(
         missing_files = []
         added_files = 0
 
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zipf:
             for game in games_with_roms:
                 progress.current_game = game.name
 
