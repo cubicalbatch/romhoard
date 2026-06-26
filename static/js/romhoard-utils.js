@@ -90,13 +90,27 @@ function autoTriggerDownload(linkId) {
     }
 }
 
+/**
+ * Format bytes as a human-readable size estimate.
+ * Uses decimal units: MB by default, switching to GB when >= 1000 MB.
+ */
+function formatBytes(bytes) {
+    if (!bytes || bytes <= 0) return '0 MB';
+    const mb = bytes / 1000000;
+    if (mb >= 1000) return (mb / 1000).toFixed(2) + ' GB';
+    if (mb >= 1) return (mb >= 10 ? Math.round(mb) : mb.toFixed(1)) + ' MB';
+    return Math.max(1, Math.round(bytes / 1000)) + ' KB';
+}
+
 // Export to window for Alpine stores
 window.getCsrfToken = getCsrfToken;
 window.spinnerHtml = spinnerHtml;
+window.formatBytes = formatBytes;
 
 // Export RomHoard namespace for templates
 window.RomHoard = {
     initBase,
     autoTriggerDownload,
-    getCsrfToken
+    getCsrfToken,
+    formatBytes
 };

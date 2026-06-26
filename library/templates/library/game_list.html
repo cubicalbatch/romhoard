@@ -209,7 +209,8 @@ document.addEventListener('alpine:init', () => {
         checkboxClass: 'game-checkbox',
         selectAllId: 'select-all',
         clearBtnId: 'clear-selection',
-        containerIdForSwap: 'game-table-container'
+        containerIdForSwap: 'game-table-container',
+        estimateUrl: '{% url "library:selection_size" %}'
     });
 
     // Configure search filters for single-system mode

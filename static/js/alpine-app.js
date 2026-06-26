@@ -59,11 +59,19 @@ document.addEventListener('alpine:init', () => {
         items: new Set(),
         metadata: new Map(),
         config: null,
+        totalBytes: 0,
+        estimateStatus: 'idle', // 'idle' | 'loading' | 'done'
+        _estimateTimer: null,
+        _estimateReqId: 0,
 
         configure(config) {
             this.config = config;
             this.items = new Set();
             this.metadata = new Map();
+            this.totalBytes = 0;
+            this.estimateStatus = 'idle';
+            clearTimeout(this._estimateTimer);
+            this._estimateReqId++;
         },
 
         add(id, meta = null) {
@@ -93,6 +101,8 @@ document.addEventListener('alpine:init', () => {
         clear() {
             this.items = new Set();
             this.metadata = new Map();
+            this.totalBytes = 0;
+            this.estimateStatus = 'idle';
             if (this.config?.checkboxClass) {
                 document.querySelectorAll(`.${this.config.checkboxClass}`)
                     .forEach(cb => cb.checked = false);
@@ -153,6 +163,65 @@ document.addEventListener('alpine:init', () => {
             if (this.config?.onUpdate) {
                 this.config.onUpdate(this);
             }
+
+            // Size estimate
+            this._renderSize();
+            if (this.config?.estimateUrl) {
+                if (this.items.size === 0) {
+                    this.totalBytes = 0;
+                    this.estimateStatus = 'idle';
+                    this._renderSize();
+                } else {
+                    this._scheduleEstimate();
+                }
+            }
+        },
+
+        _renderSize() {
+            const sizeId = this.config?.sizeId || 'selection-size';
+            const el = document.getElementById(sizeId);
+            if (!el) return;
+            if (this.items.size === 0) {
+                el.textContent = '';
+                el.classList.add('hidden');
+                return;
+            }
+            el.classList.remove('hidden');
+            el.textContent = this.estimateStatus === 'loading'
+                ? '…'
+                : `≈ ${formatBytes(this.totalBytes)}`;
+        },
+
+        _scheduleEstimate() {
+            clearTimeout(this._estimateTimer);
+            this.estimateStatus = 'loading';
+            this._renderSize();
+            this._estimateTimer = setTimeout(() => this._fetchEstimate(), 300);
+        },
+
+        async _fetchEstimate() {
+            if (!this.config?.estimateUrl || this.items.size === 0) return;
+            const reqId = ++this._estimateReqId;
+            try {
+                const response = await fetch(this.config.estimateUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({
+                        ids: this.getIds(),
+                        item_type: this.config.itemType
+                    })
+                });
+                const data = await response.json();
+                if (reqId !== this._estimateReqId) return; // stale response
+                this.totalBytes = data.total_bytes || 0;
+                this.estimateStatus = 'done';
+            } catch (error) {
+                this.estimateStatus = 'done'; // keep last value on error
+            }
+            this._renderSize();
         },
 
         restoreCheckboxes() {

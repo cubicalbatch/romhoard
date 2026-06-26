@@ -7,6 +7,8 @@
         <div class="flex items-center gap-3">
             <span id="{{ count_id|default:'selection-count' }}"
                   class="{{ count_classes|default:'text-[var(--color-text)] font-semibold' }}">{{ initial_count_text|default:'0 games selected' }}</span>
+            <span id="{{ size_id|default:'selection-size' }}"
+                  class="{{ size_classes|default:'text-[var(--color-text-muted)] text-sm' }} hidden"></span>
             <button id="{{ clear_id|default:'clear-selection' }}"
                     class="{{ clear_classes|default:'text-[var(--color-text-muted)] hover:text-[var(--color-text)] text-base underline' }}">
                 {{ clear_text|default:'Clear selection' }}

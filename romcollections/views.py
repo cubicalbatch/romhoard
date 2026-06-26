@@ -4,6 +4,7 @@ import uuid
 
 from django.contrib import messages
 from django.core.paginator import Paginator
+from django.db import connection
 from django.db.models import (
     Case,
     Count,
@@ -1801,6 +1802,39 @@ def _resolve_matched_games_for_collections(collection_ids):
     return matched_games
 
 
+def _matched_game_ids_raw(filter_column: str, ids: list[int]) -> list[int]:
+    """Return distinct library Game PKs matched by collection entries.
+
+    Uses the same JOIN-based matching as the matched-count query in
+    ``search._compute_matched_counts_bulk`` (case-insensitive name + system
+    slug), restricted to games that have at least one ROMSet. ``filter_column``
+    is either ``"collection_id"`` or ``"id"`` (the entry PK).
+
+    Args:
+        filter_column: Column to filter on within
+            ``romcollections_collectionentry``.
+        ids: Values for that column.
+
+    Returns:
+        Distinct matched Game primary keys.
+    """
+    if not ids:
+        return []
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT DISTINCT g.id
+            FROM romcollections_collectionentry ce
+            JOIN library_game g ON LOWER(g.name) = LOWER(ce.game_name)
+            JOIN library_system s ON g.system_id = s.id AND s.slug = ce.system_slug
+            JOIN library_romset rs ON g.id = rs.game_id
+            WHERE ce.{filter_column} = ANY(%s)
+            """,
+            [list(ids)],
+        )
+        return [row[0] for row in cursor.fetchall()]
+
+
 @require_POST
 def download_multi_collections(request):
     """Download all matched games across multiple collections as one bundle.
@@ -1927,6 +1961,35 @@ def send_multi_collections(request):
     job.save()
 
     return JsonResponse({"job_id": job.pk})
+
+
+@require_POST
+def estimate_selection_size(request):
+    """Estimate the total (deduplicated) byte size of a selection.
+
+    POST body: { "ids": [...], "item_type": "collection" | "entry" }
+    Returns: { "total_bytes": <int> }
+
+    Games shared between selected collections (or entries) are counted once.
+    """
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return HttpResponse("Invalid JSON", status=400)
+
+    item_type = data.get("item_type")
+    ids = data.get("ids", [])
+
+    from library.selection import estimate_games_size
+
+    if item_type == "collection":
+        game_ids = _matched_game_ids_raw("collection_id", ids)
+    elif item_type == "entry":
+        game_ids = _matched_game_ids_raw("id", ids)
+    else:
+        return HttpResponse("Unknown item_type", status=400)
+
+    return JsonResponse({"total_bytes": estimate_games_size(game_ids)})
 
 
 # ============================================================================

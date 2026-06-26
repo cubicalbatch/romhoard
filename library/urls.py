@@ -163,6 +163,7 @@ urlpatterns = [
         views.start_multi_download,
         name="start_multi_download",
     ),
+    path("selection-size/", views.estimate_selection_size, name="selection_size"),
     # Send (FTP/SFTP) URLs
     path("library/<slug:slug>/send/", views.start_send, name="start_send"),
     path("send/status/<int:job_id>/", views.send_status, name="send_status"),

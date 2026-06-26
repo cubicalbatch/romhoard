@@ -157,7 +157,8 @@ document.addEventListener('alpine:init', () => {
         countId: 'selection-count',
         checkboxClass: 'collection-checkbox',
         clearBtnId: 'clear-selection',
-        containerIdForSwap: 'collection-grids-container'
+        containerIdForSwap: 'collection-grids-container',
+        estimateUrl: '{% url "romcollections:selection_size" %}'
     });
 });
 </script>

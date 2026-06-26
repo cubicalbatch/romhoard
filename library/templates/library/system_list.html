@@ -179,7 +179,8 @@ document.addEventListener('alpine:init', () => {
         countId: 'selection-count',
         checkboxClass: 'game-checkbox',
         clearBtnId: 'clear-selection',
-        containerIdForSwap: 'system-grid-container'
+        containerIdForSwap: 'system-grid-container',
+        estimateUrl: '{% url "library:selection_size" %}'
     });
 });
 </script>

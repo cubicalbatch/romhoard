@@ -257,6 +257,26 @@ def start_multi_download(request, slug):
     return JsonResponse({"job_id": job.pk})
 
 
+@require_POST
+def estimate_selection_size(request):
+    """Estimate the total (deduplicated) byte size of a game selection.
+
+    POST body: { "ids": [<game pk>, ...], "item_type": "game" }
+    Returns: { "total_bytes": <int> }
+    """
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return HttpResponse("Invalid JSON", status=400)
+
+    if data.get("item_type") != "game":
+        return HttpResponse("Unknown item_type", status=400)
+
+    from ..selection import estimate_games_size
+
+    return JsonResponse({"total_bytes": estimate_games_size(data.get("ids", []))})
+
+
 def download_status(request, job_id):
     """HTMX endpoint to poll download job status.
 

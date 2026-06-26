@@ -19,6 +19,7 @@ from .download import (
     download_rom,
     download_romset,
     download_status,
+    estimate_selection_size,
     preview_games,
     romset_download_picker,
     serve_download_bundle,
@@ -125,6 +126,7 @@ __all__ = [
     "download_status",
     "preview_games",
     "serve_download_bundle",
+    "estimate_selection_size",
     # Send
     "start_send",
     "send_status",

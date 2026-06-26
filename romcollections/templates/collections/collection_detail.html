@@ -662,6 +662,7 @@ document.addEventListener('alpine:init', () => {
         checkboxClass: 'entry-checkbox',
         clearBtnId: 'clear-selection',
         containerIdForSwap: 'entries-list',
+        estimateUrl: '{% url "romcollections:selection_size" %}',
         onUpdate: function(sel) {
             // Count matched entries
             let matchedCount = 0;

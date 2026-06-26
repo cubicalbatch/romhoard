@@ -5,7 +5,7 @@ import json
 import pytest
 from django.urls import reverse
 
-from library.models import DownloadJob, Game, ROMSet, System
+from library.models import DownloadJob, Game, ROM, ROMSet, System
 from romcollections.models import Collection, CollectionEntry
 
 
@@ -1987,3 +1987,99 @@ class TestFavoritesCollection:
         favorites_pos = content.find("Favorites")
         aaa_pos = content.find("AAA Collection")
         assert favorites_pos < aaa_pos
+
+
+class TestEstimateSelectionSizeView:
+    """Tests for the collection/entry size estimate endpoint."""
+
+    def _rom_for(self, game, size=1000):
+        romset = game.rom_sets.first() or ROMSet.objects.create(
+            game=game, region="USA"
+        )
+        game.default_rom_set = romset
+        game.save(update_fields=["default_rom_set"])
+        return ROM.objects.create(
+            rom_set=romset,
+            file_path=f"/t/{game.pk}.rom",
+            file_name=f"{game.pk}.rom",
+            file_size=size,
+        )
+
+    def test_invalid_json(self, client, db):
+        response = client.post(
+            reverse("romcollections:selection_size"),
+            data="nope",
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+    def test_unknown_item_type(self, client, db):
+        response = client.post(
+            reverse("romcollections:selection_size"),
+            data=json.dumps({"ids": [1], "item_type": "game"}),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+    def test_collection_sums_matched_default_romset(self, client, collection_with_entry, game):
+        """A collection's estimate sums the matched game's default ROMSet."""
+        self._rom_for(game, size=2000)
+        response = client.post(
+            reverse("romcollections:selection_size"),
+            data=json.dumps({"ids": [collection_with_entry.pk], "item_type": "collection"}),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        assert json.loads(response.content) == {"total_bytes": 2000}
+
+    def test_collection_dedup_shared_game(self, client, collection_with_entry, game, system):
+        """Shared games across collections are counted once."""
+        self._rom_for(game, size=2000)
+        other = Collection.objects.create(creator="local", slug="other", name="Other")
+        # Same game (Super Mario World) shared via entry
+        CollectionEntry.objects.create(
+            collection=other,
+            game_name="Super Mario World",
+            system_slug="snes",
+            position=0,
+        )
+
+        response = client.post(
+            reverse("romcollections:selection_size"),
+            data=json.dumps(
+                {"ids": [collection_with_entry.pk, other.pk], "item_type": "collection"}
+            ),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        # Shared game counted once even though in both collections
+        assert json.loads(response.content) == {"total_bytes": 2000}
+
+    def test_entry_type_estimate(self, client, collection_with_entry, game):
+        """Entry-type selection resolves matched games and sums sizes."""
+        self._rom_for(game, size=1500)
+        entry = collection_with_entry.entries.first()
+        response = client.post(
+            reverse("romcollections:selection_size"),
+            data=json.dumps({"ids": [entry.pk], "item_type": "entry"}),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        assert json.loads(response.content) == {"total_bytes": 1500}
+
+    def test_unmatched_entry_zero(self, client, collection, db):
+        """An entry with no matching library game contributes nothing."""
+        entry = CollectionEntry.objects.create(
+            collection=collection,
+            game_name="Does Not Exist",
+            system_slug="snes",
+            position=0,
+        )
+        response = client.post(
+            reverse("romcollections:selection_size"),
+            data=json.dumps({"ids": [entry.pk], "item_type": "entry"}),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        assert json.loads(response.content) == {"total_bytes": 0}
+
