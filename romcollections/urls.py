@@ -16,6 +16,8 @@ urlpatterns = [
     ),
     path("picker/", views.collection_picker, name="collection_picker"),
     path("search/", views.collection_search, name="collection_search"),
+    path("multi-download/", views.download_multi_collections, name="download_multi_collections"),
+    path("multi-send/", views.send_multi_collections, name="send_multi_collections"),
     path(
         "favorites/toggle/<int:game_pk>/", views.toggle_favorite, name="toggle_favorite"
     ),

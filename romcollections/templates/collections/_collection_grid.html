@@ -8,7 +8,11 @@
         <a href="{% url 'romcollections:collection_detail' collection.creator collection.slug %}" class="block">
             <!-- Gradient Header -->
             <div class="retro-system-card-header !text-left relative {{ collection.slug|header_color }}">
-                <h3 class="truncate pr-8">{{ collection.name }}</h3>
+                {% if collection.matched_count_annotated|default:0 > 0 %}
+                <input type="checkbox" class="collection-checkbox retro-checkbox absolute top-1/2 left-2 -translate-y-1/2 z-20"
+                       data-collection-id="{{ collection.pk }}" @click.stop>
+                {% endif %}
+                <h3 class="truncate pr-8 {% if collection.matched_count_annotated|default:0 > 0 %}pl-8{% endif %}">{{ collection.name }}</h3>
                 <!-- Favorite Star -->
                 {% if collection.is_community %}
                 <form method="post" action="{% url 'romcollections:adopt_collection' collection.creator collection.slug %}"

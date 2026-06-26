@@ -7,11 +7,37 @@
 {% block content %}
 <div x-data="{
     filterType: 'all',
+    downloadSelected() {
+        if ($store.selection.size === 0) return;
+        $store.downloadManager.gameIds = [];
+        $store.downloadManager.collectionCreator = null;
+        $store.downloadManager.collectionSlug = null;
+        $store.downloadManager.matchedCount = 0;
+        $store.downloadManager.resetPreview();
+        $store.modals.open('device-picker');
+    },
+    sendSelected() {
+        if ($store.selection.size === 0) return;
+        $store.downloadManager.gameIds = [];
+        $store.downloadManager.collectionCreator = null;
+        $store.downloadManager.collectionSlug = null;
+        $store.downloadManager.matchedCount = 0;
+        $store.downloadManager.resetPreview();
+        $store.modals.open('send');
+    },
     startDownloadWithDevice() {
-        $store.downloadManager.startDownload(`/collections/${$store.downloadManager.collectionCreator}/${$store.downloadManager.collectionSlug}/download/`, {});
+        if ($store.downloadManager.collectionSlug) {
+            $store.downloadManager.startDownload(`/collections/${$store.downloadManager.collectionCreator}/${$store.downloadManager.collectionSlug}/download/`, {});
+        } else {
+            $store.downloadManager.startDownload('{% url "romcollections:download_multi_collections" %}', { collection_ids: $store.selection.getIds() });
+        }
     },
     startSend() {
-        $store.downloadManager.startSend(`/collections/${$store.downloadManager.collectionCreator}/${$store.downloadManager.collectionSlug}/send/`, {});
+        if ($store.downloadManager.collectionSlug) {
+            $store.downloadManager.startSend(`/collections/${$store.downloadManager.collectionCreator}/${$store.downloadManager.collectionSlug}/send/`, {});
+        } else {
+            $store.downloadManager.startSend('{% url "romcollections:send_multi_collections" %}', { collection_ids: $store.selection.getIds() });
+        }
     }
 }">
 <!-- Header -->
@@ -118,5 +144,21 @@
 {% include "components/_download_modals.html" %}
 {% include "library/_send_modal.html" %}
 
+<!-- Multi-select toolbar (download/send bundles across collections) -->
+{% include "components/_selection_toolbar.html" with initial_count_text="0 collections selected" %}
+
 </div>
+
+<script>
+document.addEventListener('alpine:init', () => {
+    Alpine.store('selection').configure({
+        itemType: 'collection',
+        toolbarId: 'selection-toolbar',
+        countId: 'selection-count',
+        checkboxClass: 'collection-checkbox',
+        clearBtnId: 'clear-selection',
+        containerIdForSwap: 'collection-grids-container'
+    });
+});
+</script>
 {% endblock %}

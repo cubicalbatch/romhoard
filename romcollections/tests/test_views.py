@@ -5,7 +5,7 @@ import json
 import pytest
 from django.urls import reverse
 
-from library.models import Game, ROMSet, System
+from library.models import DownloadJob, Game, ROMSet, System
 from romcollections.models import Collection, CollectionEntry
 
 
@@ -1766,6 +1766,140 @@ class TestDownloadCollectionView:
         assert response.status_code == 200
         data = json.loads(response.content)
         assert "redirect_url" in data
+
+
+class TestResolveMatchedGamesForCollections:
+    """Tests for the multi-collection dedup helper."""
+
+    def test_empty(self, db):
+        from romcollections.views import _resolve_matched_games_for_collections
+
+        assert _resolve_matched_games_for_collections([]) == []
+
+    def test_dedup_across_shared_games(self, db, collection_with_entry, game, system):
+        """A game present in two collections is resolved only once."""
+        from romcollections.views import _resolve_matched_games_for_collections
+
+        other = Collection.objects.create(creator="local", slug="other", name="Other")
+        # Same game as collection_with_entry (Super Mario World)
+        CollectionEntry.objects.create(
+            collection=other,
+            game_name="Super Mario World",
+            system_slug="snes",
+            position=0,
+        )
+        # Plus a distinct second game
+        game2 = Game.objects.create(name="Donkey Kong Country", system=system)
+        CollectionEntry.objects.create(
+            collection=other,
+            game_name="Donkey Kong Country",
+            system_slug="snes",
+            position=1,
+        )
+
+        games = _resolve_matched_games_for_collections(
+            [collection_with_entry.pk, other.pk]
+        )
+        pks = sorted(g.pk for g in games)
+        assert pks == sorted([game.pk, game2.pk])
+
+    def test_unmatched_entries_skipped(self, db, collection_with_entry, game, system):
+        """Entries with no matching library game are ignored."""
+        from romcollections.views import _resolve_matched_games_for_collections
+
+        CollectionEntry.objects.create(
+            collection=collection_with_entry,
+            game_name="This Game Does Not Exist",
+            system_slug="snes",
+            position=1,
+        )
+        games = _resolve_matched_games_for_collections([collection_with_entry.pk])
+        # Only the originally-matched game remains
+        assert len(games) == 1
+
+
+class TestDownloadMultiCollectionsView:
+    def test_invalid_json(self, client, db):
+        response = client.post(
+            reverse("romcollections:download_multi_collections"),
+            data="not json",
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+    def test_no_matches(self, client, db, collection):
+        response = client.post(
+            reverse("romcollections:download_multi_collections"),
+            data=json.dumps({"collection_ids": [collection.pk]}),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+    def test_single_game_redirects(self, client, collection_with_entry, game):
+        """A single resolved game short-circuits to a direct download URL."""
+        response = client.post(
+            reverse("romcollections:download_multi_collections"),
+            data=json.dumps({"collection_ids": [collection_with_entry.pk]}),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        data = json.loads(response.content)
+        assert "redirect_url" in data
+        assert DownloadJob.objects.count() == 0
+
+    def test_multi_dedup_creates_job(self, client, collection_with_entry, game, system):
+        """Multiple collections bundle into one job with shared games deduped."""
+        other = Collection.objects.create(creator="local", slug="other", name="Other")
+        # Shared game (already in collection_with_entry)
+        CollectionEntry.objects.create(
+            collection=other,
+            game_name="Super Mario World",
+            system_slug="snes",
+            position=0,
+        )
+        # Distinct second game
+        game2 = Game.objects.create(name="Donkey Kong Country", system=system)
+        CollectionEntry.objects.create(
+            collection=other,
+            game_name="Donkey Kong Country",
+            system_slug="snes",
+            position=1,
+        )
+
+        response = client.post(
+            reverse("romcollections:download_multi_collections"),
+            data=json.dumps(
+                {"collection_ids": [collection_with_entry.pk, other.pk]}
+            ),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        data = json.loads(response.content)
+        assert "job_id" in data
+
+        job = DownloadJob.objects.get(pk=data["job_id"])
+        assert job.status == DownloadJob.STATUS_PENDING
+        # Super Mario World appears in both collections but is stored once
+        assert sorted(job.game_ids) == sorted([game.pk, game2.pk])
+        assert job.system_slug == "collections"
+
+
+class TestSendMultiCollectionsView:
+    def test_invalid_json(self, client, db):
+        response = client.post(
+            reverse("romcollections:send_multi_collections"),
+            data="not json",
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+    def test_no_device_selected(self, client, collection_with_entry):
+        response = client.post(
+            reverse("romcollections:send_multi_collections"),
+            data=json.dumps({"collection_ids": [collection_with_entry.pk]}),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
 
 
 class TestFavoritesCollection:

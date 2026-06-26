@@ -1780,6 +1780,155 @@ def send_collection(request, creator, slug):
     return JsonResponse({"job_id": job.pk})
 
 
+def _resolve_matched_games_for_collections(collection_ids):
+    """Resolve and deduplicate matched games across multiple collections.
+
+    Iterates every entry of the given collections, resolves each to a library
+    Game via ``CollectionEntry.get_matched_game()``, and returns the games
+    deduplicated by primary key (preserving first-seen order).
+    """
+    seen_pk = set()
+    matched_games = []
+    collections = Collection.objects.filter(pk__in=collection_ids).prefetch_related(
+        "entries"
+    )
+    for collection in collections:
+        for entry in collection.entries.all():
+            game = entry.get_matched_game()
+            if game and game.pk not in seen_pk:
+                seen_pk.add(game.pk)
+                matched_games.append(game)
+    return matched_games
+
+
+@require_POST
+def download_multi_collections(request):
+    """Download all matched games across multiple collections as one bundle.
+
+    POST body: { "collection_ids": [...], "device_id": <int|null> }
+    Games shared between collections are included only once (deduped by PK).
+    """
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return HttpResponse("Invalid JSON", status=400)
+
+    collection_ids = data.get("collection_ids", [])
+    device_id = data.get("device_id")
+
+    matched_games = _resolve_matched_games_for_collections(collection_ids)
+    if not matched_games:
+        return HttpResponse("No matched games to download", status=400)
+
+    if len(matched_games) == 1:
+        return JsonResponse(
+            {
+                "redirect_url": reverse(
+                    "library:download_game", args=[matched_games[0].pk]
+                )
+            }
+        )
+
+    game_ids = [g.pk for g in matched_games]
+    job = DownloadJob.objects.create(
+        game_ids=game_ids,
+        system_slug="collections",
+        games_total=len(game_ids),
+        task_id="pending",
+        device_id=device_id,
+    )
+
+    from library.queues import PRIORITY_CRITICAL
+
+    job_id = create_download_bundle.configure(priority=PRIORITY_CRITICAL).defer(
+        download_job_id=job.pk
+    )
+    job.task_id = str(job_id)
+    job.save()
+
+    return JsonResponse({"job_id": job.pk})
+
+
+@require_POST
+def send_multi_collections(request):
+    """Send all matched games across multiple collections to a device.
+
+    POST body: { "collection_ids": [...], "device_id": <int>, ...transfer config }
+    Games shared between collections are sent only once (deduped by PK).
+    """
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return HttpResponse("Invalid JSON", status=400)
+
+    collection_ids = data.get("collection_ids", [])
+    device_id = data.get("device_id")
+    if not device_id:
+        return HttpResponse("Device not selected", status=400)
+
+    device = get_object_or_404(Device, pk=device_id)
+    if not device.has_wifi:
+        return HttpResponse("Device does not have WiFi", status=400)
+
+    transfer_type = data.get("transfer_type")
+    transfer_host = data.get("transfer_host")
+    transfer_port = data.get("transfer_port")
+    transfer_user = data.get("transfer_user")
+    transfer_password = data.get("transfer_password")
+
+    if transfer_type or transfer_host or transfer_user or transfer_password:
+        device.transfer_type = transfer_type or device.transfer_type
+        device.transfer_host = transfer_host or device.transfer_host
+        device.transfer_port = (
+            int(transfer_port) if transfer_port else device.transfer_port
+        )
+        device.transfer_user = transfer_user or device.transfer_user
+        device.transfer_password = transfer_password or device.transfer_password
+        device.save()
+
+    if not device.has_transfer_config:
+        return HttpResponse("Device has no transfer configuration", status=400)
+
+    matched_games = _resolve_matched_games_for_collections(collection_ids)
+    if not matched_games:
+        return HttpResponse("No matched games to send", status=400)
+
+    from library.send import get_send_files
+
+    all_send_items = get_send_files(
+        games=matched_games,
+        include_images=device.include_images,
+        device=device,
+    )
+
+    files_total = len(all_send_items)
+    if device.include_images:
+        files_total = len(all_send_items) + sum(
+            1 for g, r, img in all_send_items if img
+        )
+
+    if files_total == 0:
+        return HttpResponse("No ROM files to upload", status=400)
+
+    game_ids = [g.pk for g in matched_games]
+    job = SendJob.objects.create(
+        game_ids=game_ids,
+        device=device,
+        files_total=files_total,
+        task_id="pending",
+    )
+
+    from library.queues import PRIORITY_CRITICAL
+
+    task_id = run_send_upload.configure(priority=PRIORITY_CRITICAL).defer(
+        send_job_id=job.pk
+    )
+    job.task_id = str(task_id)
+    job.save()
+
+    return JsonResponse({"job_id": job.pk})
+
+
 # ============================================================================
 # Cover Image Endpoints
 # ============================================================================
