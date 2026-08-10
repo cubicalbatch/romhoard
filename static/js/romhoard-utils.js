@@ -102,15 +102,73 @@ function formatBytes(bytes) {
     return Math.max(1, Math.round(bytes / 1000)) + ' KB';
 }
 
+/**
+ * Theme handling for dark mode.
+ * Persists the choice in localStorage so it survives refresh/relaunch, follows
+ * the OS preference while in 'system' mode, and syncs across tabs. The initial
+ * data-theme is set by an inline head script (FOUC prevention); this API powers
+ * the toggle button and live updates. Stored value: 'light' | 'dark' | 'system'.
+ */
+const Theme = {
+    KEY: 'romhoard:theme',
+    VALID: ['light', 'dark', 'system'],
+
+    get() {
+        return this.VALID.includes(localStorage.getItem(this.KEY)) ? localStorage.getItem(this.KEY) : 'system';
+    },
+
+    set(theme) {
+        if (!this.VALID.includes(theme)) theme = 'system';
+        localStorage.setItem(this.KEY, theme);
+        this.apply();
+        return theme;
+    },
+
+    /** The theme actually shown right now ('light' or 'dark'). */
+    resolve() {
+        const t = this.get();
+        if (t === 'system') {
+            return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        return t;
+    },
+
+    /** Binary toggle based on whichever theme is currently displayed. */
+    toggle() {
+        return this.set(this.resolve() === 'dark' ? 'light' : 'dark');
+    },
+
+    apply() {
+        document.documentElement.dataset.theme = this.resolve();
+    },
+
+    init() {
+        this.apply();
+        // Follow OS preference while in 'system' mode
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+            if (this.get() === 'system') this.apply();
+        });
+        // Keep tabs in sync
+        window.addEventListener('storage', (e) => {
+            if (e.key === this.KEY) this.apply();
+        });
+    }
+};
+
+// Attach listeners once on load (FOUC script already set the initial theme).
+Theme.init();
+
 // Export to window for Alpine stores
 window.getCsrfToken = getCsrfToken;
 window.spinnerHtml = spinnerHtml;
 window.formatBytes = formatBytes;
+window.Theme = Theme;
 
 // Export RomHoard namespace for templates
 window.RomHoard = {
     initBase,
     autoTriggerDownload,
     getCsrfToken,
-    formatBytes
+    formatBytes,
+    theme: Theme
 };

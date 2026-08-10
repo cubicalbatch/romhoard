@@ -46,11 +46,154 @@
   --font-heading: 'VT323', monospace;
   --font-body: 'Public Sans', sans-serif;
 
+  /* Field surfaces (text inputs, checkboxes, progress tracks, radios) */
+  --color-field: #ffffff;
+
+  /* Bevel edges — relief highlight/shadow for 3D boxes. Kept distinct from
+     --color-white (a text color on saturated/accent headers) so dark mode can
+     keep text light while toning bevels down to a subtle edge. */
+  --color-bevel-hi: #ffffff;
+  --color-bevel-lo: #808080;
+
   /* Shadows */
-  --shadow-bevel-out: inset 2px 2px 0 var(--color-white), inset -2px -2px 0 var(--color-gray-dark);
-  --shadow-bevel-in: inset 2px 2px 0 var(--color-gray-dark), inset -2px -2px 0 var(--color-white);
+  --shadow-bevel-out: inset 2px 2px 0 var(--color-bevel-hi), inset -2px -2px 0 var(--color-bevel-lo);
+  --shadow-bevel-in: inset 2px 2px 0 var(--color-bevel-lo), inset -2px -2px 0 var(--color-bevel-hi);
   --shadow-popup: 4px 4px 0 rgba(0, 0, 0, 0.3);
 }
+
+/* ============================================
+   Dark Mode
+   ============================================ */
+/* Swaps the palette via a data-theme attribute on <html>, set by a head script
+   (see plans/dark-mode.md). Every component that colors itself from --color-*
+   follows automatically. Saturated accent surfaces (retro-header-*, retro-btn-*,
+   retro-badge-*, brand gradients) keep their colors and text in both modes. */
+
+[data-theme="dark"] {
+  /* Windows 95 / Early Web Palette - dark */
+  --color-bg: #1a1a1a;
+  --color-panel: #2a2a2a;
+  --color-surface: #2a2a2a;
+  --color-surface-alt: #363636;
+  --color-text: #e0e0e0;
+  --color-text-muted: #9a9a9a;
+  --color-primary: #7ab8ff;         /* Navy -> light blue for contrast on dark */
+  --color-primary-hover: #5aa0e0;
+  --color-primary-light: #b0d4ff;
+  --color-secondary: #6a6a6a;
+  --color-accent: #ff5050;
+  --color-danger: #e05555;
+  --color-danger-hover: #ff5050;
+  --color-success: #3cb83c;
+  --color-border: #4a4a4a;
+  --color-white: #e0e0e0;           /* "light surface/text", not literal white */
+  --color-gray-dark: #3a3a3a;
+  --color-gray-light: #444444;
+
+  /* Accent Colors (lightened one step for contrast on dark) */
+  --color-teal: #20a0a0;
+  --color-teal-light: #40c0c0;
+  --color-purple: #a058b0;
+  --color-purple-light: #c060c0;
+  --color-gold: #e0b040;
+  --color-forest: #2ea02e;
+  --color-forest-hover: #2a9a2a;
+
+  /* Dark Nav Colors (unchanged - already dark) */
+
+  /* Field surfaces recess into the dark panel */
+  --color-field: #1f1f1f;
+
+  /* Bevel edges toned down so boxes don't glow against the dark bg */
+  --color-bevel-hi: #444444;
+  --color-bevel-lo: #000000;
+
+  /* Popup shadow deepens on dark; bevels derive from --color-bevel-* above */
+  --shadow-popup: 4px 4px 0 rgba(0, 0, 0, 0.6);
+
+  /* Hardcoded light surfaces that ignore --color-* (see plan section 6) */
+  --color-chip-system: #2a2a5e;
+  --color-chip-genre: #2a5e2a;
+  --color-chip-rating: #5e5e2a;
+}
+
+/* Stat boxes - pale light backgrounds need dark equivalents */
+[data-theme="dark"] .retro-stat-navy {
+  background: #2a2a3a;
+}
+[data-theme="dark"] .retro-stat-navy .retro-stat-value {
+  color: var(--color-primary-light);
+}
+[data-theme="dark"] .retro-stat-teal {
+  background: #2a3a3a;
+}
+[data-theme="dark"] .retro-stat-teal .retro-stat-value {
+  color: var(--color-teal-light);
+}
+[data-theme="dark"] .retro-stat-purple {
+  background: #3a2a3a;
+}
+[data-theme="dark"] .retro-stat-purple .retro-stat-value {
+  color: var(--color-purple-light);
+}
+[data-theme="dark"] .retro-stat-gold {
+  background: #3a3426;
+}
+[data-theme="dark"] .retro-stat-gold .retro-stat-value {
+  color: #ffe080;
+}
+
+/* Result cards */
+[data-theme="dark"] .retro-result-success {
+  background: #1f2a1f;
+  color: #7fd47f;
+}
+[data-theme="dark"] .retro-result-error {
+  background: #2a1f1f;
+  color: #ff8080;
+}
+
+/* Information panel */
+[data-theme="dark"] .retro-info-panel {
+  background: #2a2a3a;
+}
+
+/* Light header variant (for dark-adjacent text) */
+[data-theme="dark"] .retro-header-cream {
+  background: linear-gradient(180deg, #4a4436 0%, #3a3428 100%);
+}
+[data-theme="dark"] .retro-header-cream h3,
+[data-theme="dark"] .retro-header-cream span,
+[data-theme="dark"] .retro-header-cream svg {
+  color: #e8e0c8;
+}
+
+/* Filter chips */
+[data-theme="dark"] .retro-filter-chip-system {
+  background: var(--color-chip-system);
+}
+[data-theme="dark"] .retro-filter-chip-genre {
+  background: var(--color-chip-genre);
+}
+[data-theme="dark"] .retro-filter-chip-rating {
+  background: var(--color-chip-rating);
+}
+
+/* ROM table romset grouping */
+[data-theme="dark"] .romset-group-even {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* ============================================
+   Theme Toggle Icon
+   ============================================ */
+/* Visibility is driven by [data-theme] on <html>, set by the inline head
+   script before first paint, so the right icon shows immediately (no Alpine
+   flash). Size intentionally overrides .retro-nav-btn svg (1rem). */
+[data-theme="dark"] .theme-icon-sun,
+[data-theme="light"] .theme-icon-moon { display: none; }
+.retro-nav-btn .theme-icon-sun,
+.retro-nav-btn .theme-icon-moon { width: 1.25rem; height: 1.25rem; }
 
 /* ============================================
    Alpine.js Support
@@ -364,7 +507,7 @@ body::after {
   font-weight: bold;
   font-size: 0.875rem;
   padding: 4px 8px;
-  background: var(--color-white);
+  background: var(--color-field);
   border: 2px solid var(--color-border);
   color: var(--color-text);
   width: 100%;
@@ -703,7 +846,7 @@ select.retro-input {
   background: var(--color-panel);
   border-top: 2px solid var(--color-border);
   box-shadow: 0 -4px 0 rgba(0, 0, 0, 0.1),
-              inset 0 2px 0 var(--color-white);
+              inset 0 2px 0 var(--color-bevel-hi);
   padding: 0.75rem 1rem;
 }
 
@@ -731,8 +874,8 @@ select.retro-input {
   background: var(--color-panel);
   border: 3px solid var(--color-border);
   border-radius: 6px;
-  box-shadow: inset 3px 3px 0 var(--color-white),
-              inset -3px -3px 0 var(--color-gray-dark),
+  box-shadow: inset 3px 3px 0 var(--color-bevel-hi),
+              inset -3px -3px 0 var(--color-bevel-lo),
               4px 4px 0 rgba(0, 0, 0, 0.25);
   display: flex;
   flex-direction: column;
@@ -822,7 +965,7 @@ select.retro-input {
   height: 1.25rem;
   min-width: 1.25rem;
   min-height: 1.25rem;
-  background: var(--color-white);
+  background: var(--color-field);
   border: 2px solid var(--color-border);
   cursor: pointer;
   position: relative;
@@ -857,7 +1000,7 @@ select.retro-input {
   width: 1.25rem;
   height: 1.25rem;
   min-width: 1.25rem;
-  background: var(--color-white);
+  background: var(--color-field);
   border: 2px solid var(--color-border);
   cursor: pointer;
   position: relative;
@@ -886,7 +1029,7 @@ select.retro-input {
 
 .retro-progress {
   height: 1.25rem;
-  background: var(--color-white);
+  background: var(--color-field);
   border: 2px solid var(--color-border);
   box-shadow: var(--shadow-bevel-in);
   overflow: hidden;
@@ -1043,7 +1186,7 @@ select.retro-input {
 .retro-footer {
   background-color: var(--color-panel);
   border-top: 2px solid var(--color-border);
-  box-shadow: inset 0 2px 0 var(--color-white);
+  box-shadow: inset 0 2px 0 var(--color-bevel-hi);
 }
 
 /* ============================================
@@ -1126,8 +1269,8 @@ select.retro-input {
 }
 
 .retro-hero-image:hover {
-  box-shadow: inset 2px 2px 0 var(--color-gray-dark),
-              inset -2px -2px 0 var(--color-white),
+  box-shadow: inset 2px 2px 0 var(--color-bevel-lo),
+              inset -2px -2px 0 var(--color-bevel-hi),
               0 0 20px rgba(0, 0, 128, 0.3);
 }
 
@@ -1331,7 +1474,7 @@ summary::-webkit-details-marker {
   appearance: none;
   width: 1.25rem;
   height: 1.25rem;
-  background: var(--color-white);
+  background: var(--color-field);
   border: 2px solid var(--color-border);
   border-radius: 50%;
   cursor: pointer;
@@ -1537,8 +1680,8 @@ summary::-webkit-details-marker {
   text-align: center;
   font-size: 0.75rem;
   flex: 1;
-  box-shadow: inset 1px 1px 0 var(--color-white),
-              inset -1px -1px 0 var(--color-gray-dark);
+  box-shadow: inset 1px 1px 0 var(--color-bevel-hi),
+              inset -1px -1px 0 var(--color-bevel-lo);
 }
 
 .retro-mini-stat-value {
@@ -1781,8 +1924,8 @@ summary::-webkit-details-marker {
   border: 2px solid var(--color-border);
   border-top: none;
   padding: 1rem;
-  box-shadow: inset 2px 0 0 var(--color-white),
-              inset -2px -2px 0 var(--color-gray-dark);
+  box-shadow: inset 2px 0 0 var(--color-bevel-hi),
+              inset -2px -2px 0 var(--color-bevel-lo);
 }
 
 /* ============================================
@@ -1839,8 +1982,8 @@ summary::-webkit-details-marker {
   background: var(--color-panel);
   border: 3px solid var(--color-border);
   border-radius: 6px;
-  box-shadow: inset 3px 3px 0 var(--color-white),
-              inset -3px -3px 0 var(--color-gray-dark),
+  box-shadow: inset 3px 3px 0 var(--color-bevel-hi),
+              inset -3px -3px 0 var(--color-bevel-lo),
               4px 4px 0 rgba(0, 0, 0, 0.25);
   display: flex;
   flex-direction: column;
@@ -1850,8 +1993,8 @@ summary::-webkit-details-marker {
 
 .retro-system-card:hover {
   transform: translateY(-3px);
-  box-shadow: inset 3px 3px 0 var(--color-white),
-              inset -3px -3px 0 var(--color-gray-dark),
+  box-shadow: inset 3px 3px 0 var(--color-bevel-hi),
+              inset -3px -3px 0 var(--color-bevel-lo),
               6px 6px 0 rgba(0, 0, 0, 0.3);
 }
 
