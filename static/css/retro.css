@@ -168,6 +168,30 @@
   color: #e8e0c8;
 }
 
+/* Card header color variants — same hue family, deepened for dark mode so the
+   saturated bands don't glare against the dark page. Derived from each light
+   gradient by scaling the top stop ×0.55 and the bottom stop ×0.40, which
+   preserves the hue and the lighter-top/darker-bottom relationship. Light text
+   (--color-white) still reads well on every variant. */
+[data-theme="dark"] .retro-header-magenta { background: linear-gradient(180deg, #7b2358 0%, #4d0d33 100%); }
+[data-theme="dark"] .retro-header-blue    { background: linear-gradient(180deg, #23467b 0%, #0d264d 100%); }
+[data-theme="dark"] .retro-header-purple  { background: linear-gradient(180deg, #58236a 0%, #330d40 100%); }
+[data-theme="dark"] .retro-header-teal    { background: linear-gradient(180deg, #235858 0%, #0d3333 100%); }
+[data-theme="dark"] .retro-header-green   { background: linear-gradient(180deg, #235835 0%, #0d331a 100%); }
+[data-theme="dark"] .retro-header-orange  { background: linear-gradient(180deg, #7b4623 0%, #4d260d 100%); }
+[data-theme="dark"] .retro-header-red     { background: linear-gradient(180deg, #7b2323 0%, #4d0d0d 100%); }
+[data-theme="dark"] .retro-header-navy    { background: linear-gradient(180deg, #23236a 0%, #0d0d40 100%); }
+[data-theme="dark"] .retro-header-gold    { background: linear-gradient(180deg, #755c29 0%, #4a3a13 100%); }
+[data-theme="dark"] .retro-header-slate   { background: linear-gradient(180deg, #353e46 0%, #1a2026 100%); }
+[data-theme="dark"] .retro-header-olive   { background: linear-gradient(180deg, #464623 0%, #26260d 100%); }
+[data-theme="dark"] .retro-header-maroon  { background: linear-gradient(180deg, #582335 0%, #33131a 100%); }
+[data-theme="dark"] .retro-header-indigo  { background: linear-gradient(180deg, #352358 0%, #1a0d33 100%); }
+[data-theme="dark"] .retro-header-coral   { background: linear-gradient(180deg, #7b3e35 0%, #4d201a 100%); }
+[data-theme="dark"] .retro-header-cyan    { background: linear-gradient(180deg, #23586a 0%, #0d3340 100%); }
+[data-theme="dark"] .retro-header-gray    { background: linear-gradient(180deg, #464646 0%, #262626 100%); }
+/* Table header shares the navy family */
+[data-theme="dark"] .retro-table-header { background: linear-gradient(180deg, #23236a 0%, #0d0d40 100%); }
+
 /* Filter chips */
 [data-theme="dark"] .retro-filter-chip-system {
   background: var(--color-chip-system);
