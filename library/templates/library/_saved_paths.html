@@ -121,6 +121,9 @@
                     </button>
                     <button
                         type="button"
+                        hx-get="{% url 'library:scan_path_delete_info' scan_path.pk %}"
+                        hx-target="#modal-delete-scan-path-{{ scan_path.pk }} .retro-modal"
+                        hx-swap="innerHTML"
                         @click="$store.modals.open('delete-scan-path-{{ scan_path.pk }}')"
                         class="retro-btn retro-btn-danger retro-btn-sm"
                     >
@@ -135,10 +138,7 @@
                      class="fixed inset-0 z-50 flex items-center justify-center"
                      @keydown.escape.window="$store.modals.close('delete-scan-path-{{ scan_path.pk }}')">
                     <div class="fixed inset-0 bg-black/50" @click="$store.modals.close('delete-scan-path-{{ scan_path.pk }}')"></div>
-                    <div class="retro-modal relative z-10 w-full max-w-lg mx-4"
-                         hx-get="{% url 'library:scan_path_delete_info' scan_path.pk %}"
-                         hx-trigger="intersect once"
-                         hx-swap="innerHTML">
+                    <div class="retro-modal relative z-10 w-full max-w-lg mx-4">
                         <div class="p-6 text-center">
                             <div class="retro-spinner mx-auto mb-4"></div>
                             <p class="text-[var(--color-text-muted)]">Loading...</p>

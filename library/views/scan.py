@@ -175,34 +175,42 @@ def _count_orphans_for_deletion(roms_to_delete):
     Returns:
         Tuple of (orphan_romset_count, orphan_game_count, orphan_game_pks)
     """
-    # Get unique ROMSets and Games that would be affected
-    romset_ids = set(roms_to_delete.values_list("rom_set_id", flat=True))
-    orphan_romsets = 0
-    orphan_game_pks = set()
+    # Materialize the affected ROMs once. Passing the lazy QuerySet into later
+    # `pk__in` filters would re-run the (potentially expensive) path-prefix scan
+    # on every iteration, and the old implementation ran an O(romsets^2) nest of
+    # per-pair queries that hung scan paths with many ROMSets.
+    rom_rows = list(roms_to_delete.values_list("pk", "rom_set_id"))
+    if not rom_rows:
+        return 0, 0, set()
+    rom_pks = {rom_pk for rom_pk, _ in rom_rows}
+    romset_ids = {romset_id for _, romset_id in rom_rows}
 
-    for romset_id in romset_ids:
-        romset = ROMSet.objects.select_related("game").get(pk=romset_id)
-        # Count how many ROMs this ROMSet has that are NOT being deleted
-        remaining_roms = romset.roms.exclude(pk__in=roms_to_delete).count()
-        if remaining_roms == 0:
-            orphan_romsets += 1
-            # Check if deleting this ROMSet would orphan the Game
-            game = romset.game
-            remaining_romsets = game.rom_sets.exclude(pk=romset_id).count()
-            # Also exclude other romsets that are being fully deleted
-            for other_romset_id in romset_ids:
-                if other_romset_id != romset_id:
-                    other_romset = ROMSet.objects.get(pk=other_romset_id)
-                    if other_romset.game_id == game.pk:
-                        other_remaining = other_romset.roms.exclude(
-                            pk__in=roms_to_delete
-                        ).count()
-                        if other_remaining == 0:
-                            remaining_romsets -= 1
-            if remaining_romsets <= 0:
-                orphan_game_pks.add(game.pk)
+    # A ROMSet is orphaned if none of its ROMs survive the deletion.
+    surviving_romset_ids = set(
+        ROM.objects.filter(rom_set_id__in=romset_ids)
+        .exclude(pk__in=rom_pks)
+        .values_list("rom_set_id", flat=True)
+    )
+    orphan_romset_ids = romset_ids - surviving_romset_ids
 
-    return orphan_romsets, len(orphan_game_pks), orphan_game_pks
+    if not orphan_romset_ids:
+        return len(orphan_romset_ids), 0, set()
+
+    # A Game is orphaned only if every one of its ROMSets is orphaned, i.e. it
+    # has no surviving ROM anywhere (including ROMSets untouched by this path).
+    game_ids = set(
+        ROMSet.objects.filter(pk__in=orphan_romset_ids).values_list(
+            "game_id", flat=True
+        )
+    )
+    surviving_game_ids = set(
+        ROM.objects.filter(rom_set__game_id__in=game_ids)
+        .exclude(pk__in=rom_pks)
+        .values_list("rom_set__game_id", flat=True)
+    )
+    orphan_game_pks = game_ids - surviving_game_ids
+
+    return len(orphan_romset_ids), len(orphan_game_pks), orphan_game_pks
 
 
 def scan_path_delete_info(request, pk):

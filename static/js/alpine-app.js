@@ -1,4 +1,13 @@
 // Alpine.js stores and configurations for RomHoard
+// HTMX settles (snapshots at swap, restores after) the attributes listed in
+// attributesToSettle. "style" is included by default, which clobbers inline
+// styles Alpine's x-show sets on elements between insertion and settle — e.g.
+// a swap would strip display:none from modal overlays, flashing them open.
+// The app uses no HTMX style-based swap transitions, so drop "style" so
+// Alpine-managed inline styles survive swaps.
+if (window.htmx) {
+    htmx.config.attributesToSettle = ['class', 'width', 'height'];
+}
 document.addEventListener('alpine:init', () => {
     // Modal store
     Alpine.store('modals', {
