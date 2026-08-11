@@ -594,6 +594,35 @@ select.retro-input {
   box-shadow: var(--shadow-bevel-out);
 }
 
+/* ============================================
+   Search Inputs — unified across nav, library, and collection bars.
+   Same height, font size, and text padding everywhere.
+   Wrap in a .relative container with an absolutely-positioned search icon.
+   ============================================ */
+
+.retro-search-input {
+  font-family: 'Courier New', Courier, monospace;
+  font-weight: bold;
+  font-size: 0.875rem;
+  padding: 0.5rem 2.5rem;
+  background: var(--color-field);
+  border: 2px solid var(--color-border);
+  color: var(--color-text);
+  width: 100%;
+  box-shadow: var(--shadow-bevel-in);
+}
+
+.retro-search-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.retro-search-input::placeholder {
+  color: var(--color-text-muted);
+  opacity: 0.6;
+  font-style: italic;
+}
+
 /* Native select styled to match retro-select-trigger */
 .retro-select {
   font-family: var(--font-body);
