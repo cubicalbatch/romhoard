@@ -36,3 +36,4 @@ DJANGO_SETTINGS_MODULE = "romhoard.settings"
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+addopts = "--ignore=collectionhub"

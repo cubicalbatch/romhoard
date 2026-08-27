@@ -791,6 +791,17 @@ select.retro-input {
   text-decoration: none;
   display: inline-flex;
   position: relative;
+  max-width: 100%;
+  white-space: nowrap;
+}
+/* Long brand ("RomHoardCollections") must shrink on small screens or it pushes
+   the mobile hamburger off-screen and forces horizontal scrolling. */
+@media (max-width: 640px) {
+  .retro-nav-brand {
+    font-size: clamp(1rem, 6vw, 2.5rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 .brand-rom,
