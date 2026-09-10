@@ -71,7 +71,7 @@ Across the library, these improvements have significantly increased match ratesâ
 | **Sega Master System** (`sms`) | 442 / 731 (60.5%) | **598 / 696 (85.9%)** | **+25.4%** (+191 games) | Completed |
 | **NEC PC Engine** (`pce`) | 338 / 448 (75.4%) | **355 / 412 (86.2%)** | **+10.8%** (+53 games) | Completed |
 | **SNES** (`snes`) | 1978 / 2415 (81.9%) | **1986 / 2318 (85.7%)** | **+3.8%** (+105 games merged) | Completed |
-| **Nintendo 64** (`n64`) | 414 / 507 (81.7%) | **423 / 494 (85.6%)** | **+3.9%** (+9 games, 13 duplicates merged) | Completed |
+| **Nintendo 64** (`n64`) | 414 / 507 (81.7%) | **427 / 484 (88.2%)** | **+6.5%** (+13 games, 23 duplicates merged) | Completed |
 | **Sega 32X** (`32x`) | 40 / 65 (61.5%) | **42 / 62 (67.7%)** | **+6.2%** (+4 games) | Completed |
 | **Atari Lynx** (`lynx`) | 131 / 241 (54.4%) | **134 / 240 (55.8%)** | **+1.4%** (+4 games) | Completed |
 | **NES** (`nes`) | 2000 / 2981 (67.1%) | **2006 / 2958 (67.8%)** | **+0.7%** (+23 duplicates merged) | Completed |
