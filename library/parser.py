@@ -53,6 +53,62 @@ DASH_DISC_PATTERN = re.compile(r"\s*-\s*(?:cd|disc|track)\s*(\d+)\s*$", re.IGNOR
 # Compound extensions that end with image suffix but are ROMs
 COMPOUND_EXTENSIONS = {".p8.png"}
 
+# Date prefix pattern: "1984-11-30 Excitebike"
+DATE_PREFIX_PATTERN = re.compile(r"^(\d{4}-\d{2}-\d{2})\s+")
+
+# Rank number prefix without dashes: "089 Ice Climber" (exempting "007 James Bond")
+RANK_PREFIX_PATTERN = re.compile(r"^(?!007\s+(?:James|Bond)\b)(\d{2,3})\s+(?=[A-Za-z])")
+
+# Hardware prefix pattern: "2C03 Pinball", "2C04-01 Gradius"
+HARDWARE_PREFIX_PATTERN = re.compile(r"^(2C0\d(?:-\d+)?)\s+", re.IGNORECASE)
+
+# VS arcade prefix pattern: "VS. Duck Hunt"
+VS_PREFIX_PATTERN = re.compile(r"^(VS\.)\s+", re.IGNORECASE)
+
+# Inverted article pattern at end of base name: "Berenstain Bears' Camping Adventure, The"
+INVERTED_ARTICLE_PATTERN = re.compile(r"^(.*?),\s*(The|A|An)$", re.IGNORECASE)
+
+# Retail patch and QoL mod suffix pattern outside brackets
+PATCH_SUFFIX_PATTERN = re.compile(
+    r"(?:\s*[-–—]\s*|\s+)("
+    r"PAL-to-NTSC\s*(?:\(?60Hz\)?)?(?:\s+Patched)?"
+    r"|60Hz\s+Patched"
+    r"|Save\s*Patched"
+    r"|Savepatch"
+    r"|Save\s*Patch"
+    r"|\+Trainer"
+    r"|Trainer"
+    r"|Trained"
+    r"|Bug-Fixed"
+    r"|Bugfix"
+    r"|Fixed"
+    r"|Fix"
+    r"|Improvement"
+    r"|Speed-Up"
+    r"|Enhanced"
+    r"|Uncensored"
+    r"|PTBR\+Save(?:\+Bugfixes)?"
+    r"|MSX2SMS\s+Hack"
+    r"|NES2PCE"
+    r")\s*$",
+    re.IGNORECASE,
+)
+
+# Version and author suffix pattern outside brackets: "v0.1 Revo", "b1 nextvolume", "1.02 Final"
+VERSION_AUTHOR_PATTERN = re.compile(
+    r"(?:\s*[-–—]\s*|\s+)("
+    r"(?:v\d+(?:\.\d+)*[a-z]?|b\d+|\d+(?:\.\d+)+[a-z]?)\s+(?:Final|[A-Za-z0-9_.-]+(?:\s+[A-Za-z0-9_.-]+)*)"
+    r"|v\d+(?:\.\d+)+[a-z]"
+    r")\s*$",
+    re.IGNORECASE,
+)
+
+# Trailing Hack suffix pattern outside brackets: "Aero Fighters Hack"
+HACK_SUFFIX_PATTERN = re.compile(
+    r"(?:\s*[-–—]\s*|\s+)(Hacks?)\s*$",
+    re.IGNORECASE,
+)
+
 
 def get_stem_and_extension(filename: str) -> tuple[str, str]:
     """Get filename stem and extension, handling compound extensions."""
@@ -135,6 +191,90 @@ def parse_rom_filename(filename: str) -> dict:
     # Clean up base name (handle "The" articles, trim whitespace, etc.)
     base_name = base_name.replace("_", " ").strip(" -")
 
+    extra_prefix_tags: list[str] = []
+    extra_suffix_tags: list[str] = []
+    extracted_revision = ""
+
+    # a) Date prefixes: e.g. "1984-11-30 Excitebike"
+    date_match = DATE_PREFIX_PATTERN.match(base_name)
+    if date_match:
+        candidate = base_name[date_match.end() :].strip(" -")
+        if candidate:
+            extra_prefix_tags.append(date_match.group(1))
+            base_name = candidate
+
+    # b) Rank prefixes without dashes: e.g. "089 Ice Climber"
+    if not rom_number:
+        rank_match = RANK_PREFIX_PATTERN.match(base_name)
+        if rank_match:
+            candidate = base_name[rank_match.end() :].strip(" -")
+            if candidate:
+                rom_number = rank_match.group(1)
+                base_name = candidate
+
+    # c) Hardware prefixes: e.g. "2C03 Pinball", "2C04-01 Gradius"
+    hw_match = HARDWARE_PREFIX_PATTERN.match(base_name)
+    if hw_match:
+        candidate = base_name[hw_match.end() :].strip(" -")
+        if candidate:
+            extra_prefix_tags.append(hw_match.group(1))
+            base_name = candidate
+
+    # d) Leading VS. prefix: e.g. "VS. Duck Hunt"
+    vs_match = VS_PREFIX_PATTERN.match(base_name)
+    if vs_match:
+        candidate = base_name[vs_match.end() :].strip(" -")
+        if candidate:
+            extra_prefix_tags.append(vs_match.group(1))
+            base_name = candidate
+
+    # Suffix stripping: patch/mod, version/author, and hack suffixes outside brackets
+    while True:
+        stripped_suffix = False
+
+        # h) Trailing Hack suffix: "Aero Fighters Hack"
+        hack_match = HACK_SUFFIX_PATTERN.search(base_name)
+        if hack_match:
+            candidate = base_name[: hack_match.start()].rstrip(" -–—").strip()
+            if candidate:
+                extra_suffix_tags.append(hack_match.group(1))
+                base_name = candidate
+                stripped_suffix = True
+                continue
+
+        # f) Retail patch/mod suffixes: "ActRaiser PAL-to-NTSC Patched"
+        patch_match = PATCH_SUFFIX_PATTERN.search(base_name)
+        if patch_match:
+            candidate = base_name[: patch_match.start()].rstrip(" -–—").strip()
+            if candidate:
+                extra_suffix_tags.append(patch_match.group(1))
+                base_name = candidate
+                stripped_suffix = True
+                continue
+
+        # g) Version and author suffixes: "Batter Up v0.1 Revo", "Battletoads b1 nextvolume", "Alien 1.02 Final"
+        ver_match = VERSION_AUTHOR_PATTERN.search(base_name)
+        if ver_match:
+            candidate = base_name[: ver_match.start()].rstrip(" -–—").strip()
+            if candidate:
+                ver_tag = ver_match.group(1).strip()
+                extra_suffix_tags.append(ver_tag)
+                if not extracted_revision:
+                    extracted_revision = ver_tag
+                base_name = candidate
+                stripped_suffix = True
+                continue
+
+        if not stripped_suffix:
+            break
+
+    # e) Inverted articles at end of base name: "Berenstain Bears' Camping Adventure, The" -> "The Berenstain Bears' Camping Adventure"
+    base_name = base_name.rstrip(" -–—").strip()
+    inv_match = INVERTED_ARTICLE_PATTERN.match(base_name)
+    if inv_match:
+        article = inv_match.group(2).capitalize()
+        base_name = f"{article} {inv_match.group(1).strip()}"
+
     # Extract all tags from parentheses and brackets
     raw_tags = tag_pattern.findall(remainder)
 
@@ -182,11 +322,21 @@ def parse_rom_filename(filename: str) -> dict:
     # Combine multiple regions into single string (take first, most common case)
     region = regions[0] if regions else ""
 
+    # If revision wasn't set from parentheses/brackets, use revision extracted from suffix
+    if not revision and extracted_revision:
+        revision = extracted_revision
+
+    # Combine tags: prefix tags, bracket tags, suffix tags (deduplicated while preserving order)
+    combined_tags: list[str] = []
+    for tag_item in extra_prefix_tags + other_tags + extra_suffix_tags:
+        if tag_item not in combined_tags:
+            combined_tags.append(tag_item)
+
     result = {
         "name": base_name,
         "region": region,
         "revision": revision,
-        "tags": other_tags,
+        "tags": combined_tags,
         "extension": extension,
         "rom_number": rom_number,
         "disc": disc,
@@ -272,5 +422,3 @@ def get_switch_content_info(filename: str) -> tuple[str, str]:
     if not title_id:
         return "", ""
     return title_id, detect_switch_content_type(title_id)
-
-

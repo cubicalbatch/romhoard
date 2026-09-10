@@ -11,6 +11,7 @@ ScreenScraper API Authentication Requirements:
 """
 
 import base64
+import json
 import logging
 import os
 import re
@@ -23,6 +24,7 @@ import requests
 from django.utils import timezone
 
 from library.models import Setting
+from library.lookup.screenscraper import CONSOLE_TERMS, STOPWORDS
 
 logger = logging.getLogger(__name__)
 
@@ -114,56 +116,165 @@ def _get_app_identifier() -> tuple[str, str]:
     return devid, devpw
 
 
+# Search variant regex patterns
+DATE_PREFIX_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}\s+")
+RANK_PREFIX_PATTERN = re.compile(r"^\d{2,3}\s+(?=[A-Za-z])")
+HARDWARE_PREFIX_PATTERN = re.compile(r"^2C0\d(-\d+)?\s+", re.IGNORECASE)
+VS_PREFIX_PATTERN = re.compile(r"^VS\.\s+", re.IGNORECASE)
+INVERTED_ARTICLE_PATTERN = re.compile(r"^(.*?),\s*(The|A|An)(\s+.*)?$", re.IGNORECASE)
+
+PATCH_SUFFIX_PATTERN = re.compile(
+    r"(?:\s*[-–—]\s*|\s+)(?:"
+    r"PAL-to-NTSC\s*(?:\(?60Hz\)?)?(?:\s+Patched)?"
+    r"|60Hz\s+Patched"
+    r"|Save\s*Patched"
+    r"|Savepatch"
+    r"|Save\s*Patch"
+    r"|\+Trainer"
+    r"|Trainer"
+    r"|Trained"
+    r"|Bug-Fixed"
+    r"|Bugfix"
+    r"|Fixed"
+    r"|Fix"
+    r"|Improvement"
+    r"|Speed-Up"
+    r"|Enhanced"
+    r"|Uncensored"
+    r"|PTBR\+Save(?:\+Bugfixes)?"
+    r"|MSX2SMS\s+Hack"
+    r"|NES2PCE"
+    r")\s*$",
+    re.IGNORECASE,
+)
+
+VERSION_AUTHOR_PATTERN = re.compile(
+    r"(?:\s*[-–—]\s*|\s+)(?:v?\d+(?:\.\d+)+[a-z]?|b\d+|1\.02\s+Final)(?:\s+.*)?$",
+    re.IGNORECASE,
+)
+
+HACK_SUFFIX_PATTERN = re.compile(
+    r"(?:\s*[-–—]\s*|\s+)Hacks?\s*$",
+    re.IGNORECASE,
+)
+
+
 def _get_search_variants(name: str) -> list[str]:
     """Generate search query variants for retry logic.
 
     Returns list of names to try in order:
     1. Normalized name (leading "The" removed)
-    2. With & replaced by "and" (if applicable)
-    3. With dashes removed (if applicable)
-    4. With colons removed (if applicable)
-    5. Main title only - text before first colon or dash (if applicable)
-    6. Subtitle only - text after first colon or dash (if applicable)
-    7. With apostrophes removed (if applicable)
-    8. First significant word for long titles (if applicable)
-    9. Roman numerals converted to Western numbers (if applicable)
-    10. Pokemon -> Pokémon (if applicable)
-    11. Content before parentheses (if applicable)
-    12. Content inside parentheses - for alt names/Japanese (if applicable)
-    13. Slash-separated parts (if applicable)
+    2. Prefix-stripped variants (date, rank, hardware, VS)
+    3. Inverted article variants ("Title, The" -> "The Title", "Title")
+    4. Suffix-stripped variants (retail patch, version/author, hack)
+    5. With & replaced by "and" (if applicable)
+    6. With dashes removed (if applicable)
+    7. With colons removed (if applicable)
+    8. Main title only - text before first colon or dash (if applicable)
+    9. Subtitle only - text after first colon or dash (if applicable)
+    10. With apostrophes removed (if applicable)
+    11. Leading 2-3 words for long titles (if applicable)
+    12. Roman numerals converted to Western numbers (if applicable)
+    13. Pokemon -> Pokémon (if applicable)
+    14. Content before parentheses (if applicable)
+    15. Content inside parentheses - for alt names/Japanese (if applicable)
+    16. Slash-separated parts (if applicable)
     """
     variants = []
 
+    def _add_variant(v: str) -> None:
+        v = re.sub(r"\s+", " ", v).strip()
+        if not v or len(v) < 3:
+            return
+        if v.lower() in CONSOLE_TERMS:
+            return
+        if v not in variants:
+            variants.append(v)
+
     # Start with normalized name
     base = _normalize_search_name(name)
-    variants.append(base)
+    _add_variant(base)
+
+    # a) Date prefix removal: ISO dates (YYYY-MM-DD)
+    # "1984-11-30 Excitebike" -> "Excitebike"
+    # "1985-11-29 The Portopia Serial Murder Incident" -> "The Portopia Serial Murder Incident"
+    date_stripped = DATE_PREFIX_PATTERN.sub("", base).strip()
+    if date_stripped != base:
+        _add_variant(date_stripped)
+        _add_variant(_normalize_search_name(date_stripped))
+
+    # b) Numbered rank prefix removal: 2- or 3-digit rank followed by letters
+    # "089 Ice Climber" -> "Ice Climber"
+    rank_stripped = RANK_PREFIX_PATTERN.sub("", base).strip()
+    if rank_stripped != base:
+        _add_variant(rank_stripped)
+        _add_variant(_normalize_search_name(rank_stripped))
+
+    # c) Hardware / revision prefixes: VS System PPU (2C03, 2C04-01, etc.)
+    # "2C03 Pinball" -> "Pinball", "2C04-01 Gradius" -> "Gradius"
+    hw_stripped = HARDWARE_PREFIX_PATTERN.sub("", base).strip()
+    if hw_stripped != base:
+        _add_variant(hw_stripped)
+        _add_variant(_normalize_search_name(hw_stripped))
+
+    # d) VS. arcade prefix:
+    # "VS. Duck Hunt" -> "Duck Hunt", "VS. Goonies" -> "Goonies"
+    vs_stripped = VS_PREFIX_PATTERN.sub("", base).strip()
+    if vs_stripped != base:
+        _add_variant(vs_stripped)
+        _add_variant(_normalize_search_name(vs_stripped))
+
+    # e) Inverted articles:
+    # "Berenstain Bears' Camping Adventure, The" -> "The Berenstain Bears' Camping Adventure", "Berenstain Bears' Camping Adventure"
+    for current in list(variants):
+        inv_match = INVERTED_ARTICLE_PATTERN.match(current)
+        if inv_match:
+            core = inv_match.group(1).strip()
+            article = inv_match.group(2).strip().capitalize()
+            rest = inv_match.group(3) or ""
+            _add_variant(f"{article} {core}{rest}")
+            _add_variant(f"{core}{rest}")
+
+    # Suffix removal variants:
+    # f) Quality-of-Life Patch / Edition / Mod suffixes
+    # g) Unbracketed Version and Author suffixes
+    # h) Trailing "Hack" suffix
+    suffix_patterns = [PATCH_SUFFIX_PATTERN, VERSION_AUTHOR_PATTERN, HACK_SUFFIX_PATTERN]
+    for current in list(variants):
+        for pat in suffix_patterns:
+            stripped = pat.sub("", current).strip().rstrip("-").strip()
+            if stripped != current and len(stripped) >= 2:
+                _add_variant(stripped)
+                _add_variant(_normalize_search_name(stripped))
+                for pat2 in suffix_patterns:
+                    stripped2 = pat2.sub("", stripped).strip().rstrip("-").strip()
+                    if stripped2 != stripped and len(stripped2) >= 2:
+                        _add_variant(stripped2)
+                        _add_variant(_normalize_search_name(stripped2))
 
     # Variant: replace & with "and"
     if "&" in base:
-        variants.append(base.replace("&", "and"))
+        _add_variant(base.replace("&", "and"))
 
     # Variant: remove dashes (normalize spaces around them)
     if "-" in base:
         # "Metroid - Mission Zero" -> "Metroid Mission Zero"
         no_dash = re.sub(r"\s*-\s*", " ", base)
         no_dash = re.sub(r"\s+", " ", no_dash).strip()
-        if no_dash not in variants:
-            variants.append(no_dash)
+        _add_variant(no_dash)
 
     # Variant: replace colons with " - " (e.g., "Game: Subtitle" -> "Game - Subtitle")
     if ":" in base:
         colon_to_dash = base.replace(":", " -")
         colon_to_dash = re.sub(r"\s+", " ", colon_to_dash).strip()
-        if colon_to_dash not in variants:
-            variants.append(colon_to_dash)
+        _add_variant(colon_to_dash)
 
     # Variant: remove colons (normalize spaces around them)
     if ":" in base:
         # "Castlevania: Symphony of the Night" -> "Castlevania Symphony of the Night"
         no_colon = re.sub(r"\s*:\s*", " ", base)
         no_colon = re.sub(r"\s+", " ", no_colon).strip()
-        if no_colon not in variants:
-            variants.append(no_colon)
+        _add_variant(no_colon)
 
     # Variant: main title only - search for text before first colon or dash
     # "Castlevania: Symphony of the Night" -> "Castlevania"
@@ -171,39 +282,37 @@ def _get_search_variants(name: str) -> list[str]:
     separator_match = re.search(r"[:\-]", base)
     if separator_match:
         main_title = base[: separator_match.start()].strip()
-        if main_title and len(main_title) >= 3 and main_title not in variants:
-            variants.append(main_title)
+        _add_variant(main_title)
 
     # Variant: subtitle only - search for text after first colon or dash
     # "Castlevania: Symphony of the Night" -> "Symphony of the Night"
     # "Metroid - Mission Zero" -> "Mission Zero"
     if separator_match:
         subtitle = base[separator_match.end() :].strip()
-        if subtitle and subtitle not in variants:
-            variants.append(subtitle)
+        _add_variant(subtitle)
 
     # Variant: remove apostrophes (possessives cause matching issues)
     # "SNK Gals' Fighters" -> "SNK Gals Fighters"
     if "'" in base:
         no_apostrophe = base.replace("'", "")
         no_apostrophe = re.sub(r"\s+", " ", no_apostrophe).strip()
-        if no_apostrophe not in variants:
-            variants.append(no_apostrophe)
+        _add_variant(no_apostrophe)
 
-    # Variant: first significant word(s) for long titles (4+ words)
-    # "Sonic the Hedgehog Pocket Adventure" -> "Sonic"
-    # Skip common words like "the", "of", "and"
-    skip_words = {"the", "a", "an", "of", "and", "or", "vs", "vs."}
+    # Variant: leading 2-3 words for long titles (4+ words)
+    # "Sonic the Hedgehog Pocket Adventure" -> "Sonic the Hedgehog"
+    # Never extract a single word.
+    skip_words = STOPWORDS | {"vs."}
     words = base.split()
     if len(words) >= 4:
-        # Get first word that isn't a common article/preposition
-        first_significant = None
-        for word in words:
-            if word.lower() not in skip_words and len(word) >= 3:
-                first_significant = word
-                break
-        if first_significant and first_significant not in variants:
-            variants.append(first_significant)
+        # Take first 3 words
+        f3 = list(words[:3])
+        while len(f3) > 2 and f3[-1].lower() in skip_words:
+            f3.pop()
+        _add_variant(" ".join(f3))
+
+        # Take first 2 words (if 2nd word is not a stopword)
+        if words[1].lower() not in skip_words:
+            _add_variant(" ".join(words[:2]))
 
     # Variant: first word from subtitles containing stopwords (3+ words)
     # "Rondo of Blood" -> "Rondo" (helps find "Akumajou Dracula X - Chi No Rondo")
@@ -219,20 +328,20 @@ def _get_search_variants(name: str) -> list[str]:
                     if word.lower() not in skip_words and len(word) >= 3:
                         first_word = word
                         break
-                if first_word and first_word not in variants:
-                    variants.append(first_word)
+                if first_word:
+                    _add_variant(first_word)
 
     # Variant: Roman numerals converted to Western numbers
     # "Final Fantasy V" -> "Final Fantasy 5"
     western_variant = _roman_to_western(base)
-    if western_variant and western_variant not in variants:
-        variants.append(western_variant)
+    if western_variant:
+        _add_variant(western_variant)
 
     # Variant: Pokemon -> Pokémon
     # "Pokemon Red" -> "Pokémon Red"
     pokemon_variant = _pokemon_accent(base)
-    if pokemon_variant and pokemon_variant not in variants:
-        variants.append(pokemon_variant)
+    if pokemon_variant:
+        _add_variant(pokemon_variant)
 
     # Variant: content before parentheses
     # "Donkey Kong (Donkey Kong '94)" -> "Donkey Kong"
@@ -240,8 +349,7 @@ def _get_search_variants(name: str) -> list[str]:
     paren_match = re.search(r"\s*\([^)]+\)", base)
     if paren_match:
         before_paren = base[: paren_match.start()].strip()
-        if before_paren and len(before_paren) >= 3 and before_paren not in variants:
-            variants.append(before_paren)
+        _add_variant(before_paren)
 
     # Variant: content inside parentheses (for alt names, Japanese titles)
     # "Kid Icarus (Hikari Shinwa: Palutena no Kagami)" -> "Hikari Shinwa"
@@ -255,11 +363,9 @@ def _get_search_variants(name: str) -> list[str]:
             inner_sep = re.search(r"[:\-]", paren_content)
             if inner_sep:
                 first_part = paren_content[: inner_sep.start()].strip()
-                if first_part and len(first_part) >= 3 and first_part not in variants:
-                    variants.append(first_part)
+                _add_variant(first_part)
             # Also try the full parenthetical content
-            if len(paren_content) >= 3 and paren_content not in variants:
-                variants.append(paren_content)
+            _add_variant(paren_content)
 
     # Variant: split on slash for multi-version titles
     # "Pokemon Red/Blue" -> "Pokemon Red", "Pokemon Blue"
@@ -274,12 +380,10 @@ def _get_search_variants(name: str) -> list[str]:
                 prefix, left_part = left_words
                 # Try "prefix left_part" (usually already in variants as base)
                 full_left = f"{prefix} {left_part}"
-                if full_left not in variants:
-                    variants.append(full_left)
+                _add_variant(full_left)
                 # Try "prefix right_part"
                 full_right = f"{prefix} {right}"
-                if full_right not in variants:
-                    variants.append(full_right)
+                _add_variant(full_right)
 
     return variants
 
@@ -501,7 +605,15 @@ class ScreenScraperClient:
 
             response.raise_for_status()
 
-            data = response.json()
+            try:
+                data = response.json()
+            except (json.JSONDecodeError, ValueError, requests.exceptions.JSONDecodeError) as e:
+                logger.debug(
+                    "ScreenScraper returned invalid or empty JSON for %s: %s",
+                    endpoint,
+                    e,
+                )
+                return {}
 
             # Check for API-level errors
             if "response" in data and "erreur" in data["response"]:
@@ -692,39 +804,54 @@ class ScreenScraperClient:
         Returns:
             List of matching game dicts with basic info
         """
-        params = {
-            "recherche": name,
-            "systemeid": system_id,
-        }
+        try:
+            params = {
+                "recherche": name,
+                "systemeid": system_id,
+            }
 
-        data = self._make_request("jeuRecherche", params)
+            data = self._make_request("jeuRecherche", params)
 
-        # Parse response
-        if "response" not in data or "jeux" not in data["response"]:
-            return []
+            # Parse response
+            if "response" not in data or "jeux" not in data["response"]:
+                return []
 
-        games = data["response"]["jeux"]
-        if not isinstance(games, list):
-            games = [games]
+            games = data["response"]["jeux"]
+            if not isinstance(games, list):
+                games = [games]
 
-        results = []
-        for game in games:
-            # Skip results with no ID (invalid/empty responses from API)
-            game_id = game.get("id")
-            if not game_id:
-                continue
-            results.append(
-                {
-                    "id": game_id,
-                    "name": self._extract_text(game.get("noms", [])),
-                    "all_names": [
-                        n.get("text", "") for n in game.get("noms", []) if n.get("text")
-                    ],
-                    "system_id": system_id,
-                }
+            results = []
+            for game in games:
+                # Skip results with no ID (invalid/empty responses from API)
+                game_id = game.get("id")
+                if not game_id:
+                    continue
+                results.append(
+                    {
+                        "id": game_id,
+                        "name": self._extract_text(game.get("noms", [])),
+                        "all_names": [
+                            n.get("text", "")
+                            for n in game.get("noms", [])
+                            if n.get("text")
+                        ],
+                        "system_id": system_id,
+                    }
+                )
+
+            return results
+        except ScreenScraperRateLimited:
+            raise
+        except Exception as e:
+            if str(e).startswith("ScreenScraper error:"):
+                raise
+            logger.debug(
+                "ScreenScraper search_game failed for '%s' (system %d): %s",
+                name,
+                system_id,
+                e,
             )
-
-        return results
+            return []
 
     def get_game_info(
         self,

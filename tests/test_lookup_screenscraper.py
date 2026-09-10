@@ -1,6 +1,7 @@
 """Tests for ScreenScraperLookupService."""
 
 import pytest
+import requests
 from unittest.mock import MagicMock, patch
 
 from library.lookup.screenscraper import (
@@ -13,6 +14,7 @@ from library.lookup.screenscraper import (
     _find_best_match,
 )
 from library.lookup.base import LookupResult
+from library.metadata.screenscraper import ScreenScraperClient
 
 
 @pytest.fixture
@@ -307,9 +309,37 @@ class TestNormalizeName:
     def test_removes_punctuation(self):
         """Removes punctuation and special characters."""
         assert (
-            normalize_name("Pac-Man: Championship Edition")
-            == "pacman championship edition"
+            normalize_name("Pac-Man: Championship Edition!")
+            == "pac man championship edition"
         )
+
+    def test_pac_man_vs_pac_man_normalization(self):
+        """Hyphens and punctuation converted to spaces so Pac-Man matches Pac Man."""
+        assert normalize_name("Pac-Man") == "pac man"
+        assert normalize_name("Pac Man") == "pac man"
+        assert normalize_name("Pac-Man") == normalize_name("Pac Man")
+
+    def test_10_yard_fight_normalization(self):
+        """Hyphenated words like 10-Yard Fight do not merge into 10yard."""
+        assert normalize_name("10-Yard Fight") == "10 yard fight"
+        assert normalize_name("10 Yard Fight") == "10 yard fight"
+
+    def test_roman_numeral_normalization(self):
+        """Standalone Roman numerals II-X are converted to Western numbers 2-10."""
+        assert normalize_name("Mega Man II") == "mega man 2"
+        assert normalize_name("Mega Man 2") == "mega man 2"
+        assert normalize_name("Final Fantasy III") == "final fantasy 3"
+        assert normalize_name("Final Fantasy 3") == "final fantasy 3"
+        assert normalize_name("Street Fighter IV") == "street fighter 4"
+        assert normalize_name("Street Fighter V") == "street fighter 5"
+        assert normalize_name("Resident Evil VI") == "resident evil 6"
+        assert normalize_name("Dragon Quest VII") == "dragon quest 7"
+        assert normalize_name("Dragon Quest VIII") == "dragon quest 8"
+        assert normalize_name("Dragon Quest IX") == "dragon quest 9"
+        assert normalize_name("Mega Man X") == "mega man 10"
+        # Non-standalone should not be converted
+        assert normalize_name("Mega Man X2") == "mega man x2"
+        assert normalize_name("Vega") == "vega"
 
     def test_normalizes_unicode(self):
         """Converts accented characters to ASCII."""
@@ -332,9 +362,14 @@ class TestCalculateMatchScore:
         assert calculate_match_score("SUPER MARIO WORLD", "super mario world") == 1.0
 
     def test_substring_match_returns_high_score(self):
-        """Substring match returns 0.85."""
-        score = calculate_match_score("Mario", "Super Mario World")
+        """Substring match with 2+ meaningful words returns 0.85."""
+        score = calculate_match_score("Super Mario", "Super Mario World")
         assert score == 0.85
+
+    def test_single_word_short_substring_does_not_score_high(self):
+        """Single-word substring constituting < 40% of length does not score 0.85."""
+        score = calculate_match_score("Mario", "Super Mario World")
+        assert score < 0.60
 
     def test_partial_word_overlap(self):
         """Partial word overlap calculates Jaccard similarity."""
@@ -347,6 +382,46 @@ class TestCalculateMatchScore:
         """Completely different names return low score."""
         score = calculate_match_score("Tetris", "Pac-Man")
         assert score == 0.0
+
+    def test_pac_man_vs_pac_man_score(self):
+        """Pac-Man vs Pac Man scores 1.0."""
+        assert calculate_match_score("Pac-Man", "Pac Man") == 1.0
+
+    def test_10_yard_fight_score(self):
+        """10-Yard Fight vs 10 Yard Fight scores 1.0."""
+        assert calculate_match_score("10-Yard Fight", "10 Yard Fight") == 1.0
+
+    def test_mega_man_2_vs_ii_score(self):
+        """Mega Man 2 vs Mega Man II scores 1.0."""
+        assert calculate_match_score("Mega Man 2", "Mega Man II") == 1.0
+
+    def test_final_fantasy_3_vs_iii_score(self):
+        """Final Fantasy 3 vs Final Fantasy III scores 1.0."""
+        assert calculate_match_score("Final Fantasy 3", "Final Fantasy III") == 1.0
+
+    def test_shorter_title_words_contained_in_longer(self):
+        """When all words of shorter title are in longer, score is at least 0.85."""
+        assert calculate_match_score("Aladdin", "Disney's Aladdin") >= 0.85
+        assert calculate_match_score("Disney's Aladdin", "Aladdin") >= 0.85
+        assert calculate_match_score("Aladdin 2", "Disney's Aladdin: Part 2") >= 0.85
+
+    def test_anti_false_positive_required_cases(self):
+        """Specific anti-false-positive cases requested for accuracy filter."""
+        # 1. Console term overlap only -> score 0.0
+        assert calculate_match_score("32X Color by mic", "Doom 32X Resurrection") == 0.0
+
+        # 2. Sequel number inconsistency -> score 0.0
+        assert calculate_match_score("Sonic The Hedgehog 32X Pure Port", "Sonic Robo Blast 2") == 0.0
+        assert calculate_match_score("Metal Slug", "Metal Slug 3") == 0.0
+        assert calculate_match_score("Mega Man", "Mega Man 2") == 0.0
+
+        # 3. Exact and Roman numeral matches
+        assert calculate_match_score("Mega Man 2", "Mega Man 2") == 1.0
+        assert calculate_match_score("Mega Man II", "Mega Man 2") == 1.0
+
+        # 4. Substring and casing matches
+        assert calculate_match_score("Aladdin", "Disney's Aladdin") >= 0.85
+        assert calculate_match_score("ActRaiser", "Actraiser") == 1.0
 
 
 class TestFindBestMatch:
@@ -391,6 +466,37 @@ class TestFindBestMatch:
     def test_returns_none_for_empty_results(self):
         """Returns None for empty results list."""
         best = _find_best_match("Test Game", [])
+        assert best is None
+
+    def test_find_best_match_with_search_variant(self):
+        """_find_best_match matches candidate against search_variant if provided."""
+        game_name = "Aladdin Trained"
+        results = [{"id": 1, "name": "Disney's Aladdin"}]
+        # Without search_variant, score is ~0.33, rejected
+        best_without = _find_best_match(game_name, results)
+        assert best_without is not None
+        assert best_without["score"] < 0.60
+
+        # With search_variant="Aladdin", candidate matches Aladdin with >= 0.85
+        best_with = _find_best_match(game_name, results, search_variant="Aladdin")
+        assert best_with is not None
+        assert best_with["id"] == 1
+        assert best_with["score"] >= 0.85
+
+    def test_search_variant_ignored_if_console_term_or_short(self):
+        """search_variant is ignored if <= 3 chars or purely a console term."""
+        game_name = "32X Color by mic"
+        results = [{"id": 455783, "name": "Doom 32X Resurrection"}]
+        # With search_variant="32X", it should be ignored and candidate rejected
+        best = _find_best_match(game_name, results, search_variant="32X")
+        assert best is None
+
+    def test_candidate_rejected_when_numbers_inconsistent_with_game_name(self):
+        """Candidate is rejected if it fails number consistency against game_name, even with search_variant."""
+        game_name = "Sonic The Hedgehog 32X Pure Port"
+        results = [{"id": 566904, "name": "Sonic Robo Blast 2"}]
+        # Even if search_variant="Sonic", Sonic Robo Blast 2 has sequel #2 and game_name has none
+        best = _find_best_match(game_name, results, search_variant="Sonic")
         assert best is None
 
 
@@ -523,3 +629,64 @@ class TestNameSearch:
 
         assert result is not None
         assert result.screenscraper_id == 999
+
+
+class TestScreenScraperApiRobustness:
+    """Tests for API robustness: empty/invalid JSON and error handling."""
+
+    @pytest.fixture
+    def client(self):
+        """Create a client instance with mocked credentials."""
+        import os
+        env_vars = {
+            "SCREENSCRAPER_USER": "testuser",
+            "SCREENSCRAPER_PASSWORD": "testpass",
+            "SCREENSCRAPER_DEVID": "testdevid",
+            "SCREENSCRAPER_DEVPASSWORD": "testdevpass",
+        }
+        with (
+            patch.dict(os.environ, env_vars),
+            patch("library.metadata.screenscraper.get_pause_until", return_value=None),
+            patch("library.metadata.screenscraper.Setting.get", return_value=None),
+        ):
+            yield ScreenScraperClient()
+
+    def test_make_request_handles_empty_json(self, client):
+        """_make_request returns empty dict when API returns empty body / JSONDecodeError."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.side_effect = requests.exceptions.JSONDecodeError(
+            "Expecting value", "", 0
+        )
+
+        with patch("requests.get", return_value=mock_resp):
+            data = client._make_request("jeuRecherche", {"recherche": "Nonexistent"})
+            assert data == {}
+
+    def test_make_request_handles_invalid_json_value_error(self, client):
+        """_make_request returns empty dict on ValueError during JSON decoding."""
+        import json
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.side_effect = json.JSONDecodeError("Extra data", "", 0)
+
+        with patch("requests.get", return_value=mock_resp):
+            data = client._make_request("jeuRecherche", {"recherche": "Nonexistent"})
+            assert data == {}
+
+    def test_search_game_handles_empty_response(self, client):
+        """search_game returns empty list when API returns empty dict."""
+        with patch.object(client, "_make_request", return_value={}):
+            results = client.search_game("Nonexistent", 12)
+            assert results == []
+
+    def test_search_game_handles_unexpected_exception(self, client):
+        """search_game catches unexpected exceptions and returns empty list."""
+        with patch.object(
+            client,
+            "_make_request",
+            side_effect=requests.exceptions.ConnectionError("Connection failed"),
+        ):
+            results = client.search_game("Any Game", 12)
+            assert results == []

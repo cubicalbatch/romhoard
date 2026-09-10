@@ -14,7 +14,7 @@
       "extensions": [".sms"],
       "exclusive_extensions": [".sms"],
       "folder_names": ["SMS", "Master System", "Sega Master System", "SegaMasterSystem"],
-      "screenscraper_ids": [2]
+      "screenscraper_ids": [2, 21, 109]
     },
     {
       "name": "NES",
@@ -22,7 +22,7 @@
       "extensions": [".nes"],
       "exclusive_extensions": [".nes"],
       "folder_names": ["NES", "Famicom", "fc", "famicom", "Nintendo Entertainment System", "NintendoEntertainmentSystem"],
-      "screenscraper_ids": [3]
+      "screenscraper_ids": [3, 106]
     },
     {
       "name": "SNES",
@@ -233,7 +233,7 @@
       "extensions": [".pce", ".cue", ".ccd", ".chd", ".toc", ".m3u"],
       "exclusive_extensions": [".pce"],
       "folder_names": ["PCE", "TurboGrafx", "TurboGrafx-16", "PC Engine", "PCEngine", "TG16"],
-      "screenscraper_ids": [31]
+      "screenscraper_ids": [31, 105]
     },
     {
       "name": "Microsoft Xbox",
@@ -535,7 +535,7 @@
       "exclusive_extensions": [],
       "folder_names": ["Neo Geo", "NeoGeo", "MVS", "AES"],
       "archive_as_rom": true,
-      "screenscraper_ids": [142]
+      "screenscraper_ids": [142, 82, 25]
     },
     {
       "name": "Watara Supervision",

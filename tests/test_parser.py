@@ -325,3 +325,128 @@ class TestGetSwitchContentInfo:
         title_id, content_type = get_switch_content_info(filename)
         assert title_id == expected_id
         assert content_type == expected_type
+
+
+# -----------------------------------------------------------------------------
+# Tests for Enhanced ROM Filename Parser (Improvement 5)
+# -----------------------------------------------------------------------------
+
+
+class TestEnhancedRomFilenameParser:
+    """Tests for enhanced ROM filename parsing (Improvement 5).
+
+    Covers:
+    a) Date prefixes (e.g. 1984-11-30 Excitebike)
+    b) Rank prefixes without dashes (e.g. 089 Ice Climber)
+    c) Hardware prefixes (e.g. 2C03 Pinball, 2C04-01 Gradius)
+    d) VS prefixes (e.g. VS. Duck Hunt)
+    e) Inverted articles (e.g. Berenstain Bears' Camping Adventure, The)
+    f) Retail patch/mod suffixes outside brackets (e.g. ActRaiser PAL-to-NTSC Patched, Aladdin Trained)
+    g) Version and author suffixes outside brackets (e.g. Batter Up v0.1 Revo, Battletoads b1 nextvolume, Alien 1.02 Final)
+    h) Trailing Hack suffix (e.g. Aero Fighters Hack)
+    """
+
+    def test_date_prefix_excitebike(self):
+        """Date prefix stripped from base_name and preserved in tags."""
+        result = parse_rom_filename("1984-11-30 Excitebike (JU).nes")
+        assert result["name"] == "Excitebike"
+        assert "1984-11-30" in result["tags"]
+
+    def test_rank_prefix_ice_climber(self):
+        """Rank prefix without dash extracted as rom_number and stripped from name."""
+        result = parse_rom_filename("089 Ice Climber (U).nes")
+        assert result["name"] == "Ice Climber"
+        assert result["rom_number"] == "089"
+
+    def test_hardware_prefix_pinball(self):
+        """Hardware prefix stripped from name and preserved in tags."""
+        result = parse_rom_filename("2C03 Pinball (VS).nes")
+        assert result["name"] == "Pinball"
+        assert "2C03" in result["tags"]
+
+    def test_hardware_prefix_gradius_subrevision(self):
+        """Hardware prefix with subrevision stripped from name and preserved in tags."""
+        result = parse_rom_filename("2C04-01 Gradius.nes")
+        assert result["name"] == "Gradius"
+        assert "2C04-01" in result["tags"]
+
+    def test_vs_prefix_duck_hunt(self):
+        """Leading VS. prefix stripped from name."""
+        result = parse_rom_filename("VS. Duck Hunt (VS).nes")
+        assert result["name"] == "Duck Hunt"
+        assert any(t in result["tags"] for t in ("VS.", "VS"))
+
+    def test_inverted_article_berenstain_bears(self):
+        """Inverted articles at end of base name normalized to leading articles."""
+        result = parse_rom_filename(
+            "Berenstain Bears' Camping Adventure, The (USA).sms"
+        )
+        assert result["name"] == "The Berenstain Bears' Camping Adventure"
+
+    def test_inverted_article_a(self):
+        """Inverted article ', A' normalized to leading 'A '."""
+        result = parse_rom_filename("Boy and His Blob, A (USA).nes")
+        assert result["name"] == "A Boy and His Blob"
+
+    def test_inverted_article_an(self):
+        """Inverted article ', An' normalized to leading 'An '."""
+        result = parse_rom_filename("Awesome Game, An (USA).nes")
+        assert result["name"] == "An Awesome Game"
+
+    def test_retail_patch_actraiser(self):
+        """Retail patch suffix stripped from name and added to tags."""
+        result = parse_rom_filename("ActRaiser PAL-to-NTSC Patched (Europe).sfc")
+        assert result["name"] == "ActRaiser"
+        assert "PAL-to-NTSC Patched" in result["tags"]
+
+    def test_retail_patch_aladdin_trained(self):
+        """Trainer suffix stripped from name and added to tags."""
+        result = parse_rom_filename("Aladdin Trained (Europe).sfc")
+        assert result["name"] == "Aladdin"
+        assert "Trained" in result["tags"]
+
+    def test_retail_patch_bubble_bobble_improvement(self):
+        """Improvement suffix stripped from name and added to tags."""
+        result = parse_rom_filename("Bubble Bobble Improvement.nes")
+        assert result["name"] == "Bubble Bobble"
+        assert "Improvement" in result["tags"]
+
+    def test_retail_patch_secret_commando_speedup(self):
+        """Speed-Up suffix stripped from name and added to tags."""
+        result = parse_rom_filename("Secret Commando Speed-Up.sms")
+        assert result["name"] == "Secret Commando"
+        assert "Speed-Up" in result["tags"]
+
+    def test_version_author_batter_up(self):
+        """Version and author suffix stripped from name and added to tags and revision."""
+        result = parse_rom_filename("Batter Up v0.1 Revo.sms")
+        assert result["name"] == "Batter Up"
+        assert "v0.1 Revo" in result["tags"]
+        assert result["revision"] == "v0.1 Revo"
+
+    def test_version_author_battletoads(self):
+        """Beta version and author suffix stripped from name and added to tags and revision."""
+        result = parse_rom_filename("Battletoads b1 nextvolume.sms")
+        assert result["name"] == "Battletoads"
+        assert "b1 nextvolume" in result["tags"]
+        assert result["revision"] == "b1 nextvolume"
+
+    def test_version_author_alien(self):
+        """Version and Final suffix stripped from name and added to tags and revision."""
+        result = parse_rom_filename("Alien 1.02 Final.lyx")
+        assert result["name"] == "Alien"
+        assert "1.02 Final" in result["tags"]
+        assert result["revision"] == "1.02 Final"
+
+    def test_trailing_hack_aero_fighters(self):
+        """Trailing Hack suffix stripped from name and added to tags."""
+        result = parse_rom_filename("Aero Fighters Hack.sfc")
+        assert result["name"] == "Aero Fighters"
+        assert "Hack" in result["tags"]
+
+    def test_combined_prefix_and_suffix(self):
+        """Filename with both prefix and suffix handled correctly."""
+        result = parse_rom_filename("VS. Duck Hunt Hack.nes")
+        assert result["name"] == "Duck Hunt"
+        assert "VS." in result["tags"]
+        assert "Hack" in result["tags"]

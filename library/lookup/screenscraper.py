@@ -41,13 +41,134 @@ def normalize_name(name: str) -> str:
         if name.startswith(article):
             name = name[len(article) :]
 
+    # Convert hyphens, en-dashes, em-dashes, slashes, colons, underscores into spaces
+    # BEFORE removing other punctuation to avoid merging words (e.g. Pac-Man -> pac man)
+    name = re.sub(r"[\-–—/:_]", " ", name)
+
     # Remove punctuation and special characters
     name = re.sub(r"[^\w\s]", "", name)
+
+    # Convert standalone Roman numerals II-X to Western numbers 2-10 (case-insensitive)
+    # Note: 'name' is already lowercased, so we match lowercase roman numerals
+    roman_to_western = {
+        "viii": "8",
+        "vii": "7",
+        "vi": "6",
+        "iv": "4",
+        "ix": "9",
+        "iii": "3",
+        "ii": "2",
+        "v": "5",
+        "x": "10",
+    }
+    name = re.sub(
+        r"\b(viii|vii|vi|iv|ix|iii|ii|v|x)\b",
+        lambda m: roman_to_western[m.group(0)],
+        name,
+    )
 
     # Normalize whitespace
     name = re.sub(r"\s+", " ", name).strip()
 
     return name
+
+
+CONSOLE_TERMS = {
+    "32x",
+    "nes",
+    "snes",
+    "sfc",
+    "sms",
+    "gg",
+    "genesis",
+    "megadrive",
+    "n64",
+    "lynx",
+    "gb",
+    "gba",
+    "gbc",
+    "pce",
+    "tg16",
+    "atari",
+    "sega",
+    "nintendo",
+    "sony",
+    "playstation",
+    "psx",
+    "arcade",
+    "mame",
+}
+
+STOPWORDS = {
+    "the",
+    "a",
+    "an",
+    "of",
+    "and",
+    "or",
+    "vs",
+    "to",
+    "in",
+    "on",
+    "at",
+    "by",
+    "for",
+    "with",
+    "no",
+    "ni",
+    "de",
+    "la",
+    "le",
+}
+
+
+def _extract_numbers(norm_name: str) -> set[int]:
+    """Extract standalone numbers (1-99) including normalized Roman numerals 1-10, excluding 4-digit years.
+
+    Args:
+        norm_name: Normalized game name string
+
+    Returns:
+        Set of integers found (1-99)
+    """
+    tokens = norm_name.split()
+    numbers = set()
+    for idx, token in enumerate(tokens):
+        if token.isdigit():
+            val = int(token)
+            if 1 <= val <= 99:
+                numbers.add(val)
+        elif token == "i":
+            # Standalone 'i' treated as Roman numeral 1 if at the end of title or after part/vol/volume/chapter/episode
+            if (idx == len(tokens) - 1 and len(tokens) > 1) or (
+                idx > 0
+                and tokens[idx - 1] in {"part", "vol", "volume", "chapter", "episode"}
+            ):
+                numbers.add(1)
+    return numbers
+
+
+def _check_number_consistency(norm1: str, norm2: str) -> bool:
+    """Check sequel / number consistency between two normalized names.
+
+    Returns False if:
+    - Both titles have numbers and they differ (e.g. 2 vs 3)
+    - One title has a sequel number >= 2 and the other has NO numbers (e.g. "Mega Man" vs "Mega Man 2")
+    """
+    nums1 = _extract_numbers(norm1)
+    nums2 = _extract_numbers(norm2)
+
+    if nums1 and nums2:
+        if nums1 != nums2:
+            return False
+    elif nums1 and not nums2:
+        if any(n >= 2 for n in nums1):
+            return False
+    elif nums2 and not nums1:
+        if any(n >= 2 for n in nums2):
+            return False
+
+    return True
 
 
 def calculate_match_score(game_name: str, api_name: str) -> float:
@@ -67,11 +188,10 @@ def calculate_match_score(game_name: str, api_name: str) -> float:
     if norm_game == norm_api:
         return 1.0
 
-    # Substring match
-    if norm_game in norm_api or norm_api in norm_game:
-        return 0.85
+    # Sequel / Number Consistency Guard
+    if not _check_number_consistency(norm_game, norm_api):
+        return 0.0
 
-    # Word overlap scoring
     game_words = set(norm_game.split())
     api_words = set(norm_api.split())
 
@@ -79,18 +199,65 @@ def calculate_match_score(game_name: str, api_name: str) -> float:
         return 0.0
 
     overlap = game_words & api_words
-    total = len(game_words | api_words)
 
+    # Console Terms & Stopwords Guard:
+    # If the word overlap consists ONLY of console terms and/or stopwords: score MUST BE 0.0
+    meaningful_overlap = overlap - CONSOLE_TERMS - STOPWORDS
+    if not meaningful_overlap:
+        return 0.0
+
+    # Substring match precision:
+    # Substring match shorter in longer (on word boundaries) awards 0.85 ONLY IF:
+    # - Shorter has at least 2 meaningful words, OR
+    # - Shorter is at least 5 characters and constitutes at least 40% of the longer string's length,
+    # AND shorter is not purely a console term or stopword.
+    shorter, longer = (
+        (norm_game, norm_api)
+        if len(norm_game) <= len(norm_api)
+        else (norm_api, norm_game)
+    )
+    shorter_words = shorter.split()
+    meaningful_shorter = [
+        w for w in shorter_words if w not in CONSOLE_TERMS and w not in STOPWORDS
+    ]
+
+    has_word_boundary_match = bool(
+        re.search(rf"\b{re.escape(shorter)}\b", longer)
+    )
+    is_precise_shorter = bool(
+        meaningful_shorter
+        and (
+            len(meaningful_shorter) >= 2
+            or (len(shorter) >= 5 and (len(shorter) / len(longer)) >= 0.40)
+        )
+    )
+
+    if has_word_boundary_match and is_precise_shorter:
+        return 0.85
+
+    # Word overlap scoring
+    total = len(game_words | api_words)
     base_score = len(overlap) / total
+
+    # If all words of the shorter title are contained in the longer title
+    # (e.g., "Aladdin" in "Disney's Aladdin"), ensure the score is at least 0.85
+    # only if shorter meets the precision criteria
+    if (
+        game_words.issubset(api_words) or api_words.issubset(game_words)
+    ) and is_precise_shorter:
+        base_score = max(base_score, 0.85)
 
     # Boost score when base overlap is very low but there's a significant match
     # This helps when names are completely different (e.g., Japanese vs English)
     # but share a distinctive word like "Rondo", "Gradius", "Spriggan"
     # Only boost when base_score < 0.3 (very different names)
     if base_score < 0.3 and len(overlap) >= 1:
-        stopwords = {"the", "a", "an", "of", "and", "or", "vs", "no", "to", "ni"}
         significant_overlap = {
-            w for w in overlap if len(w) >= 5 and w.lower() not in stopwords
+            w
+            for w in overlap
+            if len(w) >= 5
+            and w.lower() not in STOPWORDS
+            and w.lower() not in CONSOLE_TERMS
         }
         if significant_overlap:
             # A significant word match is a strong signal - boost to 0.65
@@ -99,18 +266,37 @@ def calculate_match_score(game_name: str, api_name: str) -> float:
     return base_score
 
 
-def _find_best_match(game_name: str, results: list[dict]) -> dict | None:
+def _find_best_match(
+    game_name: str, results: list[dict], search_variant: str = ""
+) -> dict | None:
     """Find the best matching result from a list of API results.
 
     Args:
         game_name: The game name we're searching for
         results: List of result dicts from ScreenScraper API
+        search_variant: Optional search variant used to query the API
 
     Returns:
         Best matching result dict with 'score' added, or None if no good match
     """
     best_match = None
     best_score = 0.0
+
+    norm_game = normalize_name(game_name)
+
+    # Check search_variant validity:
+    # If search_variant is purely a console term or <= 3 chars or stopword, ignore it for candidate scoring
+    valid_search_variant = bool(search_variant)
+    if valid_search_variant:
+        norm_v = normalize_name(search_variant)
+        v_words = norm_v.split()
+        if (
+            len(norm_v) <= 3
+            or norm_v in CONSOLE_TERMS
+            or norm_v in STOPWORDS
+            or not (set(v_words) - CONSOLE_TERMS - STOPWORDS)
+        ):
+            valid_search_variant = False
 
     for result in results:
         # Check against primary name
@@ -122,11 +308,21 @@ def _find_best_match(game_name: str, results: list[dict]) -> dict | None:
         # Find best score across all names for this candidate
         candidate_best_score = 0.0
         for name in names_to_check:
+            if not name:
+                continue
+
+            # Ensure candidate passes the sequel/number consistency check against game_name
+            norm_cand = normalize_name(name)
+            if not _check_number_consistency(norm_game, norm_cand):
+                continue
+
             score = calculate_match_score(game_name, name)
+            if valid_search_variant:
+                score = max(score, calculate_match_score(search_variant, name))
             if score > candidate_best_score:
                 candidate_best_score = score
 
-        if candidate_best_score > best_score:
+        if candidate_best_score > best_score and candidate_best_score > 0.0:
             best_score = candidate_best_score
             best_match = result.copy()
             best_match["score"] = candidate_best_score
@@ -166,6 +362,34 @@ def _extract_romnom(file_path: str, archive_as_rom: bool) -> str:
         # Loose file
         # "Super Mario World.smc" → "Super Mario World.smc"
         return Path(file_path).name
+
+
+def _extract_rom_stem(file_path: str, archive_as_rom: bool = False) -> str:
+    """Extract ROM filename stem cleaned of tags for fallback name search.
+
+    Args:
+        file_path: ROM path, may contain "!" for archive contents
+        archive_as_rom: If True, use archive name; else use inner file name
+
+    Returns:
+        Cleaned stem (tags and extensions removed)
+    """
+    romnom = _extract_romnom(file_path, archive_as_rom)
+    try:
+        from library.parser import parse_rom_filename
+
+        parsed = parse_rom_filename(romnom)
+        stem = parsed.get("name", "").strip()
+        if stem:
+            return stem
+    except Exception:
+        pass
+
+    # Fallback: strip tags from Path stem
+    stem = Path(romnom).stem
+    stem = re.sub(r"[\(\[][^\)\]]+[\)\]]", "", stem).strip()
+    return re.sub(r"\s+", " ", stem).strip()
+
 
 
 def _check_cache(
@@ -365,6 +589,22 @@ class ScreenScraperLookupService(LookupService):
             if best_result:
                 return best_result
 
+        # Phase 3b: ROM filename stem search (fallback when game_name fails or differs)
+        if file_path:
+            stem = _extract_rom_stem(file_path, system.archive_as_rom)
+            if stem and (not game_name or stem.strip().lower() != game_name.strip().lower()):
+                stem_best_result = None
+                stem_best_confidence = 0.0
+
+                for system_id in system.all_screenscraper_ids:
+                    result = self._try_name_search(stem, system_id)
+                    if result and result.confidence > stem_best_confidence:
+                        stem_best_result = result
+                        stem_best_confidence = result.confidence
+
+                if stem_best_result:
+                    return stem_best_result
+
         return None
 
     def _try_crc(self, crc32: str, system_id: int) -> Optional[LookupResult]:
@@ -468,7 +708,7 @@ class ScreenScraperLookupService(LookupService):
                     continue
 
                 # Find best match above threshold
-                best = _find_best_match(game_name, results)
+                best = _find_best_match(game_name, results, search_variant=variant)
                 if best and best.get("score", 0) >= 0.6:
                     result_dict = {
                         "id": best["id"],
