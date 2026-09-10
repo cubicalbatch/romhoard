@@ -118,7 +118,7 @@ def _get_app_identifier() -> tuple[str, str]:
 
 # Search variant regex patterns
 DATE_PREFIX_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}\s+")
-RANK_PREFIX_PATTERN = re.compile(r"^\d{2,3}\s+(?=[A-Za-z])")
+RANK_PREFIX_PATTERN = re.compile(r"^(?!007\s+(?:James|Bond)\b)(0\d{1,2})\s+(?=[A-Za-z])")
 HARDWARE_PREFIX_PATTERN = re.compile(r"^2C0\d(-\d+)?\s+", re.IGNORECASE)
 VS_PREFIX_PATTERN = re.compile(r"^VS\.\s+", re.IGNORECASE)
 INVERTED_ARTICLE_PATTERN = re.compile(r"^(.*?),\s*(The|A|An)(\s+.*)?$", re.IGNORECASE)

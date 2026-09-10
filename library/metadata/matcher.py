@@ -241,10 +241,8 @@ def fetch_metadata_for_game(game: Game) -> dict | None:
         # Build file_path for romnom lookup
         file_path = ""
         if rom:
-            if rom.is_archived:
+            if game.system.archive_as_rom and rom.is_archived:
                 file_path = rom.archive_path
-            elif game.system.archive_as_rom:
-                file_path = rom.file_path
             else:
                 file_path = rom.file_path
 

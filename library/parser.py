@@ -56,8 +56,8 @@ COMPOUND_EXTENSIONS = {".p8.png"}
 # Date prefix pattern: "1984-11-30 Excitebike"
 DATE_PREFIX_PATTERN = re.compile(r"^(\d{4}-\d{2}-\d{2})\s+")
 
-# Rank number prefix without dashes: "089 Ice Climber" (exempting "007 James Bond")
-RANK_PREFIX_PATTERN = re.compile(r"^(?!007\s+(?:James|Bond)\b)(\d{2,3})\s+(?=[A-Za-z])")
+# Rank number prefix without dashes: "089 Ice Climber" (zero-padded, exempting "007 James Bond")
+RANK_PREFIX_PATTERN = re.compile(r"^(?!007\s+(?:James|Bond)\b)(0\d{1,2})\s+(?=[A-Za-z])")
 
 # Hardware prefix pattern: "2C03 Pinball", "2C04-01 Gradius"
 HARDWARE_PREFIX_PATTERN = re.compile(r"^(2C0\d(?:-\d+)?)\s+", re.IGNORECASE)
