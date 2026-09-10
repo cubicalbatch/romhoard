@@ -371,7 +371,8 @@ def _check_cache(
                 return False, None
             # Known no-match
             logger.debug(
-                "ScreenScraper cache hit (no match): %s=%s (system %d)",
+                "ScreenScraper cache hit (no match): %s (system %d)",
+                lookup_value[:20],
                 system_id,
             )
             return True, None
@@ -646,15 +647,10 @@ class ScreenScraperLookupService(LookupService):
                 if not results:
                     continue
 
-                system_match = next(
-                    (
-                        r
-                        for r in results
-                        if str(r.get("system_id")) == str(system_id)
-                    ),
-                    None,
-                )
-                if not system_match:
+                same_system = [
+                    r for r in results if str(r.get("system_id")) == str(system_id)
+                ]
+                if not same_system:
                     # ScreenScraper may return parent/related-system games.
                     # Without proof this ROM belongs to that system, reject.
                     logger.debug(
@@ -664,12 +660,12 @@ class ScreenScraperLookupService(LookupService):
                         system_id,
                     )
                     continue
-                best = _find_best_match(identity_name, [system_match])
+                best = _find_best_match(identity_name, same_system)
                 if best and best.get("score", 0) >= 0.6:
                     result_dict = {
                         "id": best["id"],
                         "name": best["name"],
-                        "system_id": system_match.get("matched_system_id", system_id),
+                        "system_id": int(same_system[0]["system_id"]),
                         "confidence": best["score"],
                     }
                     _save_to_cache("name", game_name, system_id, result_dict)

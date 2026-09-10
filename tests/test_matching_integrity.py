@@ -163,6 +163,24 @@ def test_vs_hardware_identity_is_not_stripped_to_home_console_game(title):
     assert calculate_match_score("Vs. Excitebike", "Vs. Excitebike") == 1.0
 
 
+
+
+@pytest.mark.django_db
+def test_tied_same_system_candidates_are_rejected_not_first_won():
+    service = ScreenScraperLookupService()
+    with (
+        patch.object(service, "_get_client") as get_client,
+        patch(
+            "library.metadata.screenscraper._get_search_variants",
+            return_value=["Aladdin"],
+        ),
+    ):
+        get_client.return_value.search_game.return_value = [
+            {"id": "2170", "name": "Disney's Aladdin", "all_names": ["Disney's Aladdin"], "system_id": 3},
+            {"id": "268186", "name": "Aladdin 2000", "all_names": ["Aladdin 2000"], "system_id": 3},
+        ]
+        # Both score 0.85 against the cleanup variant; neither may win by order.
+        assert service._try_name_search("Aladdin Trained", 3) is None
 @pytest.mark.django_db
 def test_expired_negative_hash_is_retried_but_positive_hash_is_retained():
     from datetime import timedelta
