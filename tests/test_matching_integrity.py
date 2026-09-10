@@ -179,8 +179,26 @@ def test_tied_same_system_candidates_are_rejected_not_first_won():
             {"id": "2170", "name": "Disney's Aladdin", "all_names": ["Disney's Aladdin"], "system_id": 3},
             {"id": "268186", "name": "Aladdin 2000", "all_names": ["Aladdin 2000"], "system_id": 3},
         ]
+
         # Both score 0.85 against the cleanup variant; neither may win by order.
         assert service._try_name_search("Aladdin Trained", 3) is None
+
+@pytest.mark.django_db
+def test_dropped_subtitle_rejects_franchise_prefix_match():
+    service = ScreenScraperLookupService()
+    with (
+        patch.object(service, "_get_client") as get_client,
+        patch(
+            "library.metadata.screenscraper._get_search_variants",
+            return_value=["Bionic Commando Elite Forces"],
+        ),
+    ):
+        # ScreenScraper has no Elite Forces entry on GB; only the base game.
+        get_client.return_value.search_game.return_value = [
+            {"id": "3120", "name": "Bionic Commando", "all_names": ["Bionic Commando"], "system_id": 9}
+        ]
+        assert service._try_name_search("Bionic Commando: Elite Forces", 9) is None
+
 @pytest.mark.django_db
 def test_expired_negative_hash_is_retried_but_positive_hash_is_retained():
     from datetime import timedelta

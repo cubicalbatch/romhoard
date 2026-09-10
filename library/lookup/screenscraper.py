@@ -175,6 +175,23 @@ def _check_number_consistency(norm1: str, norm2: str) -> bool:
     return True
 
 
+def _subtitle_guard(norm_identity: str, candidates: list[str]) -> bool:
+    """True when a subtitle in the identity is missing from every candidate.
+
+    A title like "Bionic Commando: Elite Forces" denotes a different game
+    than the base "Bionic Commando"; if no candidate name contains the
+    subtitle words, the match must not pass on a truncated prefix alone.
+    """
+    parts = re.split(r"\s*[:\-–—]\s*", norm_identity)
+    if len(parts) < 2:
+        return False
+    subtitle_words = set(parts[-1].split()) - STOPWORDS
+    if not subtitle_words:
+        return False
+    candidate_words = set(" ".join(candidates).split())
+    return not subtitle_words <= candidate_words
+
+
 def calculate_match_score(game_name: str, api_name: str) -> float:
     """Calculate similarity score between two game names.
 
@@ -195,7 +212,6 @@ def calculate_match_score(game_name: str, api_name: str) -> float:
     if norm_game.startswith("vs ") != norm_api.startswith("vs "):
         return 0.0
 
-    # Sequel / Number Consistency Guard
     if not _check_number_consistency(norm_game, norm_api):
         return 0.0
 
@@ -661,6 +677,25 @@ class ScreenScraperLookupService(LookupService):
                     )
                     continue
                 best = _find_best_match(identity_name, same_system)
+                # Subtitles are stripped by normalization, so gate on the raw
+                # identity: a subtitle no candidate name contains marks a
+                # different game (e.g. "Bionic Commando: Elite Forces").
+                subtitle_blocked = best and best.get("score", 0) >= 0.6 and _subtitle_guard(
+                    identity_name,
+                    [
+                        normalize_name(n)
+                        for n in {best.get("name", ""), *best.get("all_names", [])}
+                    ],
+                )
+                if subtitle_blocked:
+                    # Identity carries a subtitle no candidate name includes;
+                    # that subtitle distinguishes a different game.
+                    logger.debug(
+                        "Subtitle guard rejected '%s' -> '%s'",
+                        identity_name,
+                        best.get("name"),
+                    )
+                    best = None
                 if best and best.get("score", 0) >= 0.6:
                     result_dict = {
                         "id": best["id"],
