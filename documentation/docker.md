@@ -26,6 +26,8 @@ Override these in your `.env` file or docker-compose to customize behavior:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DJANGO_SECRET_KEY` | *(auto-generated)* | Django secret key. Auto-generated and persisted on first run. Set this to use your own key. |
+| `ALLOWED_HOSTS` | `*` | Comma-separated list of allowed hostnames (e.g., `romhoard.example.com,localhost`). |
+| `CSRF_TRUSTED_ORIGINS` | *(empty)* | Comma-separated list of trusted origins for CSRF protection when served behind HTTPS reverse proxies (e.g., `https://romhoard.example.com`). If scheme is omitted, `https://` and `http://` are added automatically. |
 
 #### Web Server
 

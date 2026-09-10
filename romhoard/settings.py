@@ -72,6 +72,36 @@ USE_BUNDLED_ASSETS = os.environ.get("USE_BUNDLED_ASSETS", "false").lower() in ("
 _env_hosts = os.environ.get("ALLOWED_HOSTS", "")
 ALLOWED_HOSTS = [h.strip() for h in _env_hosts.split(",") if h.strip()] or ["*"]
 
+# CSRF_TRUSTED_ORIGINS can be set via environment variable (comma-separated)
+# Example: CSRF_TRUSTED_ORIGINS=https://romhoard.loki.onoz.cc,http://localhost:4567
+_env_csrf = os.environ.get("CSRF_TRUSTED_ORIGINS", "")
+CSRF_TRUSTED_ORIGINS = []
+for origin in _env_csrf.split(","):
+    origin = origin.strip()
+    if not origin:
+        continue
+    if "://" not in origin:
+        CSRF_TRUSTED_ORIGINS.extend([f"https://{origin}", f"http://{origin}"])
+    else:
+        CSRF_TRUSTED_ORIGINS.append(origin)
+
+# If ALLOWED_HOSTS has specific hosts configured, automatically trust them as CSRF origins
+for host in ALLOWED_HOSTS:
+    if host and host != "*":
+        h = host.lstrip(".")
+        for proto in ("https://", "http://"):
+            full = f"{proto}{h}"
+            if full not in CSRF_TRUSTED_ORIGINS:
+                CSRF_TRUSTED_ORIGINS.append(full)
+            if host.startswith("."):
+                wildcard = f"{proto}*.{h}"
+                if wildcard not in CSRF_TRUSTED_ORIGINS:
+                    CSRF_TRUSTED_ORIGINS.append(wildcard)
+
+# Reverse proxy support (headers from nginx, caddy, traefik, etc.)
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
+
 
 # Application definition
 
