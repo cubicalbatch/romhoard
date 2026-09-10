@@ -332,6 +332,10 @@ def parse_rom_filename(filename: str) -> dict:
         if tag_item not in combined_tags:
             combined_tags.append(tag_item)
 
+    # VS arcade conversions are distinct games, not disposable filename noise.
+    if hw_match or vs_match or any(tag.casefold().rstrip(".") == "vs" for tag in combined_tags):
+        base_name = f"Vs. {base_name}"
+
     result = {
         "name": base_name,
         "region": region,

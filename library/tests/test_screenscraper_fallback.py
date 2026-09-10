@@ -333,7 +333,7 @@ class TestScreenScraperEmptyResponses:
                 client.get_game_info(game_id, game_name=game_name, system_id=system_id)
 
     def test_missing_response_key(self, client):
-        """Test handling of response missing expected keys returns empty dict."""
+        """Malformed data is a service failure, not a missing game."""
         game_id = "2147"
 
         mock_response = {"unexpected": "structure"}
@@ -344,10 +344,8 @@ class TestScreenScraperEmptyResponses:
             mock_resp.json.return_value = mock_response
             mock_get.return_value = mock_resp
 
-            result = client.get_game_info(game_id)
-
-            # When response structure is unexpected, returns empty dict
-            assert result == {}
+            with pytest.raises(requests.RequestException):
+                client.get_game_info(game_id)
 
 
 @pytest.mark.django_db

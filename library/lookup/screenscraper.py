@@ -6,10 +6,14 @@ falls back to romnom (filename) lookup, and finally name search as last resort.
 """
 
 import logging
+import requests
 import re
 import unicodedata
+from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
+
+from django.utils import timezone
 
 from .base import LookupResult, LookupService
 
@@ -185,8 +189,11 @@ def calculate_match_score(game_name: str, api_name: str) -> float:
     norm_api = normalize_name(api_name)
 
     # Exact match
-    if norm_game == norm_api:
+    if norm_game and norm_game == norm_api:
         return 1.0
+
+    if norm_game.startswith("vs ") != norm_api.startswith("vs "):
+        return 0.0
 
     # Sequel / Number Consistency Guard
     if not _check_number_consistency(norm_game, norm_api):
@@ -247,87 +254,29 @@ def calculate_match_score(game_name: str, api_name: str) -> float:
     ) and is_precise_shorter:
         base_score = max(base_score, 0.85)
 
-    # Boost score when base overlap is very low but there's a significant match
-    # This helps when names are completely different (e.g., Japanese vs English)
-    # but share a distinctive word like "Rondo", "Gradius", "Spriggan"
-    # Only boost when base_score < 0.3 (very different names)
-    if base_score < 0.3 and len(overlap) >= 1:
-        significant_overlap = {
-            w
-            for w in overlap
-            if len(w) >= 5
-            and w.lower() not in STOPWORDS
-            and w.lower() not in CONSOLE_TERMS
-        }
-        if significant_overlap:
-            # A significant word match is a strong signal - boost to 0.65
-            base_score = 0.65
-
     return base_score
 
 
-def _find_best_match(
-    game_name: str, results: list[dict], search_variant: str = ""
-) -> dict | None:
-    """Find the best matching result from a list of API results.
-
-    Args:
-        game_name: The game name we're searching for
-        results: List of result dicts from ScreenScraper API
-        search_variant: Optional search variant used to query the API
-
-    Returns:
-        Best matching result dict with 'score' added, or None if no good match
-    """
+def _find_best_match(game_name: str, results: list[dict]) -> dict | None:
+    """Score full identity against regional names; reject equally good IDs."""
     best_match = None
     best_score = 0.0
-
-    norm_game = normalize_name(game_name)
-
-    # Check search_variant validity:
-    # If search_variant is purely a console term or <= 3 chars or stopword, ignore it for candidate scoring
-    valid_search_variant = bool(search_variant)
-    if valid_search_variant:
-        norm_v = normalize_name(search_variant)
-        v_words = norm_v.split()
-        if (
-            len(norm_v) <= 3
-            or norm_v in CONSOLE_TERMS
-            or norm_v in STOPWORDS
-            or not (set(v_words) - CONSOLE_TERMS - STOPWORDS)
-        ):
-            valid_search_variant = False
-
+    tied = False
     for result in results:
-        # Check against primary name
-        names_to_check = {result.get("name", "")}
-        # Add all known regional names
-        if "all_names" in result:
-            names_to_check.update(result["all_names"])
-
-        # Find best score across all names for this candidate
-        candidate_best_score = 0.0
-        for name in names_to_check:
-            if not name:
-                continue
-
-            # Ensure candidate passes the sequel/number consistency check against game_name
-            norm_cand = normalize_name(name)
-            if not _check_number_consistency(norm_game, norm_cand):
-                continue
-
-            score = calculate_match_score(game_name, name)
-            if valid_search_variant:
-                score = max(score, calculate_match_score(search_variant, name))
-            if score > candidate_best_score:
-                candidate_best_score = score
-
-        if candidate_best_score > best_score and candidate_best_score > 0.0:
-            best_score = candidate_best_score
-            best_match = result.copy()
-            best_match["score"] = candidate_best_score
-
-    return best_match
+        if not result.get("id"):
+            continue
+        names = {result.get("name", ""), *result.get("all_names", [])}
+        score = max(
+            (calculate_match_score(game_name, name) for name in names if name),
+            default=0.0,
+        )
+        if score > best_score:
+            best_score = score
+            best_match = {**result, "score": score}
+            tied = False
+        elif score == best_score and best_match and str(result["id"]) != str(best_match["id"]):
+            tied = True
+    return None if tied else best_match
 
 
 def _extract_romnom(file_path: str, archive_as_rom: bool) -> str:
@@ -417,11 +366,12 @@ def _check_cache(
         )
 
         if not cache_entry.matched:
+            # New dumps and catalog entries can turn a genuine miss into a hit.
+            if cache_entry.created_at <= timezone.now() - timedelta(days=30):
+                return False, None
             # Known no-match
             logger.debug(
                 "ScreenScraper cache hit (no match): %s=%s (system %d)",
-                lookup_type,
-                lookup_value[:20],
                 system_id,
             )
             return True, None
@@ -431,6 +381,7 @@ def _check_cache(
             "id": cache_entry.screenscraper_id,
             "name": cache_entry.game_name,
             "system_id": system_id,
+            "confidence": cache_entry.confidence,
         }
         logger.debug(
             "ScreenScraper cache hit (matched): %s=%s -> %s (ID: %s)",
@@ -454,10 +405,11 @@ def _save_to_cache(
     """Save lookup result to cache.
 
     Args:
-        lookup_type: Type of lookup ("crc" or "romnom")
+        lookup_type: Type of lookup ("crc", "romnom", or "name")
         lookup_value: The lookup value
         system_id: ScreenScraper system ID
-        result: Result dict with 'id', 'name', or None if no match
+        result: Result dict with 'id', 'name', and optional 'confidence', or
+            None if no match
     """
     from library.models import ScreenScraperLookupCache
 
@@ -469,7 +421,13 @@ def _save_to_cache(
                 lookup_type=lookup_type,
                 lookup_value=lookup_value.lower(),
                 system_id=system_id,
-                defaults={"matched": False, "screenscraper_id": None, "game_name": ""},
+                defaults={
+                    "matched": False,
+                    "screenscraper_id": None,
+                    "game_name": "",
+                    "confidence": None,
+                    "created_at": timezone.now(),
+                },
             )
             logger.debug(
                 "ScreenScraper cache saved (no match): %s=%s (system %d)",
@@ -487,6 +445,8 @@ def _save_to_cache(
                     "matched": True,
                     "screenscraper_id": result.get("id"),
                     "game_name": result.get("name", ""),
+                    "confidence": result.get("confidence"),
+                    "matched_system_id": result.get("system_id"),
                 },
             )
             logger.debug(
@@ -500,6 +460,7 @@ def _save_to_cache(
     except Exception as e:
         # Don't fail the lookup if caching fails
         logger.warning("Failed to save ScreenScraper cache: %s", e)
+
 
 
 class ScreenScraperLookupService(LookupService):
@@ -608,112 +569,108 @@ class ScreenScraperLookupService(LookupService):
         return None
 
     def _try_crc(self, crc32: str, system_id: int) -> Optional[LookupResult]:
-        """Try CRC lookup with caching.
+        """Try CRC lookup with caching."""
+        from library.metadata.screenscraper import ScreenScraperRateLimited
 
-        Args:
-            crc32: CRC32 hash
-            system_id: ScreenScraper system ID
-
-        Returns:
-            LookupResult if found, None otherwise
-        """
-        # Check cache first
         found_in_cache, cached_result = _check_cache("crc", crc32, system_id)
         if found_in_cache:
-            if cached_result is None:
-                return None
-            return self._result_from_dict(cached_result)
+            return (
+                None
+                if cached_result is None
+                else self._result_from_dict(cached_result, match_type="crc32")
+            )
 
-        # Make API call
         try:
-            client = self._get_client()
-            result = client.search_by_crc(crc32, system_id)
-
-            # Cache result
+            result = self._get_client().search_by_crc(crc32, system_id)
             _save_to_cache("crc", crc32, system_id, result)
-
-            if result:
-                return self._result_from_dict(result)
-            return None
-
+            return (
+                self._result_from_dict(result, match_type="crc32") if result else None
+            )
+        except (requests.RequestException, ScreenScraperRateLimited):
+            raise
         except Exception as e:
             logger.debug("ScreenScraper CRC lookup failed for %s: %s", crc32, e)
-            return None
+            raise
 
     def _try_romnom(self, romnom: str, system_id: int) -> Optional[LookupResult]:
-        """Try romnom (filename) lookup with caching.
+        """Try romnom (filename) lookup with caching."""
+        from library.metadata.screenscraper import ScreenScraperRateLimited
 
-        Args:
-            romnom: Filename for lookup (with extension)
-            system_id: ScreenScraper system ID
-
-        Returns:
-            LookupResult if found, None otherwise
-        """
-        # Check cache first
         found_in_cache, cached_result = _check_cache("romnom", romnom, system_id)
         if found_in_cache:
-            if cached_result is None:
-                return None
-            return self._result_from_dict(cached_result)
+            return (
+                None
+                if cached_result is None
+                else self._result_from_dict(cached_result, match_type="romnom")
+            )
 
-        # Make API call
         try:
-            client = self._get_client()
-            result = client.search_by_romnom(romnom, system_id)
-
-            # Cache result
+            result = self._get_client().search_by_romnom(romnom, system_id)
             _save_to_cache("romnom", romnom, system_id, result)
-
-            if result:
-                return self._result_from_dict(result)
-            return None
-
+            return (
+                self._result_from_dict(result, match_type="romnom") if result else None
+            )
+        except (requests.RequestException, ScreenScraperRateLimited):
+            raise
         except Exception as e:
             logger.debug("ScreenScraper romnom lookup failed for '%s': %s", romnom, e)
-            return None
+            raise
 
     def _try_name_search(
         self, game_name: str, system_id: int
     ) -> Optional[LookupResult]:
-        """Try name-based search with fuzzy matching.
+        """Try name-based search with fuzzy matching and caching."""
+        from library.metadata.screenscraper import (
+            ScreenScraperRateLimited,
+            _get_search_variants,
+        )
+        from library.parser import parse_rom_filename
 
-        Uses ScreenScraper's search API and fuzzy matching to find the best
-        match for a game name. Results are cached.
-
-        Args:
-            game_name: Game name to search for
-            system_id: ScreenScraper system ID
-
-        Returns:
-            LookupResult if found with sufficient confidence, None otherwise
-        """
-        from library.metadata.screenscraper import _get_search_variants
-
-        # Check cache first
         found_in_cache, cached_result = _check_cache("name", game_name, system_id)
         if found_in_cache:
-            if cached_result is None:
-                return None
-            return self._result_from_dict(cached_result)
+            return (
+                None
+                if cached_result is None
+                else self._result_from_dict(cached_result, match_type="name")
+            )
 
-        # Try searching with variants
         try:
             client = self._get_client()
-            variants = _get_search_variants(game_name)
+            identity_name = parse_rom_filename(f"{game_name}.rom")["name"]
+            variants = list(dict.fromkeys(
+                _get_search_variants(identity_name) + _get_search_variants(game_name)
+            ))
 
             for variant in variants:
                 results = client.search_game(variant, system_id)
                 if not results:
                     continue
 
-                # Find best match above threshold
-                best = _find_best_match(game_name, results, search_variant=variant)
+                system_match = next(
+                    (
+                        r
+                        for r in results
+                        if str(r.get("system_id")) == str(system_id)
+                    ),
+                    None,
+                )
+                if not system_match:
+                    # ScreenScraper may return parent/related-system games.
+                    # Without proof this ROM belongs to that system, reject.
+                    logger.debug(
+                        "ScreenScraper results for '%s' belong to other systems; "
+                        "rejecting (requested %d)",
+                        variant,
+                        system_id,
+                    )
+                    continue
+                best = _find_best_match(identity_name, [system_match])
                 if best and best.get("score", 0) >= 0.6:
                     result_dict = {
                         "id": best["id"],
                         "name": best["name"],
-                        "system_id": system_id,
+                        "system_id": system_match.get("matched_system_id", system_id),
+                        "confidence": best["score"],
                     }
                     _save_to_cache("name", game_name, system_id, result_dict)
                     logger.info(
@@ -724,11 +681,8 @@ class ScreenScraperLookupService(LookupService):
                         best["id"],
                         best["score"],
                     )
-                    return self._result_from_dict_with_confidence(
-                        result_dict, best["score"]
-                    )
+                    return self._result_from_dict(result_dict, match_type="name")
 
-            # Cache the miss
             _save_to_cache("name", game_name, system_id, None)
             logger.debug(
                 "ScreenScraper name search found no match for '%s' on system %d",
@@ -737,51 +691,34 @@ class ScreenScraperLookupService(LookupService):
             )
             return None
 
+        except (requests.RequestException, ScreenScraperRateLimited):
+            raise
         except Exception as e:
             logger.debug("ScreenScraper name search failed for '%s': %s", game_name, e)
-            return None
+            raise
 
-    def _result_from_dict_with_confidence(
-        self, result: dict, confidence: float
+    def _result_from_dict(
+        self,
+        result: dict,
+        *,
+        match_type: str,
     ) -> LookupResult:
-        """Convert ScreenScraper result dict to LookupResult with custom confidence.
-
-        Args:
-            result: Dict with 'id', 'name', 'system_id' keys
-            confidence: Match confidence score (0.0-1.0)
-
-        Returns:
-            LookupResult with screenscraper_id set
-        """
+        """Convert a ScreenScraper result with explicit match provenance."""
         return LookupResult(
             name=result.get("name", ""),
-            region="",  # ScreenScraper lookup doesn't provide region
-            revision="",  # ScreenScraper lookup doesn't provide revision
+            region="",
+            revision="",
             tags=[],
             source="screenscraper",
-            confidence=confidence,
+            confidence=(
+                result.get("confidence")
+                if result.get("confidence") is not None
+                else 0.85
+            ),
             raw_name=result.get("name", ""),
             screenscraper_id=result.get("id"),
-        )
-
-    def _result_from_dict(self, result: dict) -> LookupResult:
-        """Convert ScreenScraper result dict to LookupResult.
-
-        Args:
-            result: Dict with 'id', 'name', 'system_id' keys
-
-        Returns:
-            LookupResult with screenscraper_id set
-        """
-        return LookupResult(
-            name=result.get("name", ""),
-            region="",  # ScreenScraper lookup doesn't provide region
-            revision="",  # ScreenScraper lookup doesn't provide revision
-            tags=[],
-            source="screenscraper",
-            confidence=0.85,  # Slightly less than Hasheous
-            raw_name=result.get("name", ""),
-            screenscraper_id=result.get("id"),
+            match_type=match_type,
+            matched_system_id=result.get("system_id"),
         )
 
     def is_available(self, system: "System") -> bool:

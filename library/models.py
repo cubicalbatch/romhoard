@@ -1105,6 +1105,12 @@ class ScreenScraperLookupCache(models.Model):
     matched = models.BooleanField(default=False)
     screenscraper_id = models.IntegerField(null=True, blank=True)
     game_name = models.CharField(max_length=500, blank=True)
+    confidence = models.FloatField(null=True, blank=True)
+    matched_system_id = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="ScreenScraper system ID the match actually belongs to",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -654,33 +654,27 @@ def run_hash_lookup(game_id: int) -> dict:
         if not rom.crc32 and not rom.sha1:
             continue
 
-        # For archived ROMs, pass archive_path
-        # For arcade ROMs (archive_as_rom), pass file_path even though archive_path is empty
-        if rom.is_archived:
-            file_path = rom.archive_path
-        elif game.system.archive_as_rom:
-            file_path = rom.file_path
-        else:
-            file_path = ""
-
         result = lookup_rom(
             system=game.system,
             crc32=rom.crc32,
             sha1=rom.sha1,
-            file_path=file_path,
+            file_path=rom.file_path,
             use_hasheous=True,
         )
 
         if result:
             # Update game with matched info
+            old_name = game.name
             game.name = result.name
             game.name_source = result.source
+            if result.screenscraper_id:
+                game.screenscraper_id = result.screenscraper_id
             game.save()
             return {
                 "matched": True,
                 "source": result.source,
                 "new_name": result.name,
-                "old_name": game.name,
+                "old_name": old_name,
             }
 
     return {"matched": False, "error": "No hash match found"}
@@ -764,14 +758,6 @@ def identify_rom(context: job_context.JobContext, rom_id: int) -> dict:
     crc32 = rom.crc32
     sha1 = rom.sha1
 
-    # For archived ROMs, pass archive_path; for arcade ROMs, pass file_path
-    if rom.is_archived:
-        file_path = rom.archive_path
-    elif system.archive_as_rom:
-        file_path = rom.file_path
-    else:
-        file_path = ""
-
     # Check for cancellation before API call
     if context.should_abort():
         raise JobAborted()
@@ -781,7 +767,7 @@ def identify_rom(context: job_context.JobContext, rom_id: int) -> dict:
         system=system,
         crc32=crc32,
         sha1=sha1,
-        file_path=file_path,
+        file_path=rom.file_path,
         use_hasheous=True,
     )
 
@@ -939,21 +925,13 @@ def process_upload_job(context: job_context.JobContext, upload_job_id: int) -> d
     import os
     import shutil
 
-    from .archive import compute_file_crc32, is_archive_file, list_archive_contents
+    from .archive import is_archive_file
     from .extensions import get_full_extension, is_archive_extension
-    from .parser import parse_rom_filename
-    from .scanner import (
-        filter_rom_files_in_archive,
-        get_or_create_rom_set,
-        should_expand_archive,
-    )
     from .upload import (
         check_duplicate,
         detect_system_from_extension,
         detect_systems_from_archive,
-        ensure_destination_dir,
         get_library_root,
-        get_unique_filepath,
         get_upload_temp_dir,
         identify_rom_by_hash,
     )
@@ -1179,16 +1157,12 @@ def _process_uploaded_archive(
     If archive contains multiple games, extract and process individually.
     """
     import os
-    import shutil
 
-    from .archive import compute_file_crc32, list_archive_contents, extract_from_archive
-    from .parser import parse_rom_filename
+    from .archive import list_archive_contents
     from .scanner import (
-        get_or_create_rom_set,
         should_expand_archive,
         filter_rom_files_in_archive,
     )
-    from .upload import ensure_destination_dir, get_unique_filepath, check_duplicate
 
     try:
         contents = list_archive_contents(temp_path)

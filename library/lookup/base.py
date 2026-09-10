@@ -23,7 +23,8 @@ class LookupResult:
         ""  # CRC32 that matched (for arcade ROMs matched via internal file)
     )
     screenscraper_id: int | None = None  # ScreenScraper game ID (for SS matches)
-
+    match_type: str = ""  # Evidence used for the match, e.g. "crc32", "romnom", "name"
+    matched_system_id: int | None = None  # ScreenScraper system ID that matched
 
 class LookupService(ABC):
     """Abstract base for ROM lookup services."""

@@ -11,7 +11,6 @@ ScreenScraper API Authentication Requirements:
 """
 
 import base64
-import json
 import logging
 import os
 import re
@@ -47,6 +46,16 @@ PAUSE_SETTING_KEY = "screenscraper_pause_until"
 # Timeout configuration (connect_timeout, read_timeout)
 # Popular games can take 60-90 seconds due to server-side processing
 DEFAULT_TIMEOUT = (10, 180)  # 10s connect, 180s read
+_CREDENTIAL_QUERY_PATTERN = re.compile(
+    r"([?&](?:devid|devpassword|ssid|sspassword)=)[^&\s]+", re.IGNORECASE
+)
+
+
+def _redact_credentials(value: str) -> str:
+    """Remove credential query values from URLs in errors and logs."""
+    return _CREDENTIAL_QUERY_PATTERN.sub(r"\1[REDACTED]", value)
+
+
 
 
 def _normalize_search_name(name: str) -> str:
@@ -585,7 +594,6 @@ class ScreenScraperClient:
 
     def _make_request(self, endpoint: str, params: dict[str, Any]) -> dict:
         """Make API request with rate limiting and error handling."""
-        # Check if paused before making request
         pause_until = get_pause_until()
         if pause_until:
             raise ScreenScraperRateLimited(pause_until)
@@ -593,39 +601,47 @@ class ScreenScraperClient:
         self._rate_limit()
 
         url = self._build_url(endpoint, params)
-        logger.debug(f"ScreenScraper request: {endpoint} with params {params}")
+        logger.debug("ScreenScraper request: %s with params %s", endpoint, params)
 
         try:
             response = requests.get(url, timeout=DEFAULT_TIMEOUT)
 
-            # Check for rate limiting BEFORE raise_for_status
-            if response.status_code in (429, 430):
+            # ScreenScraper uses these statuses for account/request throttling.
+            if response.status_code in (429, 430, 431):
                 pause_until = set_pause_until()
                 raise ScreenScraperRateLimited(pause_until)
+
+            # A missing game is a documented no-match response.
+            if response.status_code == 404 and endpoint in {"jeuInfos", "jeuRecherche"}:
+                return {}
 
             response.raise_for_status()
 
             try:
                 data = response.json()
-            except (json.JSONDecodeError, ValueError, requests.exceptions.JSONDecodeError) as e:
-                logger.debug(
-                    "ScreenScraper returned invalid or empty JSON for %s: %s",
-                    endpoint,
-                    e,
-                )
-                return {}
+            except ValueError as e:
+                raise requests.RequestException(
+                    "ScreenScraper returned invalid JSON"
+                ) from e
 
-            # Check for API-level errors
+            if not isinstance(data, dict) or not isinstance(data.get("response"), dict):
+                raise requests.RequestException("ScreenScraper returned an invalid response")
+
             if "response" in data and "erreur" in data["response"]:
-                error_msg = data["response"]["erreur"]
-                logger.error(f"ScreenScraper API error: {error_msg}")
-                raise Exception(f"ScreenScraper error: {error_msg}")
+                error_msg = _redact_credentials(str(data["response"]["erreur"]))
+                raise requests.exceptions.HTTPError(
+                    f"ScreenScraper API error: {error_msg}"
+                )
 
             return data
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"ScreenScraper request failed: {e}")
+            safe_error = _redact_credentials(str(e))
+            if safe_error != str(e):
+                e.args = (safe_error,)
+            logger.error("ScreenScraper %s request failed: %s", endpoint, safe_error)
             raise
+
 
     def _extract_text(
         self, items: list[dict], language: str = "en", fallback: bool = True
@@ -709,29 +725,24 @@ class ScreenScraperClient:
             "systemeid": system_id,
         }
 
-        try:
-            data = self._make_request("jeuInfos", params)
+        data = self._make_request("jeuInfos", params)
 
-            # Parse response
-            if "response" not in data or "jeu" not in data["response"]:
-                logger.debug(f"No CRC32 match for {crc32} on system {system_id}")
-                return None
-
-            game = data["response"]["jeu"]
-            logger.info(f"Found game by CRC32 {crc32}: {game.get('id')}")
-
-            return {
-                "id": game.get("id"),
-                "name": self._extract_text(game.get("noms", [])),
-                "all_names": [
-                    n.get("text", "") for n in game.get("noms", []) if n.get("text")
-                ],
-                "system_id": system_id,
-            }
-
-        except Exception as e:
-            logger.debug(f"CRC32 lookup failed for {crc32}: {e}")
+        if "response" not in data or "jeu" not in data["response"]:
+            logger.debug("No CRC32 match for %s on system %s", crc32, system_id)
             return None
+
+        game = data["response"]["jeu"]
+        logger.info("Found game by CRC32 %s: %s", crc32, game.get("id"))
+
+        return {
+            "id": game.get("id"),
+            "name": self._extract_text(game.get("noms", [])),
+            "all_names": [
+                n.get("text", "") for n in game.get("noms", []) if n.get("text")
+            ],
+            "system_id": self._game_system_id(game, system_id),
+        }
+
 
     def has_credentials(self) -> bool:
         """Check if ScreenScraper credentials are configured.
@@ -763,36 +774,28 @@ class ScreenScraperClient:
             "systemeid": system_id,
         }
 
-        try:
-            data = self._make_request("jeuInfos", params)
+        data = self._make_request("jeuInfos", params)
 
-            if "response" not in data or "jeu" not in data["response"]:
-                logger.debug(f"No romnom match for '{romnom}' on system {system_id}")
-                return None
-
-            game = data["response"]["jeu"]
-            game_id = game.get("id")
-            game_name = self._extract_text(game.get("noms", []))
-
-            logger.info(
-                f"Found arcade game by romnom '{romnom}': ID={game_id}, Name='{game_name}'"
-            )
-
-            return {
-                "id": game_id,
-                "name": game_name,
-                "system_id": system_id,
-            }
-
-        except Exception as e:
-            # Don't log credentials errors as warnings - they're expected when not configured
-            if "credentials" in str(e).lower():
-                logger.debug(
-                    "ScreenScraper credentials not configured for romnom lookup"
-                )
-                return None
-            logger.debug(f"romnom lookup failed for '{romnom}': {e}")
+        if "response" not in data or "jeu" not in data["response"]:
+            logger.debug("No romnom match for %r on system %s", romnom, system_id)
             return None
+
+        game = data["response"]["jeu"]
+        game_id = game.get("id")
+        game_name = self._extract_text(game.get("noms", []))
+
+        logger.info(
+            "Found arcade game by romnom %r: ID=%s, Name=%r",
+            romnom,
+            game_id,
+            game_name,
+        )
+
+        return {
+            "id": game_id,
+            "name": game_name,
+            "system_id": self._game_system_id(game, system_id),
+        }
 
     def search_game(self, name: str, system_id: int) -> list[dict]:
         """Search for games by name and system.
@@ -804,54 +807,48 @@ class ScreenScraperClient:
         Returns:
             List of matching game dicts with basic info
         """
-        try:
-            params = {
-                "recherche": name,
-                "systemeid": system_id,
-            }
+        params = {
+            "recherche": name,
+            "systemeid": system_id,
+        }
 
-            data = self._make_request("jeuRecherche", params)
+        data = self._make_request("jeuRecherche", params)
 
-            # Parse response
-            if "response" not in data or "jeux" not in data["response"]:
-                return []
-
-            games = data["response"]["jeux"]
-            if not isinstance(games, list):
-                games = [games]
-
-            results = []
-            for game in games:
-                # Skip results with no ID (invalid/empty responses from API)
-                game_id = game.get("id")
-                if not game_id:
-                    continue
-                results.append(
-                    {
-                        "id": game_id,
-                        "name": self._extract_text(game.get("noms", [])),
-                        "all_names": [
-                            n.get("text", "")
-                            for n in game.get("noms", [])
-                            if n.get("text")
-                        ],
-                        "system_id": system_id,
-                    }
-                )
-
-            return results
-        except ScreenScraperRateLimited:
-            raise
-        except Exception as e:
-            if str(e).startswith("ScreenScraper error:"):
-                raise
-            logger.debug(
-                "ScreenScraper search_game failed for '%s' (system %d): %s",
-                name,
-                system_id,
-                e,
-            )
+        if "response" not in data or "jeux" not in data["response"]:
             return []
+
+        games = data["response"]["jeux"]
+        if not isinstance(games, list):
+            games = [games]
+
+        results = []
+        for game in games:
+            game_id = game.get("id")
+            if not game_id:
+                continue
+            results.append(
+                {
+                    "id": game_id,
+                    "name": self._extract_text(game.get("noms", [])),
+                    "all_names": [
+                        n.get("text", "")
+                        for n in game.get("noms", [])
+                        if n.get("text")
+                    ],
+                    "system_id": self._game_system_id(game, system_id),
+                }
+            )
+
+        return results
+
+    @staticmethod
+    def _game_system_id(game: dict, requested_system_id: int) -> int:
+        """Return the system the game belongs to, not the system we queried."""
+        system = game.get("systeme", {})
+        try:
+            return int(system.get("id", requested_system_id))
+        except (TypeError, ValueError):
+            return requested_system_id
 
     def get_game_info(
         self,
@@ -886,14 +883,7 @@ class ScreenScraperClient:
             if "response" in data and "jeu" in data["response"]:
                 game = data["response"]["jeu"]
 
-        except (
-            requests.exceptions.ReadTimeout,
-            requests.exceptions.RequestException,
-        ) as e:
-            # If rate limited, bubble up immediately
-            if isinstance(e, ScreenScraperRateLimited):
-                raise
-
+        except requests.exceptions.RequestException as e:
             # If no fallback info, re-raise
             if not game_name or not system_id:
                 logger.warning(f"ScreenScraper jeuInfos failed for ID {game_id}: {e}")
@@ -927,6 +917,8 @@ class ScreenScraperClient:
                                 f"Successfully retrieved metadata via fallback search for ID {game_id}"
                             )
                             break
+            except ScreenScraperRateLimited:
+                raise
             except Exception as search_e:
                 logger.error(f"Fallback search also failed: {search_e}")
                 # Raise the original exception if fallback fails

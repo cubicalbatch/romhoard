@@ -6,6 +6,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+import requests
+
 from django.utils import timezone
 from PIL import Image
 
@@ -14,6 +16,7 @@ from library.models import Game, GameImage, System
 from library.metadata.screenscraper import (
     ALLOWED_MEDIA_TYPES,
     ScreenScraperClient,
+    ScreenScraperRateLimited,
 )
 from library.parser import parse_rom_filename
 
@@ -226,13 +229,15 @@ def fetch_metadata_for_game(game: Game) -> dict | None:
                 game_name=game.name,
                 system_id=system_ids[0],  # Use primary system ID for media
             )
+            if not metadata.get("id"):
+                return None
             metadata["_match_type"] = "manual_id"
             save_metadata_cache(game, metadata)
             return metadata
 
         # Check cache for non-manual ID cases
         cached = get_cached_metadata(game)
-        if cached:
+        if cached and cached.get("id"):
             return cached
 
         # Try to identify the game via unified lookup chain
@@ -258,42 +263,37 @@ def fetch_metadata_for_game(game: Game) -> dict | None:
             logger.info(f"No ScreenScraper match found for '{game.name}'")
             return None
 
-        # Update game with screenscraper_id from lookup
-        game.screenscraper_id = result.screenscraper_id
-        game.save(update_fields=["screenscraper_id"])
-        logger.info(
-            f"Identified '{game.name}' as ScreenScraper ID {result.screenscraper_id} "
-            f"via {result.source}"
-        )
-
-        # Determine match type based on lookup source
-        # If source is screenscraper and confidence >= 0.85, it's CRC/romnom match
-        if result.source == "screenscraper" and result.confidence >= 0.85:
-            match_type = "crc32"  # Could be CRC or romnom, both are reliable
-        else:
-            match_type = "name"
+        match_type = result.match_type
+        matched_system_id = result.matched_system_id or system_ids[0]
 
         # Fetch full metadata using the identified ID
         metadata = client.get_game_info(
             result.screenscraper_id,
             media_types=ALLOWED_MEDIA_TYPES,
             game_name=result.name or game.name,
-            system_id=system_ids[0],
+            system_id=matched_system_id,
         )
+        if not metadata.get("id"):
+            return None
+
+        game.screenscraper_id = result.screenscraper_id
+        game.save(update_fields=["screenscraper_id"])
 
         # Track match type for apply_metadata_to_game renaming logic
         metadata["_match_type"] = match_type
-        metadata["_matched_system_id"] = system_ids[0]
+        metadata["_matched_system_id"] = matched_system_id
         if match_type in ("crc32", "romnom") and result.name:
             metadata["_screenscraper_name"] = result.raw_name
 
         # Cache the result
         save_metadata_cache(game, metadata)
         return metadata
+    except (ScreenScraperRateLimited, requests.RequestException):
+        raise
 
     except Exception as e:
         logger.error(f"Error fetching metadata for game '{game.name}': {e}")
-        return None
+        raise
 
 
 # Backward compatibility alias
@@ -313,7 +313,7 @@ def apply_metadata_to_game(game: Game, metadata: dict) -> bool:
     Returns:
         True if metadata was applied, False otherwise
     """
-    if not metadata:
+    if not metadata or not metadata.get("id"):
         return False
 
     try:

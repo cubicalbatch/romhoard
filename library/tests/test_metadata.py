@@ -185,35 +185,6 @@ class TestScreenScraperClient:
 
         assert len(results) == 0
 
-    @patch("library.metadata.screenscraper.Setting.get", return_value=None)
-    @patch.dict(
-        os.environ,
-        {
-            "SCREENSCRAPER_USER": "testuser",
-            "SCREENSCRAPER_PASSWORD": "testpass",
-        },
-    )
-    @patch("library.metadata.screenscraper.get_pause_until", return_value=None)
-    @patch("library.metadata.screenscraper.requests.get")
-    @patch("library.metadata.screenscraper.time.sleep")
-    def test_search_game_api_error(
-        self, mock_sleep, mock_get, mock_pause, mock_setting_get
-    ):
-        """Test handling of API errors."""
-        # Mock API error response
-        mock_response = Mock(spec=Response)
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "response": {"erreur": "Invalid credentials"}
-        }
-        mock_response.raise_for_status.return_value = None
-        mock_get.return_value = mock_response
-
-        client = ScreenScraperClient()
-
-        with pytest.raises(Exception, match="ScreenScraper error: Invalid credentials"):
-            client.search_game("Test Game", 1)
-
     def test_extract_text_preferred_language(self):
         """Test text extraction with preferred language."""
         # Create client manually without database access
@@ -565,7 +536,7 @@ class TestMetadataCache:
 
     def test_get_cached_metadata_uses_fallback_path_when_no_setting(self, tmp_path):
         """get_cached_metadata uses computed fallback path when no setting configured."""
-        from library.metadata.matcher import get_cached_metadata, save_metadata_cache
+        from library.metadata.matcher import get_cached_metadata
         from library.models import Game, Setting, System
 
         # Remove any existing metadata path setting

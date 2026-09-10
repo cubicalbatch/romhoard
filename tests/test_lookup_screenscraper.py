@@ -108,6 +108,8 @@ class TestScreenScraperLookupService:
         assert result is not None
         assert result.name == "Advance Wars"
         assert result.screenscraper_id == 123
+        assert result.match_type == "crc32"
+        assert result.matched_system_id == 12
         assert result.source == "screenscraper"
         mock_client.search_by_crc.assert_called_once_with("12345678", 12)
 
@@ -131,6 +133,8 @@ class TestScreenScraperLookupService:
         assert result is not None
         assert result.name == "Fire Emblem"
         assert result.screenscraper_id == 456
+        assert result.match_type == "romnom"
+        assert result.matched_system_id == 12
         mock_client.search_by_romnom.assert_called_once_with("Fire Emblem.gba", 12)
 
     def test_arcade_skips_crc_goes_straight_to_romnom(self, mock_arcade_system):
@@ -468,36 +472,6 @@ class TestFindBestMatch:
         best = _find_best_match("Test Game", [])
         assert best is None
 
-    def test_find_best_match_with_search_variant(self):
-        """_find_best_match matches candidate against search_variant if provided."""
-        game_name = "Aladdin Trained"
-        results = [{"id": 1, "name": "Disney's Aladdin"}]
-        # Without search_variant, score is ~0.33, rejected
-        best_without = _find_best_match(game_name, results)
-        assert best_without is not None
-        assert best_without["score"] < 0.60
-
-        # With search_variant="Aladdin", candidate matches Aladdin with >= 0.85
-        best_with = _find_best_match(game_name, results, search_variant="Aladdin")
-        assert best_with is not None
-        assert best_with["id"] == 1
-        assert best_with["score"] >= 0.85
-
-    def test_search_variant_ignored_if_console_term_or_short(self):
-        """search_variant is ignored if <= 3 chars or purely a console term."""
-        game_name = "32X Color by mic"
-        results = [{"id": 455783, "name": "Doom 32X Resurrection"}]
-        # With search_variant="32X", it should be ignored and candidate rejected
-        best = _find_best_match(game_name, results, search_variant="32X")
-        assert best is None
-
-    def test_candidate_rejected_when_numbers_inconsistent_with_game_name(self):
-        """Candidate is rejected if it fails number consistency against game_name, even with search_variant."""
-        game_name = "Sonic The Hedgehog 32X Pure Port"
-        results = [{"id": 566904, "name": "Sonic Robo Blast 2"}]
-        # Even if search_variant="Sonic", Sonic Robo Blast 2 has sequel #2 and game_name has none
-        best = _find_best_match(game_name, results, search_variant="Sonic")
-        assert best is None
 
 
 @pytest.mark.django_db
@@ -594,7 +568,12 @@ class TestNameSearch:
     def test_name_search_caches_results(self, mock_system):
         """Name search results are cached."""
         # Save a cached name search result
-        _save_to_cache("name", "advance wars", 12, {"id": 456, "name": "Advance Wars"})
+        _save_to_cache(
+            "name",
+            "advance wars",
+            12,
+            {"id": 456, "name": "Advance Wars", "confidence": 0.72},
+        )
 
         service = ScreenScraperLookupService()
         mock_client = MagicMock()
@@ -605,7 +584,55 @@ class TestNameSearch:
 
         assert result is not None
         assert result.screenscraper_id == 456
+        assert result.confidence == 0.72
+        assert result.match_type == "name"
+        assert result.matched_system_id == 12
         # Client should not be called - result came from cache
+        mock_client.search_game.assert_not_called()
+ 
+    def test_name_search_cold_and_warm_choose_best_system(self):
+        """Name matching keeps the same best system when results are cached."""
+        system = MagicMock()
+        system.slug = "multi-system"
+        system.archive_as_rom = False
+        system.all_screenscraper_ids = [12, 13]
+
+        service = ScreenScraperLookupService()
+        mock_client = MagicMock()
+        mock_client.has_credentials.return_value = True
+
+        def search_game(_variant, system_id):
+            if system_id == 12:
+                return [{"id": 120, "name": "Target Game Deluxe", "system_id": 12}]
+            return [{"id": 130, "name": "Target Game", "system_id": 13}]
+
+        mock_client.search_game.side_effect = search_game
+        with (
+            patch.object(service, "_get_client", return_value=mock_client),
+            patch(
+                "library.metadata.screenscraper._get_search_variants",
+                return_value=["Target Game"],
+            ),
+        ):
+            cold = service.lookup(system=system, game_name="Target Game")
+
+        assert cold is not None
+        assert cold.screenscraper_id == 130
+        assert cold.match_type == "name"
+        assert cold.matched_system_id == 13
+        assert cold.confidence == 1.0
+        assert mock_client.search_game.call_count == 2
+
+        mock_client.reset_mock()
+        mock_client.has_credentials.return_value = True
+        with patch.object(service, "_get_client", return_value=mock_client):
+            warm = service.lookup(system=system, game_name="Target Game")
+
+        assert warm is not None
+        assert warm.screenscraper_id == cold.screenscraper_id
+        assert warm.match_type == cold.match_type == "name"
+        assert warm.matched_system_id == cold.matched_system_id == 13
+        assert warm.confidence == cold.confidence == 1.0
         mock_client.search_game.assert_not_called()
 
     def test_lookup_only_with_game_name(self, mock_system):
@@ -651,42 +678,18 @@ class TestScreenScraperApiRobustness:
         ):
             yield ScreenScraperClient()
 
-    def test_make_request_handles_empty_json(self, client):
-        """_make_request returns empty dict when API returns empty body / JSONDecodeError."""
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.side_effect = requests.exceptions.JSONDecodeError(
-            "Expecting value", "", 0
-        )
-
-        with patch("requests.get", return_value=mock_resp):
-            data = client._make_request("jeuRecherche", {"recherche": "Nonexistent"})
-            assert data == {}
-
-    def test_make_request_handles_invalid_json_value_error(self, client):
-        """_make_request returns empty dict on ValueError during JSON decoding."""
-        import json
-
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.side_effect = json.JSONDecodeError("Extra data", "", 0)
-
-        with patch("requests.get", return_value=mock_resp):
-            data = client._make_request("jeuRecherche", {"recherche": "Nonexistent"})
-            assert data == {}
-
     def test_search_game_handles_empty_response(self, client):
         """search_game returns empty list when API returns empty dict."""
         with patch.object(client, "_make_request", return_value={}):
             results = client.search_game("Nonexistent", 12)
             assert results == []
 
-    def test_search_game_handles_unexpected_exception(self, client):
-        """search_game catches unexpected exceptions and returns empty list."""
+    def test_search_game_propagates_connection_failure(self, client):
+        """An outage must reach the worker retry handler, not become a miss."""
         with patch.object(
             client,
             "_make_request",
             side_effect=requests.exceptions.ConnectionError("Connection failed"),
         ):
-            results = client.search_game("Any Game", 12)
-            assert results == []
+            with pytest.raises(requests.exceptions.ConnectionError):
+                client.search_game("Any Game", 12)

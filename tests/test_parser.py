@@ -359,21 +359,21 @@ class TestEnhancedRomFilenameParser:
         assert result["rom_number"] == "089"
 
     def test_hardware_prefix_pinball(self):
-        """Hardware prefix stripped from name and preserved in tags."""
+        """Hardware revisions preserve VS game identity and original tags."""
         result = parse_rom_filename("2C03 Pinball (VS).nes")
-        assert result["name"] == "Pinball"
+        assert result["name"] == "Vs. Pinball"
         assert "2C03" in result["tags"]
 
     def test_hardware_prefix_gradius_subrevision(self):
-        """Hardware prefix with subrevision stripped from name and preserved in tags."""
+        """A VS PPU subrevision must not become the home-console game."""
         result = parse_rom_filename("2C04-01 Gradius.nes")
-        assert result["name"] == "Gradius"
+        assert result["name"] == "Vs. Gradius"
         assert "2C04-01" in result["tags"]
 
     def test_vs_prefix_duck_hunt(self):
-        """Leading VS. prefix stripped from name."""
+        """VS identity survives filename cleanup."""
         result = parse_rom_filename("VS. Duck Hunt (VS).nes")
-        assert result["name"] == "Duck Hunt"
+        assert result["name"] == "Vs. Duck Hunt"
         assert any(t in result["tags"] for t in ("VS.", "VS"))
 
     def test_inverted_article_berenstain_bears(self):
@@ -447,6 +447,6 @@ class TestEnhancedRomFilenameParser:
     def test_combined_prefix_and_suffix(self):
         """Filename with both prefix and suffix handled correctly."""
         result = parse_rom_filename("VS. Duck Hunt Hack.nes")
-        assert result["name"] == "Duck Hunt"
+        assert result["name"] == "Vs. Duck Hunt"
         assert "VS." in result["tags"]
         assert "Hack" in result["tags"]

@@ -3,6 +3,8 @@
 import logging
 from typing import TYPE_CHECKING, Optional
 
+import requests
+
 from .base import LookupResult, LookupService
 from .hasheous import HasheousLookupService, lookup_hasheous_cache
 from .screenscraper import ScreenScraperLookupService
@@ -44,6 +46,8 @@ def lookup_rom(
     Returns:
         First successful LookupResult, or None
     """
+    from library.metadata.screenscraper import ScreenScraperRateLimited
+
     # Always check Hasheous cache first (regardless of use_hasheous flag)
     # This ensures cached results from previous lookups are always used
     cached_result = lookup_hasheous_cache(system, crc32=crc32, sha1=sha1, md5=md5)
@@ -83,7 +87,11 @@ def lookup_rom(
                     result.region or "no region",
                 )
                 return result
+        except (requests.RequestException, ScreenScraperRateLimited):
+            raise
         except Exception as e:
+            if service.name == "screenscraper":
+                raise
             logger.warning("Service %s lookup failed: %s", service.name, e)
             continue
 
