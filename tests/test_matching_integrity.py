@@ -223,3 +223,37 @@ def test_expired_negative_hash_is_retried_but_positive_hash_is_retained():
         get_client.return_value.search_by_crc.side_effect = AssertionError("Positive hash should remain cached")
         cached = service._try_crc("dd61ae6b", 26)
         assert cached is not None and cached.screenscraper_id == 544232
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("path", ["/roms/Hook (USA).zip"])
+def test_crc_match_on_foreign_system_is_rejected(path):
+    service = ScreenScraperLookupService()
+    with patch.object(service, "_get_client") as get_client:
+        get_client.return_value.has_credentials.return_value = True
+        # SS answers the CRC with a Sega CD entry (system 148), not arcade.
+        get_client.return_value.search_by_crc.return_value = {
+            "id": "41707", "name": "Hook", "system_id": 148,
+        }
+        assert service.lookup(
+            system=System(screenscraper_ids=[75, 158]),
+            crc32="deadbeef",
+            file_path=path,
+        ) is None
+
+
+@pytest.mark.django_db
+def test_stem_fallback_rejects_different_game_identity():
+    service = ScreenScraperLookupService()
+    with (
+        patch.object(service, "_get_client") as get_client,
+        patch(
+            "library.metadata.screenscraper._get_search_variants",
+            return_value=["Odd Mario"],
+        ),
+    ):
+        # Stem search finds plain "Super Mario Bros." — a different game.
+        get_client.return_value.search_game.return_value = [
+            {"id": "1245", "name": "Super Mario Bros.", "all_names": ["Super Mario Bros."], "system_id": 3}
+        ]
+        assert service._try_name_search("Odd Mario", 3) is None

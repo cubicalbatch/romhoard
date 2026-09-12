@@ -537,19 +537,44 @@ class ScreenScraperLookupService(LookupService):
             return None
 
         # Try all system IDs in order for exact matches (CRC, romnom)
+        allowed_system_ids = {str(sid) for sid in system.all_screenscraper_ids}
+
+        def _system_ok(result: LookupResult) -> bool:
+            """Reject matches ScreenScraper attributed to a different system."""
+            return (
+                result.matched_system_id is None
+                or str(result.matched_system_id) in allowed_system_ids
+            )
+
         for system_id in system.all_screenscraper_ids:
             # Phase 1: CRC lookup (skip for arcade systems)
             if crc32 and not system.archive_as_rom:
                 result = self._try_crc(crc32, system_id)
-                if result:
+                if result and _system_ok(result):
                     return result
+                if result:
+                    logger.warning(
+                        "CRC match %s for '%s' belongs to system %s, not %s; rejected",
+                        result.screenscraper_id,
+                        game_name or file_path,
+                        result.matched_system_id,
+                        sorted(allowed_system_ids),
+                    )
 
             # Phase 2: Romnom lookup (filename-based fallback)
             if file_path:
                 romnom = _extract_romnom(file_path, system.archive_as_rom)
                 result = self._try_romnom(romnom, system_id)
-                if result:
+                if result and _system_ok(result):
                     return result
+                if result:
+                    logger.warning(
+                        "Romnom match %s for '%s' belongs to system %s, not %s; rejected",
+                        result.screenscraper_id,
+                        game_name or file_path,
+                        result.matched_system_id,
+                        sorted(allowed_system_ids),
+                    )
 
         # Phase 3: Name search (fuzzy matching, last resort)
         # For name search, collect best match across ALL system IDs
@@ -580,7 +605,11 @@ class ScreenScraperLookupService(LookupService):
                         stem_best_result = result
                         stem_best_confidence = result.confidence
 
-                if stem_best_result:
+                if stem_best_result and (
+                    not game_name
+                    or stem_best_confidence >= 0.85
+                    or calculate_match_score(game_name, stem_best_result.name) >= 0.6
+                ):
                     return stem_best_result
 
         return None
