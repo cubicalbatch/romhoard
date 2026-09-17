@@ -1,14 +1,12 @@
-"""Management command to unmatch and rematch library games through the ScreenScraper caching proxy."""
+"""Management command to unmatch and rematch library games against ScreenScraper."""
 
 import logging
-import os
 import sys
 import threading
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import requests
 from django.core.management.base import BaseCommand, CommandError
@@ -32,23 +30,9 @@ from library.models import Game, GameImage, ScreenScraperLookupCache, System
 
 logger = logging.getLogger(__name__)
 
-PROXY_URL = "http://127.0.0.1:8765/api2/"
-
-
-def check_proxy_alive(proxy_url: str = PROXY_URL) -> bool:
-    """Verify that the local caching proxy is running and responding."""
-    try:
-        parts = urlsplit(proxy_url)
-        base = f"{parts.scheme}://{parts.netloc}"
-        resp = requests.get(f"{base}/api2/jeuInfos.php", timeout=5)
-        # Proxy responds 400 for missing params, or 200/404 -- anything other than connection error
-        return resp.status_code in (200, 400, 404)
-    except requests.RequestException:
-        return False
-
 
 class Command(BaseCommand):
-    help = "Unmatch all (or system-specific) games and rematch using the local caching proxy."
+    help = "Unmatch all (or system-specific) games and rematch using ScreenScraper metadata."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -103,23 +87,13 @@ class Command(BaseCommand):
         dry_run = options.get("dry_run", False)
         pending_only = options.get("pending_only", False)
 
-        # 1. Verify proxy is active
-        self.stdout.write("Checking local ScreenScraper caching proxy...")
-        if not check_proxy_alive():
-            raise CommandError(
-                f"ScreenScraper caching proxy is NOT reachable at {PROXY_URL}.\n"
-                "Please start it with: uv run python scripts/screenscraper_proxy.py"
-            )
-        self.stdout.write(self.style.SUCCESS(f"Proxy reachable at {PROXY_URL}"))
-
-        # Enforce proxy in environment
-        os.environ["SCREENSCRAPER_API_BASE"] = PROXY_URL
-
-        # Verify ScreenScraper credentials
+        # Verify ScreenScraper credentials. API base defaults to the official
+        # ScreenScraper endpoint; SCREENSCRAPER_API_BASE overrides it (e.g. to
+        # point at the local development caching proxy).
         if not screenscraper_available():
             raise CommandError("ScreenScraper credentials are not configured in settings or environment.")
 
-        # 2. Collect Baseline
+        # 1. Collect Baseline
         self.stdout.write("\nCollecting library baseline statistics...")
         baseline = self._collect_stats(system_slug)
         self._print_stats_table("BASELINE MATCHING RATES", baseline)
@@ -156,7 +130,7 @@ class Command(BaseCommand):
             self._print_dry_run_report(baseline, results)
             return
 
-        # 3. Unmatch Phase
+        # 2. Unmatch Phase
         if not skip_unmatch and not pending_only:
             self.stdout.write(self.style.WARNING("\n=== UNMATCHING GAMES ==="))
             self._unmatch_games(system_slug, preserve_romless=preserve_romless)
@@ -170,13 +144,13 @@ class Command(BaseCommand):
         elif pending_only:
             self.stdout.write(self.style.WARNING("\nPending-only mode: skipping unmatch to preserve existing matched/failed games."))
 
-        # 4. Rematch Phase
+        # 3. Rematch Phase
         self.stdout.write(self.style.HTTP_INFO(f"\n=== REMATCHING GAMES (Workers: {workers}) ==="))
         start_time = time.time()
         results = self._run_matching_pass(games_qs, workers, dry_run=False)
         duration = time.time() - start_time
 
-        # 5. Final Stats & Evaluation
+        # 4. Final Stats & Evaluation
         self.stdout.write(self.style.SUCCESS(f"\nRematch completed in {duration:.1f}s"))
         final_stats = self._collect_stats(system_slug)
         final_images_count = GameImage.objects.count()

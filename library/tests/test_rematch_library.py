@@ -6,11 +6,10 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 import requests
 from django.core.management import call_command
-from django.core.management.base import CommandError
 from django.utils import timezone
 
 from library.lookup.base import LookupResult
-from library.management.commands.rematch_library import Command, check_proxy_alive
+from library.management.commands.rematch_library import Command
 from library.metadata.screenscraper import ScreenScraperClient
 from library.models import Game, GameImage, ROM, ROMSet, System
 
@@ -51,33 +50,10 @@ def test_setup(transactional_db, tmp_path, settings):
     return {"system": sys, "game": game, "rom": rom, "image": img}
 
 
-def test_check_proxy_alive_success():
-    """Verify check_proxy_alive returns True on 200/400/404."""
-    with patch("requests.get") as mock_get:
-        mock_get.return_value.status_code = 400
-        assert check_proxy_alive("http://127.0.0.1:8765/api2/") is True
-
-
-def test_check_proxy_alive_failure():
-    """Verify check_proxy_alive returns False on network failure."""
-    import requests
-
-    with patch("requests.get", side_effect=requests.RequestException):
-        assert check_proxy_alive("http://127.0.0.1:8765/api2/") is False
-
-
-def test_rematch_aborts_if_proxy_down(test_setup):
-    """Verify command raises CommandError if proxy is not reachable."""
-    with patch("library.management.commands.rematch_library.check_proxy_alive", return_value=False):
-        with pytest.raises(CommandError, match="ScreenScraper caching proxy is NOT reachable"):
-            call_command("rematch_library")
-
-
 def test_rematch_baseline_only(test_setup):
     """Verify --baseline-only displays stats and does not modify the database."""
     out = StringIO()
-    with patch("library.management.commands.rematch_library.check_proxy_alive", return_value=True), \
-         patch("library.management.commands.rematch_library.screenscraper_available", return_value=True):
+    with patch("library.management.commands.rematch_library.screenscraper_available", return_value=True):
         call_command("rematch_library", "--baseline-only", stdout=out)
 
     output = out.getvalue()
@@ -96,8 +72,7 @@ def test_rematch_dry_run(test_setup):
         match_type="name",
         matched_system_id=80,
     )
-    with patch("library.management.commands.rematch_library.check_proxy_alive", return_value=True), \
-         patch("library.management.commands.rematch_library.screenscraper_available", return_value=True), \
+    with patch("library.management.commands.rematch_library.screenscraper_available", return_value=True), \
          patch("library.management.commands.rematch_library._identify_game", return_value=fake_result):
         call_command("rematch_library", "--system", "channelf", "--dry-run", stdout=out)
 
@@ -125,8 +100,7 @@ def test_rematch_unmatches_and_rematches(test_setup, tmp_path):
         "description": "Alien battle",
     }
 
-    with patch("library.management.commands.rematch_library.check_proxy_alive", return_value=True), \
-         patch("library.management.commands.rematch_library.screenscraper_available", return_value=True), \
+    with patch("library.management.commands.rematch_library.screenscraper_available", return_value=True), \
          patch("library.management.commands.rematch_library._identify_game", return_value=fake_result), \
          patch.object(ScreenScraperClient, "get_game_info", return_value=fake_info):
         call_command("rematch_library", "--system", "channelf", "--report", str(report_file), stdout=out)
@@ -182,7 +156,6 @@ class TestRematchPendingOnly:
 
         cmd = Command()
         with (
-            patch("library.management.commands.rematch_library.check_proxy_alive", return_value=True),
             patch("library.management.commands.rematch_library.screenscraper_available", return_value=True),
             patch.object(cmd, "_unmatch_games") as mock_unmatch,
             patch.object(cmd, "_run_matching_pass") as mock_run_matching,
@@ -373,10 +346,6 @@ class TestRematchIdentityFromRomFilename:
             return {"id": str(game_id), "name": f"Game {game_id}", "description": ""}
 
         with (
-            patch(
-                "library.management.commands.rematch_library.check_proxy_alive",
-                return_value=True,
-            ),
             patch(
                 "library.management.commands.rematch_library.screenscraper_available",
                 return_value=True,
