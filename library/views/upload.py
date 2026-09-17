@@ -250,7 +250,7 @@ def resolve_unidentified(request, job_id: int):
             shutil.move(temp_path, dest_path)
 
             # Parse filename and compute hash
-            parsed = parse_rom_filename(filename)
+            parsed = parse_rom_filename(filename, arcade=system.archive_as_rom)
             file_size = os.path.getsize(dest_path)
             crc32 = compute_file_crc32(dest_path)
 

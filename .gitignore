@@ -20,7 +20,7 @@ static/css/tailwind.css
 
 # Django
 *.log
-db.sqlite3
+*.sqlite3
 data/
 staticfiles/
 
@@ -65,3 +65,4 @@ Thumbs.db
 .ruff_cache/
 .playwright-mcp/
 matching_improvements.md
+MATCHING_PROGRESS.md

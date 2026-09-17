@@ -591,28 +591,28 @@ def filter_rom_files_in_archive(
     return valid
 
 
-def should_expand_archive(rom_files: list[archive_utils.ArchiveInfo]) -> bool:
-    """
-    Determine if archive contains multiple different games.
+def should_expand_archive(
+    rom_files: list[archive_utils.ArchiveInfo], arcade: bool = False
+) -> bool:
+    """Determine whether an archive should be expanded into individual games.
 
-    Compares parsed game names from filenames. If all ROMs share the same
-    game name, they're treated as a single game (e.g., multi-disc).
+    Archives containing multiple ROMs with different parsed game names are
+    expanded; files sharing one game name are treated as a single game
+    (e.g., multi-disc).
 
     Args:
         rom_files: List of ArchiveInfo objects for ROM files
+        arcade: Passed through to parse_rom_filename (VS-cabinet synthesis)
 
     Returns:
-        True if archive should be expanded (multiple unique game names)
+        True if archive should be expanded (multiple unique game names),
         False if single game (keep archive as one ROM)
     """
-    if len(rom_files) <= 1:
-        return False
-
     game_names = set()
     for item in rom_files:
         # Parse just the filename, not the full path within archive
         filename = Path(item.name).name
-        parsed = parse_rom_filename(filename)
+        parsed = parse_rom_filename(filename, arcade=arcade)
         game_names.add(parsed["name"].lower().strip())
 
     # Multiple unique names = expand archive
@@ -638,7 +638,7 @@ def create_rom_from_archive_as_rom(
         return results
 
     filename = Path(archive_path).name
-    parsed = parse_rom_filename(filename)
+    parsed = parse_rom_filename(filename, arcade=system.archive_as_rom)
 
     try:
         file_size = os.path.getsize(archive_path)
@@ -760,7 +760,7 @@ def create_archived_rom(
     else:
         internal_filename = Path(path_in_archive).name
 
-    parsed = parse_rom_filename(internal_filename)
+    parsed = parse_rom_filename(internal_filename, arcade=system.archive_as_rom)
 
     # Determine display filename
     if display_filename:
@@ -1130,7 +1130,7 @@ def scan_directory(
 
             # Parse filename
             try:
-                parsed = parse_rom_filename(filename)
+                parsed = parse_rom_filename(filename, arcade=system.archive_as_rom)
             except Exception as e:
                 logger.error("Parse error for %s: %s", filename, e)
                 errors.append(f"Parse error for {filename}: {e}")

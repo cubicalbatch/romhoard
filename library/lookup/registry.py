@@ -30,6 +30,7 @@ def lookup_rom(
     game_name: str = "",
     services: list[LookupService] | None = None,
     use_hasheous: bool = True,
+    allow_name_search: bool = True,
 ) -> Optional[LookupResult]:
     """Look up ROM using registered services in order.
 
@@ -42,6 +43,8 @@ def lookup_rom(
         game_name: Game name for name-based search (last resort fallback)
         services: Override service list (for testing)
         use_hasheous: Enable/disable Hasheous API calls (cache always checked)
+        allow_name_search: Forwarded to services; False restricts them to
+            exact CRC/romnom matching (no name-based search)
 
     Returns:
         First successful LookupResult, or None
@@ -77,6 +80,7 @@ def lookup_rom(
                 md5=md5,
                 file_path=file_path,
                 game_name=game_name,
+                allow_name_search=allow_name_search,
             )
             if result:
                 logger.info(

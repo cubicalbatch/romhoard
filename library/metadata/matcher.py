@@ -5,6 +5,7 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, Optional
 
 import requests
 
@@ -21,6 +22,10 @@ from library.metadata.screenscraper import (
 from library.parser import parse_rom_filename
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from library.lookup.base import LookupResult
+    from library.models import ROM
 
 
 def _get_image_storage_path() -> str:
@@ -152,32 +157,152 @@ def save_metadata_cache(game: Game, metadata: dict) -> None:
         logger.warning(f"Failed to save metadata cache for '{game.name}': {e}")
 
 
-def _get_rom_for_lookup(game: Game):
-    """Get the best ROM for lookup from a game's ROM sets.
+def _get_rom_for_lookup(game: Game) -> list["ROM"]:
+    """Get the game's ROMs ordered for lookup, CRC-bearing ones first.
 
-    Prefers ROMs with CRC32 hashes, but will return any ROM if none have
-    CRC32 (needed for CHD files which don't have CRC computed).
+    P0-C: multi-ROM games must try every ROM — the first CRC-bearing ROM can
+    be a known no-match while a sibling disc matches.
 
     Args:
         game: Game instance
 
     Returns:
-        ROM instance or None if no ROMs found
+        ROM instances, CRC-bearing first (stable order otherwise); empty list
+        if the game has no ROMs
     """
     from library.models import ROM
 
-    # First try to find a ROM with CRC32
-    rom_with_crc = (
-        ROM.objects.filter(rom_set__game=game)
-        .exclude(crc32="")
-        .exclude(crc32__isnull=True)
-        .first()
+    roms = list(
+        ROM.objects.filter(rom_set__game=game).order_by("disc", "file_name")
     )
-    if rom_with_crc:
-        return rom_with_crc
+    return sorted(roms, key=lambda rom: 0 if rom.crc32 else 1)
 
-    # Fall back to any ROM (for CHD files without CRC)
-    return ROM.objects.filter(rom_set__game=game).first()
+
+def _rom_lookup_file_path(game: Game, rom: "ROM") -> str:
+    """Build the file_path used for romnom lookup of one ROM."""
+    if game.system.archive_as_rom and rom.is_archived:
+        return rom.archive_path
+    return rom.file_path
+
+
+def _rom_lookup_identity(game: Game, roms: list["ROM"]) -> str:
+    """Build the name-search identity from the ROM filename when possible.
+
+    P5: DB names can be poisoned by suffixes and list prefixes; the parsed
+    ROM filename is the trustworthy identity. Translation markers are not
+    part of the ScreenScraper title and are stripped.
+    """
+    from library.lookup.screenscraper import _extract_romnom
+    from library.metadata.screenscraper import _strip_translation_markers
+
+    if not roms:
+        return game.name
+    stem = parse_rom_filename(
+        _extract_romnom(
+            _rom_lookup_file_path(game, roms[0]), game.system.archive_as_rom
+        )
+    )["name"].strip()
+    stem = _strip_translation_markers(stem)
+    return stem or game.name
+
+
+def _lookup_romless_by_name(client: "ScreenScraperClient", game: Game):
+    """P4: unconstrained exact-title passes over search query variants for
+    games with zero ROMs.
+
+    Each exact query variant from `_get_search_variants` is tried in order;
+    a result is accepted only on normalized-title equality after removing
+    spaces introduced by punctuation. Placeholder-prefixed entries are
+    rejected by the clean-names rule. Cross-system attribution is fine:
+    matched_system_id only steers media selection. ROM-backed games never
+    take this path.
+    """
+    from library.lookup.base import LookupResult
+    from library.lookup.screenscraper import _clean_names, normalize_name
+    from library.metadata.screenscraper import _get_search_variants
+
+    norm_identity = normalize_name(game.name).replace(" ", "")
+    if not norm_identity:
+        return None
+    for variant in _get_search_variants(game.name):
+        for entry in client.search_game(variant):
+            if not entry.get("id"):
+                continue
+            names = _clean_names(
+                [entry.get("name", ""), *entry.get("all_names", [])]
+            )
+            if not any(
+                normalize_name(n).replace(" ", "") == norm_identity for n in names
+            ):
+                continue
+            result = {
+                "id": entry["id"],
+                "name": entry.get("name", ""),
+                "system_id": entry.get("system_id"),
+                "confidence": 1.0,
+            }
+            logger.info(
+                "romless exact-title match '%s' -> '%s' (ID: %s, system %s)",
+                game.name,
+                result["name"],
+                result["id"],
+                result["system_id"],
+            )
+            return LookupResult(
+                name=result["name"],
+                region="",
+                revision="",
+                tags=[],
+                source="screenscraper",
+                confidence=1.0,
+                raw_name=result["name"],
+                screenscraper_id=result["id"],
+                match_type="name_romless",
+                matched_system_id=result["system_id"],
+            )
+    return None
+
+
+def _identify_game(
+    game: Game, client: "ScreenScraperClient"
+) -> Optional["LookupResult"]:
+    """Identify a game: exact per-ROM lookups first, one name-only fallback last.
+
+    Shared by fetch_metadata_for_game and rematch_library so both use the
+    identical filename-derived identity. Every ROM's exact evidence (CRC,
+    romnom) is exhausted before any fuzzy name search, and the single name
+    search uses the parsed ROM filename rather than the DB name.
+
+    Args:
+        game: Game instance to identify
+        client: ScreenScraperClient used for the ROM-less exact-title pass
+
+    Returns:
+        LookupResult if identified, None otherwise
+    """
+    from library.lookup import lookup_rom
+
+    roms = _get_rom_for_lookup(game)
+    for rom in roms:
+        result = lookup_rom(
+            system=game.system,
+            crc32=rom.crc32,
+            file_path=_rom_lookup_file_path(game, rom),
+            allow_name_search=False,
+            use_hasheous=False,  # Hasheous already tried during scan
+        )
+        if result and result.screenscraper_id:
+            return result
+    # P4: a game with zero ROMs gets one unconstrained exact-title pass.
+    if not roms:
+        return _lookup_romless_by_name(client, game)
+    # All exact evidence failed: one name-only lookup from the ROM stem.
+    return lookup_rom(
+        system=game.system,
+        game_name=_rom_lookup_identity(game, roms),
+        allow_name_search=True,
+        use_hasheous=False,
+    )
 
 
 def fetch_metadata_for_game(game: Game) -> dict | None:
@@ -203,8 +328,6 @@ def fetch_metadata_for_game(game: Game) -> dict | None:
     Returns:
         Dict with metadata if found, None otherwise
     """
-    from library.lookup import lookup_rom
-
     # Get all system IDs to try
     system_ids = game.system.all_screenscraper_ids
     if not system_ids:
@@ -235,29 +358,19 @@ def fetch_metadata_for_game(game: Game) -> dict | None:
             save_metadata_cache(game, metadata)
             return metadata
 
-        # Check cache for non-manual ID cases
+        # Cached metadata came from a successful earlier ScreenScraper lookup.
+        # Backfill its ID so cache hits count as matched and need no API retry.
         cached = get_cached_metadata(game)
         if cached and cached.get("id"):
+            cached_id = int(cached["id"])
+            if game.screenscraper_id != cached_id:
+                game.screenscraper_id = cached_id
+                game.save(update_fields=["screenscraper_id"])
             return cached
 
-        # Try to identify the game via unified lookup chain
-        rom = _get_rom_for_lookup(game)
-
-        # Build file_path for romnom lookup
-        file_path = ""
-        if rom:
-            if game.system.archive_as_rom and rom.is_archived:
-                file_path = rom.archive_path
-            else:
-                file_path = rom.file_path
-
-        result = lookup_rom(
-            system=game.system,
-            crc32=rom.crc32 if rom else "",
-            file_path=file_path,
-            game_name=game.name,  # For name-based fallback
-            use_hasheous=False,  # Hasheous already tried during scan
-        )
+        # Identify via the shared chain: exact evidence for every ROM first,
+        # then one name-only pass from the ROM stem (also used by rematch).
+        result = _identify_game(game, client)
 
         if not result or not result.screenscraper_id:
             logger.info(f"No ScreenScraper match found for '{game.name}'")
@@ -294,10 +407,6 @@ def fetch_metadata_for_game(game: Game) -> dict | None:
     except Exception as e:
         logger.error(f"Error fetching metadata for game '{game.name}': {e}")
         raise
-
-
-# Backward compatibility alias
-match_game = fetch_metadata_for_game
 
 
 def apply_metadata_to_game(game: Game, metadata: dict) -> bool:

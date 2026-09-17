@@ -26,10 +26,10 @@ class TestSearchQueryVariants:
         assert "Portopia Serial Murder Incident" in variants
 
     def test_date_prefix_non_date_not_stripped(self):
-        """Titles starting with a 4-digit number like 1942 are not stripped."""
+        """Titles starting with a 4-digit number like 1942 are not stripped
+        by the date/rank prefix machinery; the base stays first."""
         variants = _get_search_variants("1942 Joint Strike")
-        assert "1942 Joint Strike" in variants
-        assert "Joint Strike" not in variants
+        assert variants[0] == "1942 Joint Strike"
 
     # b) Numbered rank prefix removal
     def test_numbered_rank_prefix_removal(self):
@@ -186,14 +186,17 @@ class TestSearchQueryVariants:
         variants = _get_search_variants("1984-11-30 Excitebike PAL-to-NTSC Patched")
         assert len(variants) == len(set(variants))
 
-    def test_long_title_leading_words_never_single_word(self):
-        """4+ word titles extract leading 2-3 words, never a single word."""
+    def test_long_title_leading_words_single_word_relaxed(self):
+        """4+ word titles extract leading 2-3 words; P2 #3 relaxes the old
+        'never a single word' rule for significant tokens of 5+ chars."""
         variants_32x = _get_search_variants("32X Color by mic")
         assert "32X" not in variants_32x
         assert "32X Color" in variants_32x
 
         variants_sonic = _get_search_variants("Sonic The Hedgehog 32X Pure Port")
-        assert "Sonic" not in variants_sonic
+        assert "Sonic" in variants_sonic  # 5-char significant leading token
+        assert "Pure" not in variants_sonic  # short trailing tokens stay out
+        assert "Port" not in variants_sonic
         assert "32X" not in variants_sonic
         assert "Sonic The Hedgehog" in variants_sonic
 
@@ -286,7 +289,13 @@ class TestRomFilenameFallbackInLookup:
         mock_client.search_by_romnom.return_value = None
         mock_client.search_game.return_value = []
 
-        with patch.object(service, "_get_client", return_value=mock_client):
+        with (
+            patch.object(service, "_get_client", return_value=mock_client),
+            patch(
+                "library.lookup.screenscraper.expand_system_ids",
+                return_value=[3],
+            ),
+        ):
             result = service.lookup(
                 system=mock_system,
                 crc32="",
@@ -317,6 +326,91 @@ class TestRomFilenameFallbackInLookup:
                 file_path="/roms/nes/Musashi no Bouken (Japan).nes",
                 game_name="",
             )
-
         assert result is not None
         assert result.screenscraper_id == 18819
+
+
+class TestAuditVariantGaps:
+    """P2: one test per audit-measured variant gap, naming the live case."""
+
+    def test_hyphen_kept_variant(self):
+        """SS tokenizes hyphenated names as one token (Coca-Cola, Kuni-chan);
+        the joined form is matched case-insensitively by SS search."""
+        assert "Coca-Cola Kid" in _get_search_variants("Coca Cola Kid")
+        variants = _get_search_variants("Kuni Chan no Game Tengoku")
+        assert any(
+            v.lower() == "kuni-chan no game tengoku" for v in variants
+        ), variants
+
+    def test_leading_significant_tokens_for_dash_heavy_titles(self):
+        """SS AND-search breaks on dash-separated multi-token titles."""
+        variants = _get_search_variants("Doraemon Nora No Suke No Yabou")
+        assert "Doraemon Nora" in variants
+        assert "Doraemon" in variants
+
+    def test_single_leading_significant_word(self):
+        """One-word truncation is allowed for significant leading tokens."""
+        assert "Ristar" in _get_search_variants("Ristar the Shooting Star")
+        assert "Jeopardy!" in _get_search_variants("Jeopardy! Sports Edition")
+
+    def test_lone_letter_before_dash_dropped(self):
+        """SS keeps mid-query lone letter tokens; drop ours (SD Gundam B)."""
+        variants = _get_search_variants("SD Gundam Generation B - Gryps Senki")
+        assert "SD Gundam Generation - Gryps Senki" in variants
+
+    def test_joined_token_variant_two_words(self):
+        """pet 247761 'Blackjack' is only reachable via the joined query."""
+        assert "BlackJack" in _get_search_variants("Black Jack")
+
+    def test_space_collapsed_variant_two_words(self):
+        """arduboy 429659 'CastleBoy' only answers to the compact form."""
+        assert "CastleBoy" in _get_search_variants("Castle Boy")
+
+    def test_digraph_folds_both_directions(self):
+        """SS folds ASCII digraphs: Maerchen -> Marchen and back."""
+        assert "Marchen Maze" in _get_search_variants("Maerchen Maze")
+        assert "Maerchen Maze" in _get_search_variants("Märchen Maze")
+
+    def test_digit_boundary_split(self):
+        """sms 65830 'Phantom 2040' never answers to the glued form."""
+        assert "Phantom 2040" in _get_search_variants("Phantom2040")
+
+    def test_possessive_strip(self):
+        """sms 65838 'Popeye Beach Volleyball' has no possessive form."""
+        assert "Popeye Beach Volleyball" in _get_search_variants(
+            "Popeye's Beach Volleyball"
+        )
+
+    def test_trailing_word_version_strip(self):
+        """vircon32 'Puzzle Land' hides behind the platform-Version suffix."""
+        assert "Puzzle Land" in _get_search_variants("Puzzle Land Vircon32 Version")
+
+    def test_modifier_strips(self):
+        """EverDrive / WIP / DEMO modifiers are not part of SS titles."""
+        assert "Lemmings" in _get_search_variants("Lemmings EverDrive-Patched")
+        assert "Buffy" in _get_search_variants("Buffy WIP")
+        assert "Radical" in _get_search_variants("Radical DEMO")
+
+    def test_acronym_expansion(self):
+        """Leading acronyms expand (SMB -> Super Mario Bros)."""
+        assert "Super Mario Bros Special" in _get_search_variants("SMB Special")
+
+    def test_leave_one_word_out_for_three_word_titles(self):
+        """naomi 227 strict-AND: exactly-3-word titles lose one word at a time."""
+        variants = _get_search_variants("Super Monkey Ball")
+        assert "Super Monkey" in variants
+        assert "Super Ball" in variants
+        assert "Monkey Ball" in variants
+
+    def test_translation_marker_strip(self):
+        """P5: fan-translation markers are not part of SS titles."""
+        assert "Bahamut Lagoon" in _get_search_variants(
+            "Bahamut Lagoon English Translation"
+        )
+        assert "Kiki Kaikai" in _get_search_variants("Kiki Kaikai Anime Version")
+        assert "EarthBound" in _get_search_variants("EarthBound T+Eng")
+
+    def test_variant_count_capped(self):
+        """Pathological titles stay bounded (~40 variants)."""
+        variants = _get_search_variants("Ae-Buer-Coe-Due-Eva-Fae-Gru-Ho-Id-Jeu Kai")
+        assert len(variants) <= 40

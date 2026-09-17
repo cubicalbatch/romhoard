@@ -364,11 +364,35 @@ class TestEnhancedRomFilenameParser:
         assert result["name"] == "Vs. Pinball"
         assert "2C03" in result["tags"]
 
+    def test_hardware_prefix_not_vs_off_arcade(self):
+        """P0-D: a 2C0x prefix alone is not a Vs. title off arcade systems."""
+        result = parse_rom_filename("2C03 Pinball.zip")
+        assert result["name"] == "Pinball"
+        assert "2C03" in result["tags"]
+
+    def test_hardware_prefix_vs_on_arcade(self):
+        """P0-D: on arcade systems the 2C0x prefix synthesizes the Vs. form."""
+        result = parse_rom_filename("2C03 Pinball.zip", arcade=True)
+        assert result["name"] == "Vs. Pinball"
+
+    def test_vs_forms_unconditional_across_modes(self):
+        """An explicit VS. prefix or (VS) tag synthesizes Vs. in both modes."""
+        for arcade in (False, True):
+            assert parse_rom_filename("VS. Duck Hunt.nes", arcade=arcade)[
+                "name"
+            ] == "Vs. Duck Hunt"
+            assert parse_rom_filename("Pinball (VS).nes", arcade=arcade)[
+                "name"
+            ] == "Vs. Pinball"
+
     def test_hardware_prefix_gradius_subrevision(self):
-        """A VS PPU subrevision must not become the home-console game."""
+        """A VS PPU subrevision is tagged; on arcade it becomes the Vs. game."""
         result = parse_rom_filename("2C04-01 Gradius.nes")
-        assert result["name"] == "Vs. Gradius"
+        assert result["name"] == "Gradius"
         assert "2C04-01" in result["tags"]
+        assert parse_rom_filename("2C04-01 Gradius.nes", arcade=True)[
+            "name"
+        ] == "Vs. Gradius"
 
     def test_vs_prefix_duck_hunt(self):
         """VS identity survives filename cleanup."""

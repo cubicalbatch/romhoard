@@ -1103,7 +1103,7 @@ def _process_uploaded_file(
         shutil.move(temp_path, dest_path)
 
         # Parse filename and compute hash
-        parsed = parse_rom_filename(filename)
+        parsed = parse_rom_filename(filename, arcade=system.archive_as_rom)
         file_size = os.path.getsize(dest_path)
         crc32 = compute_file_crc32(dest_path)
 
@@ -1176,7 +1176,7 @@ def _process_uploaded_archive(
             }
 
         # Check if archive contains multiple games
-        if should_expand_archive(rom_files):
+        if should_expand_archive(rom_files, arcade=system.archive_as_rom):
             # Multiple games - extract and process individually
             return _process_multi_game_archive(
                 temp_path,
@@ -1234,7 +1234,7 @@ def _process_single_game_archive(
         shutil.move(temp_path, dest_path)
 
         # Parse filename and compute hash of archive
-        parsed = parse_rom_filename(first_rom.name)
+        parsed = parse_rom_filename(first_rom.name, arcade=system.archive_as_rom)
         file_size = os.path.getsize(dest_path)
         archive_crc = compute_file_crc32(dest_path)
 
@@ -1415,7 +1415,7 @@ def _process_extracted_rom(
         shutil.move(temp_path, dest_path)
 
         # Parse filename
-        parsed = parse_rom_filename(filename)
+        parsed = parse_rom_filename(filename, arcade=system.archive_as_rom)
         file_size = os.path.getsize(dest_path)
 
         # Use pre-computed CRC32 if available, otherwise compute

@@ -121,12 +121,15 @@ def get_stem_and_extension(filename: str) -> tuple[str, str]:
     return Path(basename).stem, Path(basename).suffix.lower()
 
 
-def parse_rom_filename(filename: str) -> dict:
+def parse_rom_filename(filename: str, arcade: bool = False) -> dict:
     """
     Parse a ROM filename into components.
 
     Args:
         filename: The ROM filename (e.g., "Advance Wars (USA) (Rev 1).gba")
+        arcade: True when the file belongs to an arcade (archive_as_rom)
+            system; only then does a 2C0x hardware prefix synthesize a
+            "Vs." title
 
     Returns:
         dict with keys:
@@ -333,7 +336,13 @@ def parse_rom_filename(filename: str) -> dict:
             combined_tags.append(tag_item)
 
     # VS arcade conversions are distinct games, not disposable filename noise.
-    if hw_match or vs_match or any(tag.casefold().rstrip(".") == "vs" for tag in combined_tags):
+    # Hardware prefixes (2C0x) imply a VS cabinet only on arcade systems; an
+    # explicit "VS." prefix or "(VS)" tag always does (P0-D).
+    if (
+        (arcade and hw_match)
+        or vs_match
+        or any(tag.casefold().rstrip(".") == "vs" for tag in combined_tags)
+    ):
         base_name = f"Vs. {base_name}"
 
     result = {

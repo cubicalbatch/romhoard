@@ -297,7 +297,7 @@
       "extensions": [".ws", ".wsc"],
       "exclusive_extensions": [".ws", ".wsc"],
       "folder_names": ["WonderSwan", "WS", "WSC"],
-      "screenscraper_ids": [45]
+      "screenscraper_ids": [45, 46]
     },
     {
       "name": "Namco System 2",
@@ -348,7 +348,7 @@
       "exclusive_extensions": [],
       "folder_names": ["Sega Naomi", "NAOMI"],
       "archive_as_rom": true,
-      "screenscraper_ids": [56]
+      "screenscraper_ids": [56, 227, 230]
     },
     {
       "name": "PlayStation",
@@ -477,7 +477,7 @@
       "extensions": [".mx1", ".mx2", ".rom", ".dsk", ".fdi", ".cas", ".m3u"],
       "exclusive_extensions": [".mx1", ".mx2"],
       "folder_names": ["MSX", "MSX2", "Microsoft MSX"],
-      "screenscraper_ids": [113]
+      "screenscraper_ids": [113, 116, 117, 118]
     },
     {
       "name": "NEC PC Engine CD",

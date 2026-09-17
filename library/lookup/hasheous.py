@@ -300,6 +300,7 @@ class HasheousLookupService(LookupService):
         md5: str = "",
         file_path: str = "",
         game_name: str = "",
+        allow_name_search: bool = True,
     ) -> Optional[LookupResult]:
         """Look up ROM by hash using Hasheous API.
 
@@ -309,6 +310,8 @@ class HasheousLookupService(LookupService):
 
         Note: game_name is not used by Hasheous (hash-only lookup), but is
         accepted for interface compatibility.
+        Note: allow_name_search is accepted for interface compatibility but
+        ignored — Hasheous is a hash-only lookup service.
         """
         # Skip arcade systems - they use ScreenScraper romnom lookup instead
         # Individual file CRC lookups don't work for arcade because many ROM chips

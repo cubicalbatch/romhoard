@@ -40,6 +40,7 @@ class LookupService(ABC):
         md5: str = "",
         file_path: str = "",
         game_name: str = "",
+        allow_name_search: bool = True,
     ) -> Optional[LookupResult]:
         """Look up ROM by hash(es) for a given system.
 
@@ -50,6 +51,9 @@ class LookupService(ABC):
             md5: MD5 hash (32 hex chars)
             file_path: Path to ROM file (for arcade ROM handling)
             game_name: Game name for name-based search (last resort fallback)
+            allow_name_search: Whether name-based search may be used as a
+                fallback (False restricts the lookup to exact hash/romnom
+                evidence)
 
         Returns:
             LookupResult if found, None otherwise

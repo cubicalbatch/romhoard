@@ -109,8 +109,12 @@ class TestScreenScraperClient:
         """Test building URL with configured credentials (app id is built-in)."""
         client = ScreenScraperClient()
 
-        url = client._build_url("jeuRecherche", {"recherche": "test", "systemeid": 1})
+        # Explicitly neutralize any ambient dev proxy override.
+        with patch.dict(os.environ, {}, clear=False) as env:
+            env.pop("SCREENSCRAPER_API_BASE", None)
+            url = client._build_url("jeuRecherche", {"recherche": "test", "systemeid": 1})
 
+        assert url.startswith("https://api.screenscraper.fr/api2/jeuRecherche.php?")
         # App identifier is built-in, just verify user credentials
         assert "ssid=testuser" in url
         assert "sspassword=testpass" in url
@@ -121,6 +125,23 @@ class TestScreenScraperClient:
         # Should also have devid/devpassword from built-in app identifier
         assert "devid=" in url
         assert "devpassword=" in url
+
+    @patch("library.metadata.screenscraper.Setting.get", return_value=None)
+    @patch.dict(
+        os.environ,
+        {
+            "SCREENSCRAPER_USER": "testuser",
+            "SCREENSCRAPER_PASSWORD": "testpass",
+            "SCREENSCRAPER_API_BASE": "http://127.0.0.1:8765/api2",
+        },
+    )
+    def test_build_url_with_api_base_override(self, mock_setting_get):
+        """SCREENSCRAPER_API_BASE routes URLs to the local proxy, exactly one slash."""
+        client = ScreenScraperClient()
+
+        url = client._build_url("jeuRecherche", {"recherche": "test"})
+
+        assert url.startswith("http://127.0.0.1:8765/api2/jeuRecherche.php?")
 
     @patch("library.metadata.screenscraper.Setting.get", return_value=None)
     @patch.dict(
@@ -533,6 +554,38 @@ class TestMetadataCache:
         assert cached["id"] == 12345
         assert cached["description"] == "A test game"
         assert cached["_match_type"] == "crc32"
+
+    @patch("library.metadata.matcher.ScreenScraperClient")
+    def test_fetch_metadata_backfills_id_from_cache(self, mock_client_class, tmp_path):
+        """A successful disk cache restores the matching ID without an API call."""
+        from library.metadata.matcher import fetch_metadata_for_game, save_metadata_cache
+        from library.models import Game, Setting, System
+
+        system, _ = System.objects.update_or_create(
+            slug="test_cache_id",
+            defaults={
+                "name": "Test Cache ID System",
+                "extensions": [".cacheid"],
+                "folder_names": ["TestCacheId"],
+                "screenscraper_ids": [102],
+            },
+        )
+        game, _ = Game.objects.update_or_create(
+            name="Cached Match",
+            system=system,
+            defaults={"screenscraper_id": None},
+        )
+        game.screenscraper_id = None
+        game.save(update_fields=["screenscraper_id"])
+        Setting.objects.update_or_create(
+            key="metadata_image_path", defaults={"value": str(tmp_path)}
+        )
+        save_metadata_cache(game, {"id": 12345, "name": game.name})
+
+        assert fetch_metadata_for_game(game)["id"] == 12345
+        game.refresh_from_db()
+        assert game.screenscraper_id == 12345
+        mock_client_class.return_value.get_game_info.assert_not_called()
 
     def test_get_cached_metadata_uses_fallback_path_when_no_setting(self, tmp_path):
         """get_cached_metadata uses computed fallback path when no setting configured."""
@@ -1264,7 +1317,7 @@ class TestSearchNameNormalization:
         from library.metadata.screenscraper import _get_search_variants
 
         variants = _get_search_variants("The Legend of Zelda")
-        assert variants == ["Legend of Zelda"]
+        assert variants[0] == "Legend of Zelda"
 
     def test_get_search_variants_with_ampersand(self):
         """Test variant generation with ampersand."""
@@ -1273,7 +1326,6 @@ class TestSearchNameNormalization:
         variants = _get_search_variants("Chip & Dale")
         assert "Chip & Dale" in variants
         assert "Chip and Dale" in variants
-        assert len(variants) == 2
 
     def test_get_search_variants_with_dash(self):
         """Test variant generation with dash."""
@@ -1306,98 +1358,6 @@ class TestSearchNameNormalization:
         assert "Name" in variants  # subtitle extraction
         # Ensure no duplicates
         assert len(variants) == len(set(variants))
-
-    @pytest.mark.skip(reason="Test needs refactoring to work with lookup chain")
-    @pytest.mark.django_db
-    @patch("library.metadata.screenscraper.ScreenScraperClient")
-    def test_match_game_tries_variants_on_low_confidence(self, mock_client_class):
-        """Test that match_game tries variants when match confidence is too low."""
-        from library.metadata.matcher import match_game
-        from library.models import Game, System
-
-        # Create test system and game with ampersand
-        system, _ = System.objects.update_or_create(
-            slug="test_variant",
-            defaults={
-                "name": "Test System",
-                "extensions": [".test"],
-                "folder_names": ["TestVariant"],
-                "screenscraper_ids": [100],
-            },
-        )
-        game, _ = Game.objects.update_or_create(name="Game & Stuff", system=system)
-
-        # Mock client
-        mock_client = Mock()
-        mock_client_class.return_value = mock_client
-
-        # First search returns low-confidence results, second returns good match
-        mock_client.search_game.side_effect = [
-            # First variant "Game & Stuff" - returns results but low score
-            [{"id": 111, "name": "Different Game", "all_names": []}],
-            # Second variant "Game and Stuff" - good match
-            [{"id": 222, "name": "Game and Stuff", "all_names": ["Game and Stuff"]}],
-        ]
-
-        # Mock get_game_info to return metadata
-        mock_client.get_game_info.return_value = {
-            "id": 222,
-            "name": "Game and Stuff",
-            "description": "A test game",
-        }
-
-        result = match_game(game)
-
-        # Should have tried both variants
-        assert mock_client.search_game.call_count == 2
-        # Should have fetched metadata for the good match
-        assert mock_client.get_game_info.called
-        assert result is not None
-        assert result["id"] == 222
-
-    @pytest.mark.skip(reason="Test needs refactoring to work with lookup chain")
-    @pytest.mark.django_db
-    @patch("library.metadata.screenscraper.ScreenScraperClient")
-    def test_match_game_returns_first_good_match(self, mock_client_class):
-        """Test that match_game returns on first successful variant match."""
-        from library.metadata.matcher import match_game
-        from library.models import Game, System
-
-        # Create test system and game
-        system, _ = System.objects.update_or_create(
-            slug="test_variant2",
-            defaults={
-                "name": "Test System 2",
-                "extensions": [".test2"],
-                "folder_names": ["TestVariant2"],
-                "screenscraper_ids": [101],
-            },
-        )
-        game, _ = Game.objects.update_or_create(
-            name="The Legend of Zelda", system=system
-        )
-
-        # Mock client
-        mock_client = Mock()
-        mock_client_class.return_value = mock_client
-
-        # First search succeeds with good match (name normalized to remove "The")
-        mock_client.search_game.return_value = [
-            {"id": 333, "name": "Legend of Zelda", "all_names": ["Legend of Zelda"]}
-        ]
-
-        mock_client.get_game_info.return_value = {
-            "id": 333,
-            "name": "Legend of Zelda",
-            "description": "A classic game",
-        }
-
-        result = match_game(game)
-
-        # Should only call search once since first variant matched
-        assert mock_client.search_game.call_count == 1
-        assert result is not None
-        assert result["id"] == 333
 
     def test_roman_to_western_converts_standalone_numerals(self):
         """Test that standalone Roman numerals are converted to Western numbers."""
@@ -1475,3 +1435,380 @@ class TestSearchNameNormalization:
         variants = _get_search_variants("New Pokemon Snap")
         assert "New Pokemon Snap" in variants
         assert "New pokémon Snap" in variants
+
+
+def _make_game_with_roms(slug: str, name: str, rom_specs: list[dict]):
+    """Create a system, game, and ROMs for matcher tests."""
+    from library.models import Game, ROM, ROMSet, System
+
+    system, _ = System.objects.update_or_create(
+        slug=slug,
+        defaults={
+            "name": f"Test System {slug}",
+            "extensions": [".sms"],
+            "folder_names": [slug],
+            "screenscraper_ids": [12],
+        },
+    )
+    game, _ = Game.objects.update_or_create(name=name, system=system)
+    rom_set = ROMSet.objects.create(game=game, source_path="/roms/x")
+    for spec in rom_specs:
+        ROM.objects.create(
+            rom_set=rom_set,
+            file_path=spec["file_path"],
+            file_name=spec["file_path"].rsplit("/", 1)[-1],
+            file_size=1,
+            crc32=spec.get("crc32", ""),
+        )
+    return game
+
+
+@pytest.mark.django_db
+class TestMultiRomLookup:
+    """P0-C: the lookup chain must try every ROM, CRC-bearing ones first."""
+
+    @patch("library.metadata.matcher.ScreenScraperClient")
+    @patch(
+        "library.lookup.screenscraper.ScreenScraperLookupService._get_client"
+    )
+    def test_second_rom_used_when_first_crc_is_cached_no_match(
+        self, mock_get_client, mock_client_class, tmp_path
+    ):
+        """First ROM's CRC is a cached no-match; the second ROM's CRC hits."""
+        from library.models import Setting
+        from library.lookup.screenscraper import _save_to_cache
+        from library.metadata.matcher import fetch_metadata_for_game
+
+        Setting.objects.update_or_create(
+            key="metadata_image_path", defaults={"value": str(tmp_path)}
+        )
+        game = _make_game_with_roms(
+            "test_multirom",
+            "Dash Rascal",
+            [
+                {"file_path": "/roms/x/Dash Rascal (Disk 1).sms", "crc32": "aaaaaaaa"},
+                {"file_path": "/roms/x/Dash Rascal (Disk 2).sms", "crc32": "bbbbbbbb"},
+            ],
+        )
+        _save_to_cache("crc", "aaaaaaaa", 12, None)
+
+        mock_client = Mock()
+        mock_client.has_credentials.return_value = True
+
+        def crc_side_effect(crc, system_id):
+            if crc == "bbbbbbbb":
+                return {"id": 77, "name": "Dash Rascal", "system_id": 12}
+            return None
+
+        mock_client.search_by_crc.side_effect = crc_side_effect
+        mock_client.search_by_romnom.return_value = None
+        mock_client.search_game.return_value = []
+        mock_client.get_game_info.return_value = {"id": "77", "name": "Dash Rascal"}
+        mock_get_client.return_value = mock_client
+        mock_client_class.return_value = mock_client
+
+        metadata = fetch_metadata_for_game(game)
+
+        assert metadata is not None
+        assert metadata.get("id") == "77"
+        assert metadata.get("_match_type") == "crc32"
+        game.refresh_from_db()
+        assert game.screenscraper_id == 77
+
+    @patch("library.metadata.matcher.ScreenScraperClient")
+    @patch("library.lookup.lookup_rom")
+    def test_exact_second_rom_beats_first_rom_name_match(
+        self, mock_lookup, mock_client_class
+    ):
+        """Every ROM's exact evidence is exhausted before fuzzy name matching."""
+        from library.lookup.base import LookupResult
+        from library.metadata.matcher import fetch_metadata_for_game
+
+        game = _make_game_with_roms(
+            "test_multirom_precedence",
+            "Target Game",
+            [
+                {"file_path": "/roms/x/Target Game (Disk 1).sms", "crc32": "aaaaaaaa"},
+                {"file_path": "/roms/x/Target Game (Disk 2).sms", "crc32": "bbbbbbbb"},
+            ],
+        )
+        fuzzy = LookupResult(
+            name="Target Game Deluxe",
+            region="",
+            revision="",
+            tags=[],
+            source="screenscraper",
+            confidence=0.85,
+            raw_name="Target Game Deluxe",
+            screenscraper_id=111,
+            match_type="name",
+            matched_system_id=12,
+        )
+        exact = LookupResult(
+            name="Target Game",
+            region="",
+            revision="",
+            tags=[],
+            source="screenscraper",
+            confidence=1.0,
+            raw_name="Target Game",
+            screenscraper_id=222,
+            match_type="crc32",
+            matched_system_id=12,
+        )
+
+        def lookup_side_effect(**kwargs):
+            if kwargs["crc32"] == "bbbbbbbb":
+                return exact
+            if kwargs.get("game_name"):
+                return fuzzy
+            return None
+
+        mock_lookup.side_effect = lookup_side_effect
+        mock_client_class.return_value.get_game_info.return_value = {
+            "id": "222",
+            "name": "Target Game",
+        }
+
+        with (
+            patch("library.metadata.matcher.get_cached_metadata", return_value=None),
+            patch("library.metadata.matcher.save_metadata_cache"),
+        ):
+            metadata = fetch_metadata_for_game(game)
+
+        assert metadata is not None
+        assert metadata["id"] == "222"
+        assert [call.kwargs["crc32"] for call in mock_lookup.call_args_list[:2]] == [
+            "aaaaaaaa",
+            "bbbbbbbb",
+        ]
+
+
+@pytest.mark.django_db
+class TestRomlessNameSearch:
+    """P4: ROM-less games get one unconstrained exact-title pass."""
+
+    def _romless_game(self, slug, name):
+        return _make_game_with_roms(slug, name, [])
+
+    @patch("library.metadata.matcher.ScreenScraperClient")
+    @patch(
+        "library.lookup.screenscraper.ScreenScraperLookupService._get_client"
+    )
+    def test_romless_game_matches_cross_system_exact_title(
+        self, mock_get_client, mock_client_class, tmp_path
+    ):
+        from library.models import Setting
+        from library.metadata.matcher import fetch_metadata_for_game
+
+        Setting.objects.update_or_create(
+            key="metadata_image_path", defaults={"value": str(tmp_path)}
+        )
+        game = self._romless_game("test_romless", "Halo: Reach")
+
+        mock_client = Mock()
+        mock_client.has_credentials.return_value = True
+
+        def search_side_effect(name, system_id=None):
+            if system_id is None:
+                return [
+                    {
+                        "id": 40816,
+                        "name": "Halo: Reach",
+                        "all_names": ["Halo: Reach (wor)"],
+                        "system_id": 33,
+                    }
+                ]
+            return []
+
+        mock_client.search_game.side_effect = search_side_effect
+        mock_client.get_game_info.return_value = {"id": "40816", "name": "Halo: Reach"}
+        mock_get_client.return_value = mock_client
+        mock_client_class.return_value = mock_client
+
+        metadata = fetch_metadata_for_game(game)
+
+        assert metadata is not None
+        game.refresh_from_db()
+        assert game.screenscraper_id == 40816
+
+    def test_romless_title_matches_ignoring_punctuation_boundaries(self):
+        from library.metadata.matcher import _lookup_romless_by_name
+
+        game = self._romless_game(
+            "test_romless_punctuation",
+            "Crayon Shin-chan: Arashi wo Yobu Enji",
+        )
+        client = Mock()
+        client.search_game.return_value = [
+            {
+                "id": 12345,
+                "name": "Crayon Shinchan - Arashi wo Yobu Enji",
+                "all_names": [],
+                "system_id": 12,
+            }
+        ]
+
+        result = _lookup_romless_by_name(client, game)
+
+        assert result is not None
+        assert result.screenscraper_id == 12345
+
+    def test_romless_tries_exact_query_variants(self):
+        from library.metadata.matcher import _lookup_romless_by_name
+
+        game = self._romless_game(
+            "test_romless_query_variant",
+            "1941: Counter Attack",
+        )
+        client = Mock()
+        client.search_game.side_effect = lambda query: (
+            [
+                {
+                    "id": 39873,
+                    "name": "1941 - Counter Attack",
+                    "all_names": [],
+                    "system_id": 31,
+                }
+            ]
+            if query == "1941 - Counter Attack"
+            else []
+        )
+
+        result = _lookup_romless_by_name(client, game)
+
+        assert result is not None
+        assert result.screenscraper_id == 39873
+
+    @patch("library.metadata.matcher.ScreenScraperClient")
+    @patch(
+        "library.lookup.screenscraper.ScreenScraperLookupService._get_client"
+    )
+    def test_rom_backed_game_never_issues_unconstrained_call(
+        self, mock_get_client, mock_client_class
+    ):
+        """The unconstrained probe is reserved for games with zero ROMs."""
+        from library.lookup.screenscraper import _save_to_cache
+        from library.metadata.matcher import fetch_metadata_for_game
+
+        game = _make_game_with_roms(
+            "test_rombacked",
+            "Some Game",
+            [{"file_path": "/roms/x/Some Game.sms", "crc32": "cccccccc"}],
+        )
+        _save_to_cache("crc", "cccccccc", 12, None)
+
+        mock_client = Mock()
+        mock_client.has_credentials.return_value = True
+
+        def search_side_effect(name, system_id=None):
+            assert system_id is not None, "unconstrained call for ROM-backed game"
+            return []
+
+        mock_client.search_game.side_effect = search_side_effect
+        mock_client.search_by_crc.return_value = None
+        mock_client.search_by_romnom.return_value = None
+        mock_get_client.return_value = mock_client
+        mock_client_class.return_value = mock_client
+        assert fetch_metadata_for_game(game) is None
+
+    @patch("library.metadata.matcher.ScreenScraperClient")
+    @patch(
+        "library.lookup.screenscraper.ScreenScraperLookupService._get_client"
+    )
+    def test_romless_near_title_rejected(
+        self, mock_get_client, mock_client_class, tmp_path
+    ):
+        """Only normalized-title equality accepts; near titles stay unmatched."""
+        from library.models import Setting
+        from library.metadata.matcher import fetch_metadata_for_game
+
+        Setting.objects.update_or_create(
+            key="metadata_image_path", defaults={"value": str(tmp_path)}
+        )
+        game = self._romless_game("test_romless2", "Halo: Reach")
+
+        mock_client = Mock()
+        mock_client.has_credentials.return_value = True
+
+        def search_side_effect(name, system_id=None):
+            if system_id is None:
+                return [
+                    {
+                        "id": 40817,
+                        "name": "Halo: Reachfire",
+                        "all_names": [],
+                        "system_id": 33,
+                    }
+                ]
+            return []
+
+        mock_client.search_game.side_effect = search_side_effect
+        mock_get_client.return_value = mock_client
+        mock_client_class.return_value = mock_client
+
+        assert fetch_metadata_for_game(game) is None
+
+
+@pytest.mark.django_db
+class TestIdentityFromRomStem:
+    """P5: the name-search identity comes from the parsed ROM filename."""
+
+    @patch("library.metadata.matcher.ScreenScraperClient")
+    @patch(
+        "library.lookup.screenscraper.ScreenScraperLookupService._get_client"
+    )
+    def test_identity_built_from_rom_stem_not_poisoned_game_name(
+        self, mock_get_client, mock_client_class, tmp_path
+    ):
+        from library.models import Setting
+        from library.lookup.screenscraper import _save_to_cache
+        from library.metadata.matcher import fetch_metadata_for_game
+
+        Setting.objects.update_or_create(
+            key="metadata_image_path", defaults={"value": str(tmp_path)}
+        )
+        game = _make_game_with_roms(
+            "test_stem_identity",
+            "091 Some Junk Suffix",
+            [
+                {
+                    "file_path": "/roms/snes/Wonder Project J (Japan).sfc",
+                    "crc32": "dddddddd",
+                }
+            ],
+        )
+        _save_to_cache("crc", "dddddddd", 12, None)
+
+        mock_client = Mock()
+        mock_client.has_credentials.return_value = True
+        queries = []
+
+        def search_side_effect(name, system_id=None):
+            queries.append(name)
+            if name == "Wonder Project J":
+                return [
+                    {
+                        "id": 31234,
+                        "name": "Wonder Project J",
+                        "all_names": [],
+                        "system_id": 12,
+                    }
+                ]
+            return []
+
+        mock_client.search_game.side_effect = search_side_effect
+        mock_client.search_by_crc.return_value = None
+        mock_client.search_by_romnom.return_value = None
+        mock_client.get_game_info.return_value = {
+            "id": "31234",
+            "name": "Wonder Project J",
+        }
+        mock_get_client.return_value = mock_client
+        mock_client_class.return_value = mock_client
+
+        metadata = fetch_metadata_for_game(game)
+
+        assert metadata is not None
+        assert game.name not in queries
+        assert "Wonder Project J" in queries

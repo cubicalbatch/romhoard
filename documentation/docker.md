@@ -49,6 +49,27 @@ Override these in your `.env` file or docker-compose to customize behavior:
 |----------|---------|-------------|
 | `SCREENSCRAPER_USER` | *(empty)* | ScreenScraper username (can also be set via UI) |
 | `SCREENSCRAPER_PASSWORD` | *(empty)* | ScreenScraper password (can also be set via UI) |
+| `SCREENSCRAPER_API_BASE` | `https://api.screenscraper.fr/api2/` | API base URL. Production default is correct; see below for the local development proxy. |
+
+### Local Development Proxy
+
+For matching-algorithm development, a read-through caching proxy can replay ScreenScraper
+responses so repeated requests never consume rate limits. Responses are cached permanently
+in SQLite until the cache file is deleted.
+
+```bash
+# Terminal 1: start the proxy (listens on 127.0.0.1:8765)
+uv run python scripts/screenscraper_proxy.py
+
+# Terminal 2: point RomHoard's web server at it
+SCREENSCRAPER_API_BASE=http://127.0.0.1:8765/api2/ uv run ./manage.py runserver 0.0.0.0:4567
+
+# The worker needs the same variable when matching runs in Procrastinate
+SCREENSCRAPER_API_BASE=http://127.0.0.1:8765/api2/ uv run ./manage.py worker
+```
+
+Cache reset is complete when the file is gone: `rm data/screenscraper-proxy.sqlite3`.
+Without `SCREENSCRAPER_API_BASE`, RomHoard calls ScreenScraper directly.
 
 #### Database
 

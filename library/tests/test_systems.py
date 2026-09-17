@@ -50,6 +50,8 @@ class TestSystemsConfig:
             "neogeo": [142, 82, 25],   # Neo Geo MVS/AES, NGPC, NGP
             "nes": [3, 106],           # NES, Famicom Disk System
             "pce": [31, 105],          # PC Engine / TG16, SuperGrafx
+            "msx": [113, 116, 117, 118],  # MSX, MSX2, MSX2+, Turbo R
+            "ws": [45, 46],            # WonderSwan, WonderSwan Color
         }
 
         for slug, expected_ids in expected.items():

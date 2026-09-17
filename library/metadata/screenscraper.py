@@ -139,6 +139,7 @@ PATCH_SUFFIX_PATTERN = re.compile(
     r"|Save\s*Patched"
     r"|Savepatch"
     r"|Save\s*Patch"
+    r"|EverDrive(?:-Patched)?"
     r"|\+Trainer"
     r"|Trainer"
     r"|Trained"
@@ -153,6 +154,8 @@ PATCH_SUFFIX_PATTERN = re.compile(
     r"|PTBR\+Save(?:\+Bugfixes)?"
     r"|MSX2SMS\s+Hack"
     r"|NES2PCE"
+    r"|WIP"
+    r"|DEMO"
     r")\s*$",
     re.IGNORECASE,
 )
@@ -167,6 +170,60 @@ HACK_SUFFIX_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Fan-translation markers are not part of the ScreenScraper title (P5).
+TRANSLATION_MARKER_PATTERN = re.compile(
+    r"(?:^|[\s\-–—(])(?:"
+    r"T[+\-]Eng(?:lish)?\.?"
+    r"|(?:English\s+)?(?:Fan\s+)?Translation"
+    r"|Anime\s+Version"
+    r"|English(?:\s+Version)?"
+    r")(?=$|[\s\-–—)+])",
+    re.IGNORECASE,
+)
+
+
+def _strip_translation_markers(text: str) -> str:
+    """Remove fan-translation markers ("T+Eng", "English Translation", ...).
+
+    Applied repeatedly so composite markers fully clear; separators left
+    behind are trimmed.
+    """
+    prev = None
+    while prev != text:
+        prev = text
+        text = TRANSLATION_MARKER_PATTERN.sub(" ", text)
+    return re.sub(r"\s+", " ", text).strip(" -–—")
+
+
+# P2 search-variant gap patterns (each backed by an audit-measured case).
+
+# P2 #9: possessive strip ("Popeye's" -> "Popeye"); SS noms carry the bare
+# name, and plain apostrophe removal yields "Popeyes" which returns empty.
+POSSESSIVE_PATTERN = re.compile(r"(\w)'s\b", re.IGNORECASE)
+
+# P2 #8: digit-boundary split ("Phantom2040" -> "Phantom 2040").
+DIGIT_BOUNDARY_PATTERN = re.compile(r"\b([A-Za-z]{2,})(\d+)\b")
+
+# P2 #7: ASCII digraph drop ("Maerchen" -> "Marchen"); SS folds the digraph,
+# its search does not answer the ASCII spelling.
+DIGRAPH_DROP_PATTERN = re.compile(r"ae|oe|(?<!q)ue", re.IGNORECASE)
+
+# P2 #4: lone letter immediately before a dash separator ("... B - X").
+LONE_LETTER_DASH_PATTERN = re.compile(r"(?<=\s)([A-Za-z0-9])(?=\s+-\s+)")
+
+# P2 #12: leading-acronym expansions.
+ACRONYM_EXPANSIONS = {"SMB": "Super Mario Bros"}
+
+# P2 #10: trailing "<word> Version" platform qualifier.
+WORD_VERSION_SUFFIX_PATTERN = re.compile(
+    r"\s+\S+\s+Version\s*$", re.IGNORECASE
+)
+
+
+def _drop_digraph(match: re.Match) -> str:
+    """Fold one ASCII digraph to its plain vowel, keeping case."""
+    plain = {"ae": "a", "oe": "o", "ue": "u"}[match.group(0).lower()]
+    return plain.capitalize() if match.group(0)[0].isupper() else plain
 
 def _get_search_variants(name: str) -> list[str]:
     """Generate search query variants for retry logic.
@@ -193,7 +250,7 @@ def _get_search_variants(name: str) -> list[str]:
 
     def _add_variant(v: str) -> None:
         v = re.sub(r"\s+", " ", v).strip()
-        if not v or len(v) < 3:
+        if not v or (len(v) < 3 and not (len(v) == 1 and v.isalnum())):
             return
         if v.lower() in CONSOLE_TERMS:
             return
@@ -309,9 +366,15 @@ def _get_search_variants(name: str) -> list[str]:
 
     # Variant: leading 2-3 words for long titles (4+ words)
     # "Sonic the Hedgehog Pocket Adventure" -> "Sonic the Hedgehog"
-    # Never extract a single word.
+    # P2 #2/#3 relax the "never extract a single word" rule: a significant
+    # leading token (>= 5 chars) is a valid SS AND-free probe.
     skip_words = STOPWORDS | {"vs."}
     words = base.split()
+    significant = [
+        w
+        for w in words
+        if w.lower() not in skip_words and w.lower() not in CONSOLE_TERMS
+    ]
     if len(words) >= 4:
         # Take first 3 words
         f3 = list(words[:3])
@@ -322,6 +385,19 @@ def _get_search_variants(name: str) -> list[str]:
         # Take first 2 words (if 2nd word is not a stopword)
         if words[1].lower() not in skip_words:
             _add_variant(" ".join(words[:2]))
+
+    # P2 #3: single leading significant token ("Ristar the Shooting Star"
+    # -> "Ristar"; "Jeopardy! Sports Edition" -> "Jeopardy!").
+    if len(words) >= 3 and significant and len(significant[0]) >= 5:
+        _add_variant(significant[0])
+
+    # P2 #2: leading 1-2 significant tokens for dash-heavy 4+ word titles
+    # ("Doraemon Nora No Suke No Yabou" -> "Doraemon Nora", "Doraemon");
+    # SS AND-search breaks on dash-separated multi-token titles.
+    if len(words) >= 4 and "-" in base and significant:
+        _add_variant(" ".join(significant[:2]))
+        if len(significant[0]) >= 5:
+            _add_variant(significant[0])
 
     # Variant: first word from subtitles containing stopwords (3+ words)
     # "Rondo of Blood" -> "Rondo" (helps find "Akumajou Dracula X - Chi No Rondo")
@@ -375,6 +451,68 @@ def _get_search_variants(name: str) -> list[str]:
                 _add_variant(first_part)
             # Also try the full parenthetical content
             _add_variant(paren_content)
+    # P2 #4: SS keeps mid-query lone-letter tokens ("SD Gundam Generation
+    # B - Gryps Senki" finds nothing) and drops trailing lone letters;
+    # emit the lone-letter-dropped form, and let lone alnum segments pass
+    # the length guard.
+    lone_dropped = LONE_LETTER_DASH_PATTERN.sub("", base)
+    if lone_dropped != base:
+        _add_variant(lone_dropped)
+
+    # P2 #1: hyphen-kept variant — SS tokenizes hyphenated names as one
+    # token ("Coca-Cola Kid", "Kuni-chan"); space forms return empty.
+    if len(words) >= 2:
+        rest = " ".join(words[2:])
+        _add_variant(f"{words[0]}-{words[1]}{(' ' + rest) if rest else ''}")
+
+    # P2 #5/#6: joined-token variant for 2-word names ("Black Jack" ->
+    # "BlackJack", "Castle Boy" -> "CastleBoy").
+    if len(words) == 2:
+        _add_variant(words[0] + words[1])
+
+    # P2 #7: ASCII digraph folds, both directions.
+    if re.search(r"ä|ö|ü|æ", base, re.IGNORECASE):
+        _add_variant(
+            base.replace("ä", "ae")
+            .replace("ö", "oe")
+            .replace("ü", "ue")
+            .replace("æ", "ae")
+            .replace("Ä", "Ae")
+            .replace("Ö", "Oe")
+            .replace("Ü", "Ue")
+            .replace("Æ", "Ae")
+        )
+    if DIGRAPH_DROP_PATTERN.search(base):
+        _add_variant(DIGRAPH_DROP_PATTERN.sub(_drop_digraph, base))
+
+    # P2 #8: digit-boundary split ("Phantom2040" -> "Phantom 2040").
+    if DIGIT_BOUNDARY_PATTERN.search(base):
+        _add_variant(DIGIT_BOUNDARY_PATTERN.sub(r"\1 \2", base))
+
+    # P2 #9: possessive strip ("Popeye's" -> "Popeye").
+    if POSSESSIVE_PATTERN.search(base):
+        _add_variant(POSSESSIVE_PATTERN.sub(r"\1", base))
+
+    # P2 #10: trailing "<word> Version" platform qualifier
+    # ("Puzzle Land Vircon32 Version" -> "Puzzle Land").
+    if WORD_VERSION_SUFFIX_PATTERN.search(base):
+        _add_variant(WORD_VERSION_SUFFIX_PATTERN.sub("", base))
+
+    # P2 #12: leading-acronym expansion ("SMB Special" -> "Super Mario
+    # Bros Special").
+    for acronym, expansion in ACRONYM_EXPANSIONS.items():
+        if re.match(rf"{acronym}\b", base, re.IGNORECASE):
+            _add_variant(
+                re.sub(
+                    rf"{acronym}\b", expansion, base, count=1, flags=re.IGNORECASE
+                )
+            )
+
+    # P2 #13: leave-one-word-out for exactly-3-word titles (<= 3 outputs);
+    # SS strict-AND fails when one token is not in the index.
+    if len(words) == 3:
+        for i in range(3):
+            _add_variant(" ".join(w for j, w in enumerate(words) if j != i))
 
     # Variant: split on slash for multi-version titles
     # "Pokemon Red/Blue" -> "Pokemon Red", "Pokemon Blue"
@@ -394,7 +532,13 @@ def _get_search_variants(name: str) -> list[str]:
                 full_right = f"{prefix} {right}"
                 _add_variant(full_right)
 
-    return variants
+    # P5 #2: fan-translation markers are not part of the SS title.
+    marker_stripped = _strip_translation_markers(base)
+    if marker_stripped != base:
+        _add_variant(marker_stripped)
+
+    # P2: keep the per-game variant count bounded.
+    return variants[:40]
 
 
 class ScreenScraperRateLimited(Exception):
@@ -589,8 +733,10 @@ class ScreenScraperClient:
         # Merge with request params
         all_params = {**auth_params, **params}
 
-        # Build URL
-        return f"{SCREENSCRAPER_API_BASE}{endpoint}.php?{urlencode(all_params)}"
+        # Dev proxy support: SCREENSCRAPER_API_BASE routes requests to a local
+        # caching proxy (default stays the official API).
+        base = (os.environ.get("SCREENSCRAPER_API_BASE") or SCREENSCRAPER_API_BASE).rstrip("/") + "/"
+        return f"{base}{endpoint}.php?{urlencode(all_params)}"
 
     def _make_request(self, endpoint: str, params: dict[str, Any]) -> dict:
         """Make API request with rate limiting and error handling."""
@@ -611,8 +757,14 @@ class ScreenScraperClient:
                 pause_until = set_pause_until()
                 raise ScreenScraperRateLimited(pause_until)
 
-            # A missing game is a documented no-match response.
-            if response.status_code == 404 and endpoint in {"jeuInfos", "jeuRecherche"}:
+            # A missing game is a documented no-match response. ScreenScraper
+            # also answers 400 for values it has no entry for (e.g. unknown
+            # CRC); treat those as no-match so the lookup chain can fall
+            # through to romnom/name search instead of aborting.
+            if response.status_code in (400, 404) and endpoint in {
+                "jeuInfos",
+                "jeuRecherche",
+            }:
                 return {}
 
             response.raise_for_status()
@@ -797,20 +949,20 @@ class ScreenScraperClient:
             "system_id": self._game_system_id(game, system_id),
         }
 
-    def search_game(self, name: str, system_id: int) -> list[dict]:
-        """Search for games by name and system.
+    def search_game(self, name: str, system_id: int | None = None) -> list[dict]:
+        """Search for games by name and, optionally, system.
 
         Args:
             name: Game name to search
-            system_id: ScreenScraper system ID
+            system_id: Optional ScreenScraper system ID constraint; omit for
+                an unconstrained search (romless exact-title pass)
 
         Returns:
             List of matching game dicts with basic info
         """
-        params = {
-            "recherche": name,
-            "systemeid": system_id,
-        }
+        params = {"recherche": name}
+        if system_id is not None:
+            params["systemeid"] = system_id
 
         data = self._make_request("jeuRecherche", params)
 
