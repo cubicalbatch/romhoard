@@ -488,9 +488,15 @@ def run_metadata_job_for_game(
         job.batch.status = MetadataBatch.STATUS_RUNNING
         job.batch.save()
 
+    game = Game.objects.filter(pk=job.game_id).first()
+    if game is None:
+        # Game was deleted (user removed entries / scan cleanup) - nothing to do
+        logger.info(
+            f"Game for MetadataJob {metadata_job_id} no longer exists, skipping"
+        )
+        job.delete()
+        return {"status": "skipped", "reason": "game_deleted"}
     try:
-        game = job.game
-
         # Try to match and fetch metadata
         metadata = fetch_metadata_for_game(game)
 
@@ -500,7 +506,9 @@ def run_metadata_job_for_game(
                 # Refresh job from database in case apply_metadata_to_game triggered
                 # a merge (which updates job.game in the DB but not in memory)
                 job.refresh_from_db()
-                game = job.game
+                game = Game.objects.filter(pk=job.game_id).first()
+                if game is None:
+                    raise JobAborted()
 
                 job.matched = True
                 # Clear the failed flag if it was set before (e.g., from a force retry)
@@ -557,9 +565,10 @@ def run_metadata_job_for_game(
         job.save()
         raise
     finally:
-        # Check if batch is complete
         _check_batch_completion(job.batch)
-        _trigger_cover_for_collections_if_done(job.game)
+        game = Game.objects.filter(pk=job.game_id).first()
+        if game:
+            _trigger_cover_for_collections_if_done(game)
 
 
 def _check_batch_completion(batch):
@@ -608,10 +617,16 @@ def _trigger_cover_for_collections_if_done(game: Game) -> None:
                 matched = Game.objects.filter(
                     name__iexact=ce.game_name, system__slug=ce.system_slug
                 ).first()
-                if matched and MetadataJob.objects.filter(
-                    game=matched,
-                    status__in=[MetadataJob.STATUS_PENDING, MetadataJob.STATUS_RUNNING],
-                ).exists():
+                if (
+                    matched
+                    and MetadataJob.objects.filter(
+                        game=matched,
+                        status__in=[
+                            MetadataJob.STATUS_PENDING,
+                            MetadataJob.STATUS_RUNNING,
+                        ],
+                    ).exists()
+                ):
                     still_pending = True
                     break
 
@@ -1108,7 +1123,7 @@ def _process_uploaded_file(
         crc32 = compute_file_crc32(dest_path)
 
         # Create DB records using existing scanner logic
-        rom_set, _, _, _ = get_or_create_rom_set(
+        rom_set, _, metadata_needed, _ = get_or_create_rom_set(
             name=parsed["name"],
             system=system,
             region=parsed["region"],
@@ -1135,6 +1150,8 @@ def _process_uploaded_file(
         from library.romset_scoring import recalculate_default_romset
 
         recalculate_default_romset(rom_set.game)
+        if metadata_needed:
+            queue_game_metadata(rom_set.game)
 
         return {"success": True, "added": 1}
 
@@ -1242,7 +1259,7 @@ def _process_single_game_archive(
         rom_crc = first_rom.crc32 if first_rom.crc32 else archive_crc
 
         # Create DB records
-        rom_set, _, _, _ = get_or_create_rom_set(
+        rom_set, _, metadata_needed, _ = get_or_create_rom_set(
             name=parsed["name"],
             system=system,
             region=parsed["region"],
@@ -1270,6 +1287,8 @@ def _process_single_game_archive(
         from library.romset_scoring import recalculate_default_romset
 
         recalculate_default_romset(rom_set.game)
+        if metadata_needed:
+            queue_game_metadata(rom_set.game)
 
         return {"success": True, "added": 1}
 
@@ -1425,7 +1444,7 @@ def _process_extracted_rom(
             crc32 = compute_file_crc32(dest_path)
 
         # Create DB records
-        rom_set, _, _, _ = get_or_create_rom_set(
+        rom_set, _, metadata_needed, _ = get_or_create_rom_set(
             name=parsed["name"],
             system=system,
             region=parsed["region"],
@@ -1452,6 +1471,8 @@ def _process_extracted_rom(
         from library.romset_scoring import recalculate_default_romset
 
         recalculate_default_romset(rom_set.game)
+        if metadata_needed:
+            queue_game_metadata(rom_set.game)
 
         job.games_added += 1
         job.save()

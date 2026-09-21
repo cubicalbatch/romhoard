@@ -1,7 +1,7 @@
 """Tests for the ROM scanner."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -291,3 +291,27 @@ class TestShouldExpandArchive:
         ]
         # Same game name from different folders -> don't expand
         assert should_expand_archive(rom_files) is False
+
+
+@pytest.mark.django_db(transaction=True)
+def test_scan_queues_metadata_after_rom_creation(tmp_path, gba_system, monkeypatch):
+    """A metadata merge cannot delete the ROMSet before its ROM is inserted."""
+    from library.merge import merge_games
+    from library.models import Game, ROM, ROMSet
+    from library.scanner import scan_directory
+
+    canonical = Game.objects.create(name="Canonical Game", system=gba_system)
+    canonical_set = ROMSet.objects.create(game=canonical)
+    rom_path = tmp_path / "Duplicate Game.gba"
+    rom_path.write_bytes(b"rom")
+
+    def merge_immediately(game):
+        merge_games(canonical, game)
+        return True
+
+    monkeypatch.setattr("library.tasks.queue_game_metadata", merge_immediately)
+
+    result = scan_directory(str(tmp_path), fetch_metadata=True)
+
+    assert result["added"] == 1
+    assert ROM.objects.get(file_path=str(rom_path)).rom_set_id == canonical_set.pk
