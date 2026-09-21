@@ -432,12 +432,12 @@ def get_or_create_rom_set(
         sha1: Optional SHA1 hash for lookup (used for CHD files)
         file_path: Path to ROM file (for romnom lookup fallback)
         use_hasheous: Enable Hasheous API lookup as fallback
-        fetch_metadata: Auto-queue ScreenScraper metadata fetch for new games
+        fetch_metadata: Whether the caller wants ScreenScraper metadata queued
+            after creating the ROM.
         identify_later: If True, skip hash lookup during scan and queue for later
 
-    Returns:
-        Tuple of (ROMSet, LookupResult or None if no match, metadata_queued bool,
-                  identification_needed bool)
+        Tuple of (ROMSet, LookupResult or None if no match, metadata_needed bool,
+                  identification_needed bool). The caller queues metadata when needed.
     """
     # Try hash-based lookup first if we have any hash or file_path
     # The lookup chain will try Hasheous first, then ScreenScraper (CRC + romnom)
@@ -551,17 +551,12 @@ def get_or_create_rom_set(
     # Note: default ROMSet recalculation happens AFTER ROM creation in the caller,
     # since the ROMSet needs at least one ROM for scoring to work.
 
-    # Auto-queue metadata fetch for new games or existing games without metadata
-    # The credential check is now consolidated in queue_game_metadata()
-    metadata_queued = False
-    if fetch_metadata:
-        # Queue if: new game OR ROM added to existing game without screenscraper_id
-        if game_created or (not game.screenscraper_id and rom_set_created):
-            from library.tasks import queue_game_metadata
+    # Queue after ROM creation; metadata merging can delete empty ROMSets.
+    metadata_needed = fetch_metadata and (
+        game_created or (not game.screenscraper_id and rom_set_created)
+    )
 
-            metadata_queued = queue_game_metadata(game)
-
-    return rom_set, result, metadata_queued, identification_needed
+    return rom_set, result, metadata_needed, identification_needed
 
 
 def filter_rom_files_in_archive(
@@ -627,7 +622,13 @@ def create_rom_from_archive_as_rom(
     fetch_metadata: bool = True,
 ) -> dict:
     """Create ROM entry for an archive that IS the ROM (e.g., MAME ZIPs)."""
-    results = {"added": 0, "skipped": 0, "errors": [], "metadata_queued": 0, "added_rom_ids": []}
+    results = {
+        "added": 0,
+        "skipped": 0,
+        "errors": [],
+        "metadata_queued": 0,
+        "added_rom_ids": [],
+    }
 
     seen_paths.add(archive_path)
 
@@ -655,7 +656,7 @@ def create_rom_from_archive_as_rom(
     # For arcade systems (archive_as_rom), the lookup chain will use romnom
     # to identify games via ScreenScraper. The ScreenScraperLookupService
     # handles this automatically when file_path is provided.
-    rom_set, lookup_result, metadata_queued, _ = get_or_create_rom_set(
+    rom_set, lookup_result, metadata_needed, _ = get_or_create_rom_set(
         parsed["name"],
         system,
         parsed["region"],
@@ -708,8 +709,11 @@ def create_rom_from_archive_as_rom(
         rom_crc32 or "(none)",
     )
     results["added"] = 1
-    if metadata_queued:
-        results["metadata_queued"] = 1
+    if metadata_needed:
+        from .tasks import queue_game_metadata
+
+        if queue_game_metadata(rom_set.game):
+            results["metadata_queued"] = 1
     return results
 
 
@@ -778,7 +782,7 @@ def create_archived_rom(
         )
 
     # Find or create rom set (hash lookup happens here)
-    rom_set, _, metadata_queued, _ = get_or_create_rom_set(
+    rom_set, _, metadata_needed, _ = get_or_create_rom_set(
         parsed["name"],
         system,
         parsed["region"],
@@ -792,7 +796,9 @@ def create_archived_rom(
 
     # Extract Switch content type if applicable
     switch_title_id, content_type = (
-        get_switch_content_info(internal_filename) if system.slug == "switch" else ("", "")
+        get_switch_content_info(internal_filename)
+        if system.slug == "switch"
+        else ("", "")
     )
 
     # Create ROM record with archive info
@@ -825,7 +831,18 @@ def create_archived_rom(
         crc32 or "(none)",
     )
 
-    return {"added": 1, "skipped": 0, "metadata_queued": 1 if metadata_queued else 0, "added_rom_ids": [rom.pk]}
+    metadata_queued = False
+    if metadata_needed:
+        from .tasks import queue_game_metadata
+
+        metadata_queued = queue_game_metadata(rom_set.game)
+
+    return {
+        "added": 1,
+        "skipped": 0,
+        "metadata_queued": 1 if metadata_queued else 0,
+        "added_rom_ids": [rom.pk],
+    }
 
 
 def process_archive(
@@ -864,7 +881,13 @@ def process_archive(
     Returns:
         dict with keys: added, skipped, errors, metadata_queued, added_rom_ids
     """
-    results = {"added": 0, "skipped": 0, "errors": [], "metadata_queued": 0, "added_rom_ids": []}
+    results = {
+        "added": 0,
+        "skipped": 0,
+        "errors": [],
+        "metadata_queued": 0,
+        "added_rom_ids": [],
+    }
 
     # Check if archive should be treated as ROM (e.g., Arcade/MAME)
     system = detect_system(archive_path, systems_cache, exclusive_map)
@@ -1159,7 +1182,7 @@ def scan_directory(
                     pass
 
             # Find or create rom set (also creates game if needed, hash lookup happens here)
-            rom_set, _, rom_metadata_queued, _ = get_or_create_rom_set(
+            rom_set, _, rom_metadata_needed, _ = get_or_create_rom_set(
                 parsed["name"],
                 system,
                 parsed["region"],
@@ -1174,7 +1197,9 @@ def scan_directory(
 
             # Extract Switch content type if applicable
             switch_title_id, content_type = (
-                get_switch_content_info(filename) if system.slug == "switch" else ("", "")
+                get_switch_content_info(filename)
+                if system.slug == "switch"
+                else ("", "")
             )
 
             # Create ROM record
@@ -1208,8 +1233,11 @@ def scan_directory(
                 hash_info,
             )
             added += 1
-            if rom_metadata_queued:
-                metadata_queued += 1
+            if rom_metadata_needed:
+                from .tasks import queue_game_metadata
+
+                if queue_game_metadata(rom_set.game):
+                    metadata_queued += 1
 
     # Process collected images - match to games
     for img_path, img_filename, img_system in collected_images:

@@ -255,7 +255,7 @@ def resolve_unidentified(request, job_id: int):
             crc32 = compute_file_crc32(dest_path)
 
             # Create DB records using existing scanner logic
-            rom_set, _, _ = get_or_create_rom_set(
+            rom_set, _, metadata_needed, _ = get_or_create_rom_set(
                 name=parsed["name"],
                 system=system,
                 region=parsed["region"],
@@ -282,6 +282,10 @@ def resolve_unidentified(request, job_id: int):
             from library.romset_scoring import recalculate_default_romset
 
             recalculate_default_romset(rom_set.game)
+            if metadata_needed:
+                from ..tasks import queue_game_metadata
+
+                queue_game_metadata(rom_set.game)
 
             job.games_added += 1
             processed_count += 1

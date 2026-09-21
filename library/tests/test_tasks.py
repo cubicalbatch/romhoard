@@ -239,3 +239,28 @@ class TestScanJobIntegration(TestCase):
         self.assertEqual(scan_job.status, ScanJob.STATUS_COMPLETED)
         self.assertEqual(scan_job.added, 1)
         self.assertEqual(scan_job.errors, [])
+
+
+class TestMetadataJobDeletion(TestCase):
+    """Metadata workers tolerate library deletion while starting."""
+
+    def test_game_deleted_before_worker_loads_it(self):
+        from library.models import Game, MetadataJob
+        from library.tasks import run_metadata_job_for_game
+
+        system = System.objects.create(
+            name="Delete Test", slug="delete-test", extensions=[], folder_names=[]
+        )
+        game = Game.objects.create(name="Deleted During Start", system=system)
+        job = MetadataJob.objects.create(task_id="delete-race", game=game)
+        context = MagicMock()
+
+        def delete_game():
+            game.delete()
+            return False
+
+        context.should_abort.side_effect = delete_game
+
+        result = run_metadata_job_for_game.func(context, job.pk)
+
+        self.assertEqual(result, {"status": "skipped", "reason": "game_deleted"})
