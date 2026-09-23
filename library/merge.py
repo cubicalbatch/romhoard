@@ -179,6 +179,21 @@ def merge_games(canonical: Game, duplicate: Game) -> dict:
     if canonical.pk == duplicate.pk:
         raise ValueError("Cannot merge a game with itself")
 
+    # Lock both rows in stable ascending-PK order so concurrent merges
+    # serialize instead of deadlocking, and work on fresh instances (the
+    # passed ones may be stale). If either row vanished, fail clearly.
+    locked = {
+        game.pk: game
+        for game in Game.objects.select_for_update()
+        .filter(pk__in=(canonical.pk, duplicate.pk))
+        .order_by("pk")
+    }
+    if canonical.pk not in locked or duplicate.pk not in locked:
+        missing = canonical.pk if canonical.pk not in locked else duplicate.pk
+        raise Game.DoesNotExist(f"Game pk={missing} no longer exists; cannot merge")
+    canonical = locked[canonical.pk]
+    duplicate = locked[duplicate.pk]
+
     if canonical.system_id != duplicate.system_id:
         raise ValueError("Cannot merge games from different systems")
 
