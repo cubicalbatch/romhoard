@@ -207,7 +207,7 @@ class ROMSet(models.Model):
 
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="rom_sets")
     region = models.CharField(max_length=100, blank=True)
-    revision = models.CharField(max_length=50, blank=True)
+    revision = models.CharField(max_length=100, blank=True)
     source_path = models.CharField(
         max_length=1000, blank=True
     )  # Archive path or parent dir for grouping
