@@ -315,3 +315,21 @@ def test_scan_queues_metadata_after_rom_creation(tmp_path, gba_system, monkeypat
 
     assert result["added"] == 1
     assert ROM.objects.get(file_path=str(rom_path)).rom_set_id == canonical_set.pk
+
+
+@pytest.mark.django_db
+def test_scan_accepts_long_revision(tmp_path, gba_system):
+    """TOSEC revision tags longer than 50 characters must still scan."""
+    from library.models import ROM
+    from library.scanner import scan_directory
+
+    revision = f"Rev {'A' * 60}"
+    rom_path = tmp_path / f"Long Revision ({revision}).gba"
+    rom_path.write_bytes(b"rom")
+
+    result = scan_directory(
+        str(tmp_path), use_hasheous=False, fetch_metadata=False
+    )
+
+    assert result["added"] == 1
+    assert ROM.objects.get(file_path=str(rom_path)).rom_set.revision == revision
