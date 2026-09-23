@@ -333,3 +333,31 @@ def test_scan_accepts_long_revision(tmp_path, gba_system):
 
     assert result["added"] == 1
     assert ROM.objects.get(file_path=str(rom_path)).rom_set.revision == revision
+
+
+@pytest.mark.django_db(transaction=True)
+def test_scan_continues_after_file_database_error(tmp_path, gba_system, monkeypatch):
+    """One invalid ROM must not abort the remaining directory scan."""
+    from library import scanner
+    from library.models import Game, ROM
+
+    bad_path = tmp_path / "Bad.gba"
+    good_path = tmp_path / "Good.gba"
+    bad_path.write_bytes(b"bad")
+    good_path.write_bytes(b"good")
+    parse_rom_filename = scanner.parse_rom_filename
+
+    def parse_with_invalid_revision(filename, arcade=False):
+        parsed = parse_rom_filename(filename, arcade=arcade)
+        if filename == bad_path.name:
+            parsed["revision"] = "A" * 101
+        return parsed
+
+    monkeypatch.setattr(scanner, "parse_rom_filename", parse_with_invalid_revision)
+
+    result = scanner.scan_directory(str(tmp_path), fetch_metadata=False)
+
+    assert result["added"] == 1
+    assert ROM.objects.filter(file_path=str(good_path)).exists()
+    assert not Game.objects.filter(name="Bad").exists()
+    assert any(str(bad_path) in error for error in result["errors"])

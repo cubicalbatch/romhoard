@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from django.conf import settings
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 
 from . import archive as archive_utils
 from .chd import extract_chd_sha1, is_chd_file
@@ -1121,15 +1121,21 @@ def scan_directory(
                 progress_state["roms_found"] = added
                 progress_state["images_found"] = len(collected_images)
 
-                archive_results = process_archive(
-                    file_path,
-                    all_systems,
-                    exclusive_map,
-                    seen_paths,
-                    use_hasheous=use_hasheous,
-                    fetch_metadata=fetch_metadata,
-                    progress_state=progress_state,
-                )
+                try:
+                    with transaction.atomic():
+                        archive_results = process_archive(
+                            file_path,
+                            all_systems,
+                            exclusive_map,
+                            seen_paths,
+                            use_hasheous=use_hasheous,
+                            fetch_metadata=fetch_metadata,
+                            progress_state=progress_state,
+                        )
+                except Exception as e:
+                    logger.error("Failed to process %s: %s", file_path, e)
+                    errors.append(f"Failed to process {file_path}: {e}")
+                    continue
                 added += archive_results["added"]
                 skipped += archive_results["skipped"]
                 metadata_queued += archive_results.get("metadata_queued", 0)
@@ -1181,48 +1187,62 @@ def scan_directory(
                 except Exception:
                     pass
 
-            # Find or create rom set (also creates game if needed, hash lookup happens here)
-            rom_set, _, rom_metadata_needed, _ = get_or_create_rom_set(
-                parsed["name"],
-                system,
-                parsed["region"],
-                parsed["revision"],
-                source_path=os.path.dirname(file_path),  # Group by directory
-                crc32=crc32,
-                sha1=sha1,
-                file_path=file_path,
-                use_hasheous=use_hasheous,
-                fetch_metadata=fetch_metadata,
-            )
+            # A savepoint lets PostgreSQL recover after one file fails.
+            metadata_was_queued = False
+            try:
+                with transaction.atomic():
+                    rom_set, _, rom_metadata_needed, _ = get_or_create_rom_set(
+                        parsed["name"],
+                        system,
+                        parsed["region"],
+                        parsed["revision"],
+                        source_path=os.path.dirname(file_path),  # Group by directory
+                        crc32=crc32,
+                        sha1=sha1,
+                        file_path=file_path,
+                        use_hasheous=use_hasheous,
+                        fetch_metadata=fetch_metadata,
+                    )
 
-            # Extract Switch content type if applicable
-            switch_title_id, content_type = (
-                get_switch_content_info(filename)
-                if system.slug == "switch"
-                else ("", "")
-            )
+                    # Extract Switch content type if applicable
+                    switch_title_id, content_type = (
+                        get_switch_content_info(filename)
+                        if system.slug == "switch"
+                        else ("", "")
+                    )
 
-            # Create ROM record
-            rom = ROM.objects.create(
-                rom_set=rom_set,
-                file_path=file_path,
-                file_name=filename,
-                file_size=file_size,
-                crc32=crc32,
-                sha1=sha1,
-                tags=parsed["tags"],
-                rom_number=parsed["rom_number"],
-                disc=parsed["disc"],
-                content_type=content_type,
-                switch_title_id=switch_title_id,
-            )
+                    # Create ROM record
+                    rom = ROM.objects.create(
+                        rom_set=rom_set,
+                        file_path=file_path,
+                        file_name=filename,
+                        file_size=file_size,
+                        crc32=crc32,
+                        sha1=sha1,
+                        tags=parsed["tags"],
+                        rom_number=parsed["rom_number"],
+                        disc=parsed["disc"],
+                        content_type=content_type,
+                        switch_title_id=switch_title_id,
+                    )
+
+                    # Recalculate default ROMSet now that a ROM exists
+                    from .romset_scoring import recalculate_default_romset
+
+                    recalculate_default_romset(rom_set.game)
+
+                    if rom_metadata_needed:
+                        from .tasks import queue_game_metadata
+
+                        metadata_was_queued = queue_game_metadata(rom_set.game)
+            except Exception as e:
+                logger.error("Failed to process %s: %s", file_path, e)
+                errors.append(f"Failed to process {file_path}: {e}")
+                continue
+
+            added += 1
+            metadata_queued += int(metadata_was_queued)
             added_rom_ids.append(rom.pk)
-
-            # Recalculate default ROMSet now that a ROM exists
-            from .romset_scoring import recalculate_default_romset
-
-            recalculate_default_romset(rom_set.game)
-
             hash_info = f"sha1={sha1}" if sha1 else f"crc32={crc32 or '(none)'}"
             logger.debug(
                 "Added ROM: %s (game: %s, system: %s, region: %s, %s)",
@@ -1232,12 +1252,6 @@ def scan_directory(
                 rom_set.region or "(none)",
                 hash_info,
             )
-            added += 1
-            if rom_metadata_needed:
-                from .tasks import queue_game_metadata
-
-                if queue_game_metadata(rom_set.game):
-                    metadata_queued += 1
 
     # Process collected images - match to games
     for img_path, img_filename, img_system in collected_images:
@@ -1262,14 +1276,19 @@ def scan_directory(
         except OSError:
             file_size = 0
 
-        # Create GameImage record
-        GameImage.objects.create(
-            game=game,
-            file_path=img_path,
-            file_name=img_filename,
-            file_size=file_size,
-            image_type=detect_image_type(img_path),
-        )
+        try:
+            with transaction.atomic():
+                GameImage.objects.create(
+                    game=game,
+                    file_path=img_path,
+                    file_name=img_filename,
+                    file_size=file_size,
+                    image_type=detect_image_type(img_path),
+                )
+        except Exception as e:
+            logger.error("Failed to process %s: %s", img_path, e)
+            errors.append(f"Failed to process {img_path}: {e}")
+            continue
         images_added += 1
 
     # Final progress update before deleting missing ROMs
