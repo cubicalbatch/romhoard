@@ -361,3 +361,197 @@ def test_scan_continues_after_file_database_error(tmp_path, gba_system, monkeypa
     assert ROM.objects.filter(file_path=str(good_path)).exists()
     assert not Game.objects.filter(name="Bad").exists()
     assert any(str(bad_path) in error for error in result["errors"])
+
+
+@pytest.mark.django_db(transaction=True)
+def test_scan_survives_concurrent_merge_of_selected_game(
+    tmp_path, gba_system, monkeypatch
+):
+    """A Game merged away between game selection and ROMSet creation must not fail the import."""
+    import threading
+    import zipfile
+
+    from django.db import connection
+
+    from library import scanner
+    from library.merge import merge_games
+    from library.models import Game, ROM
+    from library.scanner import scan_directory
+
+    canonical = Game.objects.create(name="Canonical Game", system=gba_system)
+    duplicate = Game.objects.create(name="Duplicate Game", system=gba_system)
+    zip_path = tmp_path / "Duplicate Game.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("Duplicate Game.gba", b"rom data")
+
+    selected = threading.Event()
+    merged = threading.Event()
+    merge_errors: list[BaseException] = []
+
+    def merge_in_other_connection():
+        """Merge away the selected Game on a separate database connection."""
+        try:
+            if not selected.wait(timeout=30):
+                raise RuntimeError("scan never selected the duplicate game")
+            merge_games(canonical, duplicate)
+        except BaseException as exc:  # captured below so failures cannot pass silently
+            merge_errors.append(exc)
+        finally:
+            merged.set()
+            connection.close()
+
+    real_find_existing_game = scanner.find_existing_game
+
+    def find_then_pause(*args, **kwargs):
+        """Pause after the duplicate is selected, before the scanner uses it."""
+        game = real_find_existing_game(*args, **kwargs)
+        if game is not None and game.pk == duplicate.pk:
+            selected.set()
+            merged.wait(timeout=30)
+        return game
+
+    monkeypatch.setattr(scanner, "find_existing_game", find_then_pause)
+
+    merger = threading.Thread(target=merge_in_other_connection, name="game-merger")
+    merger.start()
+    try:
+        result = scan_directory(str(tmp_path), use_hasheous=False, fetch_metadata=False)
+    finally:
+        # Never deadlock: release the merge thread if the scan died before selecting.
+        selected.set()
+        merger.join(timeout=30)
+
+    assert merge_errors == []
+    assert not merger.is_alive()
+
+    assert result["added"] == 1
+    assert result["errors"] == []
+    rom = ROM.objects.get(archive_path=str(zip_path))
+    assert rom.path_in_archive == "Duplicate Game.gba"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_scan_holds_lock_on_reresolved_canonical_game(
+    tmp_path, gba_system, monkeypatch
+):
+    """A Game re-resolved after the selected one was merged away must be row-locked.
+
+    The initially selected Game is merged into a canonical Game while the scan is
+    paused after selection, so re-resolution finds the canonical Game by CRC32. A
+    second merge then targets that re-resolved Game before ROMSet creation: if the
+    scanner holds its row lock, the merge blocks until the scan's ROM commits and
+    then moves both ROMSets onward; if it uses the re-resolved Game unlocked, the
+    merge lands first and the import breaks (or the merge sees only one ROMSet).
+    """
+    import threading
+    import zipfile
+    import zlib
+
+    from django.db import connection
+
+    from library import scanner
+    from library.merge import merge_games
+    from library.models import Game, ROM, ROMSet
+    from library.scanner import scan_directory
+
+    canonical = Game.objects.create(name="Canonical Game", system=gba_system)
+    duplicate = Game.objects.create(name="Duplicate Game", system=gba_system)
+    third = Game.objects.create(name="Third Game", system=gba_system)
+
+    inner_bytes = b"re-resolve lock test rom data"
+    inner_crc = f"{zlib.crc32(inner_bytes) & 0xFFFFFFFF:08x}"
+    zip_path = tmp_path / "Duplicate Game.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("Duplicate Game.gba", inner_bytes)
+
+    # Seed ROM with the archive's CRC so the initial selection resolves to the
+    # duplicate by hash and, after it is merged away, re-resolution resolves to
+    # the canonical Game that inherited the seeded ROMSet.
+    seed_romset = ROMSet.objects.create(game=duplicate, region="Seed")
+    ROM.objects.create(
+        rom_set=seed_romset,
+        file_path="/seed/Duplicate Game.gba",
+        file_name="Duplicate Game.gba",
+        file_size=len(inner_bytes),
+        crc32=inner_crc,
+        path_in_archive="seed/Duplicate Game.gba",
+    )
+
+    selected = threading.Event()
+    merged_once = threading.Event()
+    re_resolved = threading.Event()
+    merger_errors: list[BaseException] = []
+    second_merge_summary: dict = {}
+
+    def merge_selected_away():
+        """Merge the initially selected Game into canonical on its own connection."""
+        try:
+            if not selected.wait(timeout=30):
+                raise RuntimeError("scan never selected the duplicate game")
+            merge_games(canonical, duplicate)
+        except BaseException as exc:  # captured so failures cannot pass silently
+            merger_errors.append(exc)
+        finally:
+            merged_once.set()
+            connection.close()
+
+    def merge_canonical_away():
+        """Merge the re-resolved canonical Game into third once re-resolution ran."""
+        try:
+            if not re_resolved.wait(timeout=30):
+                raise RuntimeError("scan never re-resolved to the canonical game")
+            # Blocks on the scanner's row lock until the scan's ROM commits;
+            # romsets_moved then counts both the seeded and the scanned ROMSet.
+            second_merge_summary.update(merge_games(third, canonical))
+        except BaseException as exc:  # captured so failures cannot pass silently
+            merger_errors.append(exc)
+        finally:
+            re_resolved.set()
+            connection.close()
+
+    real_find_existing_game = scanner.find_existing_game
+
+    def find_with_handshakes(*args, **kwargs):
+        """Signal the mergers at selection and re-resolution of the same hash."""
+        game = real_find_existing_game(*args, **kwargs)
+        if game is not None and game.pk == duplicate.pk:
+            selected.set()
+            merged_once.wait(timeout=30)
+        elif game is not None and game.pk == canonical.pk:
+            re_resolved.set()
+        return game
+
+    monkeypatch.setattr(scanner, "find_existing_game", find_with_handshakes)
+
+    merger1 = threading.Thread(target=merge_selected_away, name="game-merger-1")
+    merger2 = threading.Thread(target=merge_canonical_away, name="game-merger-2")
+    merger1.start()
+    merger2.start()
+    try:
+        result = scan_directory(str(tmp_path), use_hasheous=False, fetch_metadata=False)
+    finally:
+        # Never deadlock: release the merge threads if the scan died early.
+        selected.set()
+        re_resolved.set()
+        merger1.join(timeout=30)
+        merger2.join(timeout=30)
+
+    assert merger_errors == []
+    assert not merger1.is_alive()
+    assert not merger2.is_alive()
+
+    assert result["added"] == 1
+    assert result["errors"] == []
+
+    # The second merge saw the scan's committed ROMSet (seeded + scanned = 2):
+    # it could only proceed past the row lock after the scanner committed.
+    assert second_merge_summary["romsets_moved"] == 2
+
+    # The archive imported exactly once and survived both merges (moved onward).
+    assert ROM.objects.filter(archive_path=str(zip_path)).count() == 1
+    rom = ROM.objects.get(archive_path=str(zip_path))
+    assert rom.path_in_archive == "Duplicate Game.gba"
+    assert rom.rom_set.game.name == "Third Game"
+    assert not Game.objects.filter(
+        name__in=["Duplicate Game", "Canonical Game"], system=gba_system
+    ).exists()

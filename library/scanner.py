@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from django.conf import settings
-from django.db import IntegrityError, transaction
+from django.db import DatabaseError, IntegrityError, transaction
 
 from . import archive as archive_utils
 from .chd import extract_chd_sha1, is_chd_file
@@ -474,8 +474,15 @@ def get_or_create_rom_set(
         # Mark for later identification
         identification_needed = True
 
-    # Find existing game by hash, screenscraper_id, or case-insensitive name
-    # This prevents duplicates like "galaga" vs "Galaga"
+
+    # Resolve-lock-or-create in one bounded flow. Every existing candidate is
+    # reloaded with select_for_update() before use so a concurrent merge
+    # cannot delete it between selection and ROMSet/ROM creation. A candidate
+    # that vanished before its lock is re-resolved (its ROMs may have moved to
+    # the canonical game); a create that loses a constraint race re-resolves
+    # and returns to the same lock path. Creation runs behind a savepoint so
+    # a constraint conflict leaves the caller's transaction usable. After the
+    # bounded attempts, fail rather than continue with an unlocked game.
     game = find_existing_game(
         name=name,
         system=system,
@@ -483,62 +490,71 @@ def get_or_create_rom_set(
         sha1=sha1,
         screenscraper_id=screenscraper_id,
     )
-
-    # Handle game creation with retry logic for race conditions.
-    # Multiple ROM files can map to the same game (same screenscraper_id or name),
-    # causing IntegrityError on the unique constraints. Catch and retry.
     game_created = False
-    try:
-        if game:
-            logger.debug(f"Found existing game: {game} (pk={game.pk})")
-        else:
-            # Create new game
-            game = Game.objects.create(
-                name=name, system=system, name_source=name_source
+    for _ in range(3):
+        if game is not None and transaction.get_connection().in_atomic_block:
+            try:
+                game = Game.objects.select_for_update().get(pk=game.pk)
+            except Game.DoesNotExist:
+                logger.debug(
+                    "Game pk=%s vanished before lock; re-resolving", game.pk
+                )
+                game = find_existing_game(
+                    name=name,
+                    system=system,
+                    crc32=crc32,
+                    sha1=sha1,
+                    screenscraper_id=screenscraper_id,
+                )
+                continue
+        try:
+            with transaction.atomic():
+                if game:
+                    logger.debug(f"Found existing game: {game} (pk={game.pk})")
+                else:
+                    # Create new game
+                    game = Game.objects.create(
+                        name=name, system=system, name_source=name_source
+                    )
+                    game_created = True
+                    logger.debug(f"Created new game: {game} (pk={game.pk})")
+
+                # Update name_source if this is a new game or if we have a hash-based match
+                # (anything except filename parsing, screenscraper, or manual entry)
+                non_hash_sources = {
+                    Game.SOURCE_FILENAME,
+                    Game.SOURCE_SCREENSCRAPER,
+                    Game.SOURCE_MANUAL,
+                }
+                needs_save = False
+                if not game_created and name_source not in non_hash_sources:
+                    # Existing game but we have a better name source - update it
+                    game.name_source = name_source
+                    needs_save = True
+
+                # Update screenscraper_id if provided (from ScreenScraper lookup)
+                if screenscraper_id and not game.screenscraper_id:
+                    game.screenscraper_id = screenscraper_id
+                    needs_save = True
+
+                if needs_save:
+                    game.save()
+                break
+        except IntegrityError:
+            # Savepoint rolled back: another scan created the game or set
+            # screenscraper_id first. Re-resolve and loop back to the lock
+            # path above; the recovered candidate is locked before use.
+            logger.debug(f"IntegrityError creating game '{name}' - finding existing game")
+            game = find_existing_game(
+                name=name, system=system, screenscraper_id=screenscraper_id
             )
-            game_created = True
-            logger.debug(f"Created new game: {game} (pk={game.pk})")
-
-        # Update name_source if this is a new game or if we have a hash-based match
-        # (anything except filename parsing, screenscraper, or manual entry)
-        non_hash_sources = {
-            Game.SOURCE_FILENAME,
-            Game.SOURCE_SCREENSCRAPER,
-            Game.SOURCE_MANUAL,
-        }
-        needs_save = False
-        if not game_created and name_source not in non_hash_sources:
-            # Existing game but we have a better name source - update it
-            game.name_source = name_source
-            needs_save = True
-
-        # Update screenscraper_id if provided (from ScreenScraper lookup)
-        if screenscraper_id and not game.screenscraper_id:
-            game.screenscraper_id = screenscraper_id
-            needs_save = True
-
-        if needs_save:
-            game.save()
-
-    except IntegrityError:
-        # Race condition: another ROM file created the game or set screenscraper_id
-        # Re-query to find the existing game
-        logger.debug(f"IntegrityError creating game '{name}' - finding existing game")
-        game = find_existing_game(
-            name=name, system=system, screenscraper_id=screenscraper_id
+            game_created = False
+    else:
+        raise DatabaseError(
+            f"Could not resolve a locked or create a new game '{name}' for "
+            f"system '{system.slug}' after 3 attempts; refusing to continue "
+            "with an unlocked game"
         )
-        if not game and screenscraper_id:
-            # Fallback: direct lookup by screenscraper_id (constraint violation source)
-            game = Game.objects.filter(
-                screenscraper_id=screenscraper_id, system=system
-            ).first()
-        if not game:
-            # Last resort: exact name match (unique_together violation source)
-            game = Game.objects.filter(name=name, system=system).first()
-        if not game:
-            # Should not happen, but raise if we still can't find it
-            raise
-        game_created = False
 
     # Find or create rom set for this region/revision/source
     rom_set, rom_set_created = ROMSet.objects.get_or_create(
@@ -551,7 +567,8 @@ def get_or_create_rom_set(
     # Note: default ROMSet recalculation happens AFTER ROM creation in the caller,
     # since the ROMSet needs at least one ROM for scoring to work.
 
-    # Queue after ROM creation; metadata merging can delete empty ROMSets.
+    # Metadata candidates: new games, or existing games without a
+    # screenscraper_id that just gained a ROMSet. Callers queue later.
     metadata_needed = fetch_metadata and (
         game_created or (not game.screenscraper_id and rom_set_created)
     )
@@ -626,7 +643,7 @@ def create_rom_from_archive_as_rom(
         "added": 0,
         "skipped": 0,
         "errors": [],
-        "metadata_queued": 0,
+        "game_ids": [],
         "added_rom_ids": [],
     }
 
@@ -710,10 +727,9 @@ def create_rom_from_archive_as_rom(
     )
     results["added"] = 1
     if metadata_needed:
-        from .tasks import queue_game_metadata
-
-        if queue_game_metadata(rom_set.game):
-            results["metadata_queued"] = 1
+        # Metadata is queued by scan_directory after all scan writes finish,
+        # so a metadata merge cannot race this transaction.
+        results["game_ids"].append(rom_set.game_id)
     return results
 
 
@@ -756,7 +772,7 @@ def create_archived_rom(
         archive_path=archive_path, path_in_archive=path_in_archive
     ).exists():
         logger.debug("Skipped existing archived ROM: %s", composite_path)
-        return {"added": 0, "skipped": 1, "metadata_queued": 0, "added_rom_ids": []}
+        return {"added": 0, "skipped": 1, "game_ids": [], "added_rom_ids": []}
 
     # Parse filename (use internal file's name for metadata)
     if parsing_filename:
@@ -831,16 +847,11 @@ def create_archived_rom(
         crc32 or "(none)",
     )
 
-    metadata_queued = False
-    if metadata_needed:
-        from .tasks import queue_game_metadata
-
-        metadata_queued = queue_game_metadata(rom_set.game)
-
     return {
         "added": 1,
         "skipped": 0,
-        "metadata_queued": 1 if metadata_queued else 0,
+        # Metadata is queued by scan_directory after all scan writes finish.
+        "game_ids": [rom_set.game_id] if metadata_needed else [],
         "added_rom_ids": [rom.pk],
     }
 
@@ -879,13 +890,13 @@ def process_archive(
             - current_directory: current directory being scanned
 
     Returns:
-        dict with keys: added, skipped, errors, metadata_queued, added_rom_ids
+        dict with keys: added, skipped, errors, game_ids, added_rom_ids
     """
     results = {
         "added": 0,
         "skipped": 0,
         "errors": [],
-        "metadata_queued": 0,
+        "game_ids": [],
         "added_rom_ids": [],
     }
 
@@ -963,7 +974,7 @@ def process_archive(
             )
             results["added"] += result["added"]
             results["skipped"] += result["skipped"]
-            results["metadata_queued"] += result.get("metadata_queued", 0)
+            results["game_ids"].extend(result.get("game_ids", []))
             results["added_rom_ids"].extend(result.get("added_rom_ids", []))
 
             # Update roms_found in progress_state for next callback
@@ -994,7 +1005,7 @@ def process_archive(
         )
         results["added"] += result["added"]
         results["skipped"] += result["skipped"]
-        results["metadata_queued"] += result.get("metadata_queued", 0)
+        results["game_ids"].extend(result.get("game_ids", []))
         results["added_rom_ids"].extend(result.get("added_rom_ids", []))
 
         # Update roms_found in progress_state
@@ -1056,7 +1067,7 @@ def scan_directory(
     seen_paths = set()
     images_added = 0
     images_skipped = 0
-    metadata_queued = 0
+    metadata_game_ids = []  # Games to queue metadata for, after all writes
     added_rom_ids = []  # Track ROM IDs for parallel identification
     collected_images = []  # [(file_path, filename, system), ...]
 
@@ -1138,7 +1149,7 @@ def scan_directory(
                     continue
                 added += archive_results["added"]
                 skipped += archive_results["skipped"]
-                metadata_queued += archive_results.get("metadata_queued", 0)
+                metadata_game_ids.extend(archive_results.get("game_ids", []))
                 added_rom_ids.extend(archive_results.get("added_rom_ids", []))
                 errors.extend(archive_results["errors"])
                 continue
@@ -1188,7 +1199,6 @@ def scan_directory(
                     pass
 
             # A savepoint lets PostgreSQL recover after one file fails.
-            metadata_was_queued = False
             try:
                 with transaction.atomic():
                     rom_set, _, rom_metadata_needed, _ = get_or_create_rom_set(
@@ -1230,18 +1240,16 @@ def scan_directory(
                     from .romset_scoring import recalculate_default_romset
 
                     recalculate_default_romset(rom_set.game)
-
-                    if rom_metadata_needed:
-                        from .tasks import queue_game_metadata
-
-                        metadata_was_queued = queue_game_metadata(rom_set.game)
             except Exception as e:
                 logger.error("Failed to process %s: %s", file_path, e)
                 errors.append(f"Failed to process {file_path}: {e}")
                 continue
 
             added += 1
-            metadata_queued += int(metadata_was_queued)
+            if rom_metadata_needed:
+                # Metadata is queued after all scan writes finish, so a
+                # metadata merge cannot race this transaction.
+                metadata_game_ids.append(rom_set.game_id)
             added_rom_ids.append(rom.pk)
             hash_info = f"sha1={sha1}" if sha1 else f"crc32={crc32 or '(none)'}"
             logger.debug(
@@ -1337,6 +1345,19 @@ def scan_directory(
                     game.delete()
                     deleted_games += 1
                     logger.debug("Deleted orphan Game: %s", game.name)
+
+    # Queue metadata only after all scan writes and orphan cleanup are done,
+    # so a metadata merge cannot race the scan's own inserts. Deduplicate:
+    # multi-ROM archives can touch the same game repeatedly.
+    metadata_queued = 0
+    from .tasks import queue_game_metadata
+
+    for game_pk in dict.fromkeys(metadata_game_ids):
+        game = Game.objects.filter(pk=game_pk).first()
+        if game is None:
+            continue  # Merged away by a concurrent job; nothing to fetch
+        if queue_game_metadata(game):
+            metadata_queued += 1
 
     logger.info(
         "Scan complete: added=%d, skipped=%d, deleted_roms=%d (romsets=%d, games=%d), "
