@@ -155,95 +155,62 @@ def match_by_folder(path: Path, systems: list) -> Optional[System]:
     return None
 
 
+def detect_system_details(
+    file_path: str,
+    systems_cache: list,
+    exclusive_map: dict,
+    internal_path: str = "",
+) -> tuple[Optional[System], str]:
+    """Classify a disk file or archive member, including the scan decision."""
+    path = Path(internal_path or file_path)
+    extension = get_full_extension(path.name)
+    if not extension:
+        return None, "no_extension"
+
+    # Archive members reject non-ROM files before exclusive extension matching.
+    if internal_path and is_non_rom_extension(extension):
+        return None, "non_rom_extension"
+
+    if extension in exclusive_map:
+        return exclusive_map[extension], "exclusive_extension"
+
+    folder_system = match_by_folder(path, systems_cache)
+    if folder_system:
+        if is_acceptable_extension(extension, folder_system):
+            return folder_system, "internal_folder" if internal_path else "folder"
+        if not internal_path and is_non_rom_extension(extension):
+            return None, "non_rom_extension"
+        return None, "unsupported_extension"
+
+    if internal_path:
+        archive_system = match_by_folder(Path(file_path), systems_cache)
+        if archive_system:
+            if is_acceptable_extension(extension, archive_system):
+                return archive_system, "archive_folder"
+            return None, "unsupported_extension"
+
+    return None, "no_folder_match"
+
+
 def detect_system_for_archived_file(
     archive_path: str,
     internal_path: str,
     systems_cache: list,
     exclusive_map: dict,
 ) -> Optional[System]:
-    """
-    Detect system for a file inside an archive.
-
-    Layered detection strategy:
-    1. Skip non-ROM extensions early (e.g., screenshots inside archive)
-    2. Exclusive extension - definitive match without folder context
-    3. Internal folder match + acceptable extension
-    4. Archive folder match + acceptable extension
-
-    Args:
-        archive_path: Path to the archive file
-        internal_path: Path to the file within the archive
-        systems_cache: List of System objects
-        exclusive_map: Map of exclusive extensions to systems
-
-    Returns:
-        System instance or None if no match
-    """
-    extension = get_full_extension(Path(internal_path).name)
-
-    if not extension:
-        return None
-
-    # Skip non-ROM extensions early (e.g., screenshots, docs inside archives)
-    if is_non_rom_extension(extension):
-        return None
-
-    # Layer 1: Exclusive extension (highest priority)
-    if extension in exclusive_map:
-        matched_system = exclusive_map[extension]
+    """Detect the system for a ROM inside an archive."""
+    system, reason = detect_system_details(
+        archive_path, systems_cache, exclusive_map, internal_path
+    )
+    if system or reason == "unsupported_extension":
         logger.debug(
-            "Matched %s!%s to system %s (exclusive extension %s)",
-            Path(archive_path).name,
+            "Archive member %s!%s: %s (%s)",
+            archive_path,
             internal_path,
-            matched_system.name,
-            extension,
+            system,
+            reason,
         )
-        return matched_system
-
-    # Layer 2: Internal folder match + acceptable extension
-    internal_system = match_by_folder(Path(internal_path), systems_cache)
-    if internal_system:
-        if is_acceptable_extension(extension, internal_system):
-            logger.debug(
-                "Matched %s!%s to system %s (internal folder + acceptable extension)",
-                Path(archive_path).name,
-                internal_path,
-                internal_system.name,
-            )
-            return internal_system
-        # Unknown extension - skip with debug log
-        logger.debug(
-            "Skipped %s!%s: unknown extension %s in %s folder",
-            Path(archive_path).name,
-            internal_path,
-            extension,
-            internal_system.name,
-        )
-        return None
-
-    # Layer 3: Archive folder match + acceptable extension
-    archive_system = match_by_folder(Path(archive_path), systems_cache)
-    if archive_system:
-        if is_acceptable_extension(extension, archive_system):
-            logger.debug(
-                "Matched %s!%s to system %s (archive folder + acceptable extension)",
-                Path(archive_path).name,
-                internal_path,
-                archive_system.name,
-            )
-            return archive_system
-        # Unknown extension - skip with debug log
-        logger.debug(
-            "Skipped %s!%s: unknown extension %s in %s folder",
-            Path(archive_path).name,
-            internal_path,
-            extension,
-            archive_system.name,
-        )
-        return None
-
-    # Can't determine system
-    return None
+    return system
 
 
 def detect_system(
@@ -251,67 +218,11 @@ def detect_system(
     systems_cache: list,
     exclusive_map: dict,
 ) -> Optional[System]:
-    """
-    Detect the system for a ROM file.
-
-    Layered detection strategy:
-    1. Exclusive extension - definitive match without folder context
-    2. Folder match + acceptable extension - match if extension is valid for system
-    3. Folder match + non-ROM extension - skip (e.g., screenshots)
-    4. Folder match + unknown extension - skip with debug log
-
-    Args:
-        file_path: Absolute path to the ROM file
-        systems_cache: List of System objects
-        exclusive_map: Map of exclusive extensions to systems
-
-    Returns:
-        System instance or None if no match
-    """
-    path = Path(file_path)
-    extension = get_full_extension(path.name)
-
-    if not extension:
-        return None
-
-    # Layer 1: Exclusive extension (highest priority after hash lookup)
-    if extension in exclusive_map:
-        matched_system = exclusive_map[extension]
-        logger.debug(
-            "Matched %s to system %s (exclusive extension %s)",
-            file_path,
-            matched_system.name,
-            extension,
-        )
-        return matched_system
-
-    # Layer 2: Folder match with extension validation
-    folder_system = match_by_folder(path, systems_cache)
-    if folder_system:
-        # Check if extension is acceptable for this system
-        if is_acceptable_extension(extension, folder_system):
-            logger.debug(
-                "Matched %s to system %s (folder + acceptable extension)",
-                file_path,
-                folder_system.name,
-            )
-            return folder_system
-
-        # Check if it's a known non-ROM extension (skip silently)
-        if is_non_rom_extension(extension):
-            return None
-
-        # Unknown extension in system folder - skip with debug log
-        logger.debug(
-            "Skipped %s: unknown extension %s in %s folder",
-            file_path,
-            extension,
-            folder_system.name,
-        )
-        return None
-
-    # No folder match and not exclusive extension -> can't identify
-    return None
+    """Detect the system for a ROM file."""
+    system, reason = detect_system_details(file_path, systems_cache, exclusive_map)
+    if system or reason == "unsupported_extension":
+        logger.debug("File %s: %s (%s)", file_path, system, reason)
+    return system
 
 
 def normalize_name_for_matching(name: str) -> str:
