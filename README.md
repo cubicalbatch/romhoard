@@ -80,6 +80,28 @@ docker compose up -d
 
 Open http://localhost:6766 in your browser.
 
+## Troubleshooting ROM identification
+
+From the directory containing your Compose file, create a report to share:
+
+```bash
+docker compose exec -T romhoard python manage.py diagnose_roms > romhoard-debug.json
+```
+
+For a local installation: `uv run ./manage.py diagnose_roms > romhoard-debug.json`.
+The command reads saved scan directories (or `ROM_LIBRARY_ROOT` if none are saved).
+Pass a directory to diagnose just that path. It does not rescan, modify the
+database, compute hashes, or contact metadata services.
+
+The default report groups files with the same detection outcome, giving a count
+and representative fields for each group. It includes stored-versus-predicted
+systems, archive outcomes, scan counts, and configuration drift; it excludes
+paths, filenames, game titles, hashes, credentials, and raw errors. For every
+file's relative path, game title, and stored CRC32/SHA1, add `--details` before
+`>` (optionally with a single scan directory to keep the file small). Review
+this detailed report before sharing: hashes can identify ROM content. Neither
+report uploads itself.
+
 ## Configuration
 
 Most things are configured through the web UI. For ScreenScraper metadata fetching, you'll need a free account at [screenscraper.fr](https://www.screenscraper.fr/).
