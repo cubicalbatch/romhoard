@@ -5,7 +5,7 @@
       "slug": "genesis",
       "extensions": [".gen", ".smd", ".bin", ".md"],
       "exclusive_extensions": [".gen", ".smd", ".md"],
-      "folder_names": ["Genesis", "Mega Drive", "MD", "gen", "megadrive"],
+      "folder_names": ["Genesis", "Mega Drive", "MD", "gen", "megadrive", "Sega - Genesis - MegaDrive"],
       "screenscraper_ids": [1]
     },
     {
@@ -13,7 +13,7 @@
       "slug": "sms",
       "extensions": [".sms"],
       "exclusive_extensions": [".sms"],
-      "folder_names": ["SMS", "Master System", "Sega Master System", "SegaMasterSystem"],
+      "folder_names": ["SMS", "Master System", "Sega Master System", "SegaMasterSystem", "Sega - MasterSystem"],
       "screenscraper_ids": [2, 21, 109]
     },
     {
@@ -21,7 +21,7 @@
       "slug": "nes",
       "extensions": [".nes"],
       "exclusive_extensions": [".nes"],
-      "folder_names": ["NES", "Famicom", "fc", "famicom", "Nintendo Entertainment System", "NintendoEntertainmentSystem"],
+      "folder_names": ["NES", "Famicom", "fc", "famicom", "Nintendo Entertainment System", "NintendoEntertainmentSystem", "Nintendo - Nintendo Entertainment System - Famicom"],
       "screenscraper_ids": [3, 106]
     },
     {
@@ -29,7 +29,7 @@
       "slug": "snes",
       "extensions": [".sfc", ".smc"],
       "exclusive_extensions": [".sfc", ".smc"],
-      "folder_names": ["SNES", "SFC", "Super Famicom", "Super Nintendo", "SuperNintendo", "SuperFamicom", "Super Nintendo Entertainment System"],
+      "folder_names": ["SNES", "SFC", "Super Famicom", "Super Nintendo", "SuperNintendo", "SuperFamicom", "Super Nintendo Entertainment System", "Nintendo - Super Nintendo Entertainment System - Super Famicom"],
       "screenscraper_ids": [4]
     },
     {
@@ -64,7 +64,7 @@
       "slug": "gb",
       "extensions": [".gb"],
       "exclusive_extensions": [".gb"],
-      "folder_names": ["GB", "Game Boy", "GameBoy"],
+      "folder_names": ["GB", "Game Boy", "GameBoy", "Nintendo - Game Boy"],
       "screenscraper_ids": [9]
     },
     {
@@ -72,7 +72,7 @@
       "slug": "gbc",
       "extensions": [".gbc"],
       "exclusive_extensions": [".gbc"],
-      "folder_names": ["GBC", "Game Boy Color", "GameBoyColor"],
+      "folder_names": ["GBC", "Game Boy Color", "GameBoyColor", "Nintendo - Game Boy Color"],
       "screenscraper_ids": [10]
     },
     {
@@ -80,7 +80,7 @@
       "slug": "vb",
       "extensions": [".vb", ".vboy"],
       "exclusive_extensions": [".vb", ".vboy"],
-      "folder_names": ["VB", "Virtual Boy", "VirtualBoy"],
+      "folder_names": ["VB", "Virtual Boy", "VirtualBoy", "Nintendo - Virtual Boy"],
       "screenscraper_ids": [11]
     },
     {
@@ -88,7 +88,7 @@
       "slug": "gba",
       "extensions": [".gba"],
       "exclusive_extensions": [".gba"],
-      "folder_names": ["GBA", "Game Boy Advance", "GameBoyAdvance"],
+      "folder_names": ["GBA", "Game Boy Advance", "GameBoyAdvance", "Nintendo - Game Boy Advanced", "Nintendo - Game Boy Advance"],
       "screenscraper_ids": [12]
     },
     {
@@ -152,7 +152,7 @@
       "slug": "gg",
       "extensions": [".gg"],
       "exclusive_extensions": [".gg"],
-      "folder_names": ["GG", "Game Gear", "GameGear"],
+      "folder_names": ["GG", "Game Gear", "GameGear", "Sega - GameGear"],
       "screenscraper_ids": [21]
     },
     {
@@ -176,7 +176,7 @@
       "slug": "ngp",
       "extensions": [".ngp", ".ngc"],
       "exclusive_extensions": [".ngp", ".ngc"],
-      "folder_names": ["NGP", "Neo Geo Pocket", "NGPC", "NeoGeoPocket", "Neo Geo Pocket Color", "NeoGeoPocketColor"],
+      "folder_names": ["NGP", "Neo Geo Pocket", "NGPC", "NeoGeoPocket", "Neo Geo Pocket Color", "NeoGeoPocketColor", "SNK - Neo Geo Pocket", "SNK - Neo Geo Pocket Color"],
       "screenscraper_ids": [25, 82]
     },
     {
@@ -184,7 +184,7 @@
       "slug": "2600",
       "extensions": [".a26", ".bin"],
       "exclusive_extensions": [".a26"],
-      "folder_names": ["2600", "Atari 2600"],
+      "folder_names": ["2600", "Atari 2600", "Atari - 2600"],
       "screenscraper_ids": [26]
     },
     {
@@ -192,7 +192,7 @@
       "slug": "jaguar",
       "extensions": [".j64", ".jag"],
       "exclusive_extensions": [".j64", ".jag"],
-      "folder_names": ["Jaguar", "Atari Jaguar"],
+      "folder_names": ["Jaguar", "Atari Jaguar", "Atari - Jaguar"],
       "screenscraper_ids": [27]
     },
     {
@@ -200,7 +200,7 @@
       "slug": "lynx",
       "extensions": [".lnx", ".lyx"],
       "exclusive_extensions": [".lnx", ".lyx"],
-      "folder_names": ["Lynx", "Atari Lynx"],
+      "folder_names": ["Lynx", "Atari Lynx", "Atari - Lynx"],
       "screenscraper_ids": [28]
     },
     {
@@ -216,7 +216,7 @@
       "slug": "ngage",
       "extensions": [".app"],
       "exclusive_extensions": [],
-      "folder_names": ["Nokia N-Gage", "NGAGE"],
+      "folder_names": ["Nokia N-Gage", "NGAGE", "Nokia - N-Gage"],
       "screenscraper_ids": [30]
     },
     {
@@ -224,7 +224,7 @@
       "slug": "sgfx",
       "extensions": [".sgx", ".pce", ".cue", ".ccd", ".chd"],
       "exclusive_extensions": [".sgx"],
-      "folder_names": ["SuperGrafx", "SGFX"],
+      "folder_names": ["SuperGrafx", "SGFX", "NEC - Super Grafx"],
       "screenscraper_ids": [105]
     },
     {
@@ -232,7 +232,7 @@
       "slug": "pce",
       "extensions": [".pce", ".cue", ".ccd", ".chd", ".toc", ".m3u"],
       "exclusive_extensions": [".pce"],
-      "folder_names": ["PCE", "TurboGrafx", "TurboGrafx-16", "PC Engine", "PCEngine", "TG16"],
+      "folder_names": ["PCE", "TurboGrafx", "TurboGrafx-16", "PC Engine", "PCEngine", "TG16", "NEC - PC-Engine - TurboGrafx-16"],
       "screenscraper_ids": [31, 105]
     },
     {
@@ -264,7 +264,7 @@
       "slug": "5200",
       "extensions": [".a52", ".bin"],
       "exclusive_extensions": [".a52"],
-      "folder_names": ["5200", "Atari 5200"],
+      "folder_names": ["5200", "Atari 5200", "Atari - 5200"],
       "screenscraper_ids": [40]
     },
     {
@@ -272,7 +272,7 @@
       "slug": "7800",
       "extensions": [".a78", ".bin"],
       "exclusive_extensions": [".a78"],
-      "folder_names": ["7800", "Atari 7800"],
+      "folder_names": ["7800", "Atari 7800", "Atari - 7800"],
       "screenscraper_ids": [41]
     },
     {
@@ -280,7 +280,7 @@
       "slug": "atarist",
       "extensions": [".st", ".stx", ".msa", ".dim", ".ipf", ".ctr", ".m3u", ".m3u8", ".zip", ".gz", ".acsi", ".ahd", ".vhd", ".scsi", ".shd", ".ide", ".gem"],
       "exclusive_extensions": [".st", ".stx", ".msa"],
-      "folder_names": ["Atari ST", "ST", "Atari ST-STE-TT-Falcon"],
+      "folder_names": ["Atari ST", "ST", "Atari ST-STE-TT-Falcon", "Atari - ST"],
       "screenscraper_ids": [42]
     },
     {
@@ -296,7 +296,7 @@
       "slug": "ws",
       "extensions": [".ws", ".wsc"],
       "exclusive_extensions": [".ws", ".wsc"],
-      "folder_names": ["WonderSwan", "WS", "WSC"],
+      "folder_names": ["WonderSwan", "WS", "WSC", "Bandai - WonderSwan", "Bandai - WonderSwan Color"],
       "screenscraper_ids": [45, 46]
     },
     {
@@ -379,7 +379,7 @@
       "slug": "psp",
       "extensions": [".iso", ".cso", ".chd"],
       "exclusive_extensions": [".cso"],
-      "folder_names": ["PSP", "PPSSPP", "PlayStation Portable", "PlayStationPortable"],
+      "folder_names": ["PSP", "PPSSPP", "PlayStation Portable", "PlayStationPortable", "Sony - PlayStation Portable"],
       "screenscraper_ids": [61]
     },
     {
@@ -387,7 +387,7 @@
       "slug": "amiga",
       "extensions": [".adf", ".hdf", ".ipf", ".lha", ".zip", ".uae", ".adz", ".dms", ".fdi", ".hdz", ".slave", ".info", ".cue", ".ccd", ".nrg", ".mds", ".iso", ".chd", ".m3u", ".7z", ".rp9"],
       "exclusive_extensions": [".adf", ".hdf", ".ipf"],
-      "folder_names": ["Amiga"],
+      "folder_names": ["Amiga", "Commodore - Amiga"],
       "screenscraper_ids": [64]
     },
     {
@@ -401,9 +401,9 @@
     {
       "name": "Commodore 64",
       "slug": "c64",
-      "extensions": [".d64", ".t64", ".prg", ".crt", ".d71", ".d80", ".d81", ".d82", ".g64", ".g41", ".x64", ".p00", ".bin", ".zip", ".gz", ".cmd", ".m3u", ".vfl", ".vsf", ".nib", ".nbz", ".d2m", ".d4m"],
+      "extensions": [".d64", ".t64", ".tap", ".prg", ".crt", ".d71", ".d80", ".d81", ".d82", ".g64", ".g41", ".x64", ".p00", ".bin", ".zip", ".gz", ".cmd", ".m3u", ".vfl", ".vsf", ".nib", ".nbz", ".d2m", ".d4m"],
       "exclusive_extensions": [".d64", ".t64"],
-      "folder_names": ["C64", "Commodore 64", "COMMODORE"],
+      "folder_names": ["C64", "Commodore 64", "COMMODORE", "Commodore - C64"],
       "screenscraper_ids": [66]
     },
     {
@@ -533,9 +533,9 @@
       "slug": "neogeo",
       "extensions": [],
       "exclusive_extensions": [],
-      "folder_names": ["Neo Geo", "NeoGeo", "MVS", "AES"],
+      "folder_names": ["Neo Geo", "NeoGeo", "MVS", "AES", "SNK - Neo Geo"],
       "archive_as_rom": true,
-      "screenscraper_ids": [142, 82, 25]
+      "screenscraper_ids": [142]
     },
     {
       "name": "Watara Supervision",

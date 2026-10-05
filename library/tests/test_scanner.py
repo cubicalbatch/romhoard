@@ -7,12 +7,16 @@ from library.models import ROM, Game, System, ROMSet, GameImage
 from library.scanner import scan_directory
 from library.system_loader import sync_systems
 from library.scanner import (
+    build_extension_map,
+    detect_system,
+    detect_system_details,
     detect_system_for_archived_file,
     filter_rom_files_in_archive,
     get_full_extension,
     is_compound_rom_extension,
     should_expand_archive,
 )
+from library.extensions import load_non_rom_extensions
 
 
 FIXTURES_PATH = (
@@ -411,7 +415,7 @@ class TestLayeredDetection(TestCase):
         # Also create a valid ROM
         (gba_folder / "Mario.gba").write_bytes(b"fake rom")
 
-        result = scan_directory(str(self.rom_library))
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
 
         # Should only add the valid ROM
         self.assertEqual(result["added"], 1)
@@ -431,7 +435,7 @@ class TestLayeredDetection(TestCase):
         # Also create a valid ROM
         (gba_folder / "Zelda.gba").write_bytes(b"fake rom")
 
-        result = scan_directory(str(self.rom_library))
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
 
         # Should only add the valid ROM
         self.assertEqual(result["added"], 1)
@@ -447,7 +451,7 @@ class TestLayeredDetection(TestCase):
         # .gba is exclusive to GBA, so even in N64 folder it should be GBA
         (n64_folder / "Mario.gba").write_bytes(b"fake rom")
 
-        result = scan_directory(str(self.rom_library))
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
 
         self.assertEqual(result["added"], 1)
         rom = ROM.objects.first()
@@ -465,7 +469,7 @@ class TestLayeredDetection(TestCase):
             zf.writestr("Mario.gba", b"fake rom")
             zf.writestr("Zelda.gba", b"fake rom")
 
-        result = scan_directory(str(self.rom_library))
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
 
         # Should expand and create 2 ROMs
         self.assertEqual(result["added"], 2)
@@ -479,7 +483,7 @@ class TestLayeredDetection(TestCase):
         # .bin is not exclusive to any system, so no folder match = no detection
         (random_folder / "game.bin").write_bytes(b"fake rom")
 
-        result = scan_directory(str(self.rom_library))
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
 
         # Should NOT add because .bin is not exclusive and folder doesn't match
         self.assertEqual(result["added"], 0)
@@ -525,7 +529,7 @@ class TestArcadeROMs(TestCase):
             zf.writestr("za10", b"chip dump 1")
             zf.writestr("za11", b"chip dump 2")
 
-        result = scan_directory(str(self.rom_library))
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
 
         self.assertEqual(result["added"], 1)
         rom = ROM.objects.get(file_name="zookeep.zip")
@@ -547,7 +551,7 @@ class TestArcadeROMs(TestCase):
             zf.writestr("c1", b"character data 1")
             zf.writestr("s1", b"sound data 1")
 
-        result = scan_directory(str(self.rom_library))
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
 
         self.assertEqual(result["added"], 1)
         rom = ROM.objects.get(file_name="kof98.zip")
@@ -566,7 +570,7 @@ class TestArcadeROMs(TestCase):
             zf.writestr("Mario.gba", b"fake rom data")
             zf.writestr("Zelda.gba", b"fake rom data")
 
-        result = scan_directory(str(self.rom_library))
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
 
         # Should expand and create 2 ROMs
         self.assertEqual(result["added"], 2)
@@ -913,3 +917,363 @@ class TestSourcePathGrouping(TestCase):
             ROMSet.objects.create(
                 game=game, region="USA", revision="", source_path="/roms/collection1"
             )
+
+
+class TestIssue3FolderAliases(TestCase):
+    """Issue #3: No-Intro style folder names must resolve via explicit aliases.
+
+    The reported library uses top-level folders like "Sony - Playstation
+    Portable", "SNK - Neo Geo", "Sega - Genesis - MegaDrive", "Atari - ST",
+    "Commodore - C64" and "NEC - Super Grafx". These tests read the real
+    systems config via sync_systems().
+    """
+
+    def setUp(self):
+        sync_systems()
+        self.systems_cache = list(System.objects.all())
+        self.exclusive_map = build_extension_map(self.systems_cache)
+
+    def _detect(self, path):
+        return detect_system(path, self.systems_cache, self.exclusive_map)
+
+    def _get(self, slug):
+        return System.objects.get(slug=slug)
+
+    def test_psp_no_intro_folder_alias(self):
+        self.assertEqual(
+            self._detect("/roms/Sony - Playstation Portable/Game.iso"), self._get("psp")
+        )
+
+    def test_neogeo_snk_folder_alias(self):
+        self.assertEqual(
+            self._detect("/roms/SNK - Neo Geo/mslug.zip"), self._get("neogeo")
+        )
+
+    def test_genesis_no_intro_folder_alias(self):
+        self.assertEqual(
+            self._detect("/roms/Sega - Genesis - MegaDrive/Cool Spot (J) [!].bin"),
+            self._get("genesis"),
+        )
+
+    def test_atari_st_folder_alias(self):
+        self.assertEqual(
+            self._detect("/roms/Atari - ST/10th Frame (Europe).st"),
+            self._get("atarist"),
+        )
+
+    def test_c64_no_intro_folder_alias(self):
+        self.assertEqual(
+            self._detect("/roms/Commodore - C64/COSMICR0.G64"), self._get("c64")
+        )
+
+    def test_c64_tap_and_d81_folder_extensions(self):
+        """C64 tape (.tap) and disk (.d81) images import from the C64 folder."""
+        c64 = self._get("c64")
+        self.assertEqual(
+            self._detect("/roms/Commodore - C64/Jupiter Lander (Tape).tap"), c64
+        )
+        self.assertEqual(
+            self._detect("/roms/Commodore - C64/Summer Games (Disk 1).d81"), c64
+        )
+
+    def test_ngage_supported_app_folder(self):
+        """N-Gage .app titles import from the N-Gage folder alias."""
+        self.assertEqual(
+            self._detect("/roms/Nokia - N-Gage/System Rush (Europe).app"),
+            self._get("ngage"),
+        )
+
+    def test_sgfx_folder_alias(self):
+        self.assertEqual(
+            self._detect("/roms/NEC - Super Grafx/Battle Ace (Japan).pce"),
+            self._get("sgfx"),
+        )
+
+    def test_spc_music_dump_is_non_rom(self):
+        """SNES sound dumps are rejected as non-ROM instead of scan noise."""
+        load_non_rom_extensions.cache_clear()
+        system, reason = detect_system_details(
+            "/roms/Nintendo - Super Nintendo Entertainment System - Super Famicom/"
+            "Chrono Trigger.spc",
+            self.systems_cache,
+            self.exclusive_map,
+        )
+        self.assertIsNone(system)
+        self.assertEqual(reason, "non_rom_extension")
+
+
+class TestIssue3FolderContextOverExclusive(TestCase):
+    """Issue #3: a folder that ACCEPTS a shared extension beats an exclusive
+    extension claimed by a different system; the deepest folder component
+    wins; genuine cross-folder exclusives still hold.
+
+    Built with explicit System objects so the precedence rules are pinned
+    independently of packaged config.
+    """
+
+    def setUp(self):
+        self.amiga = System.objects.create(
+            name="Commodore Amiga",
+            slug="amiga-test",
+            extensions=[".adf", ".hdf", ".ipf", ".zip"],
+            exclusive_extensions=[".adf", ".hdf", ".ipf"],
+            folder_names=["Commodore - Amiga", "Amiga"],
+        )
+        self.atarist = System.objects.create(
+            name="Atari ST",
+            slug="atarist-test",
+            extensions=[".st", ".stx", ".msa", ".ipf", ".zip"],
+            exclusive_extensions=[".st", ".stx", ".msa"],
+            folder_names=["Atari - ST", "Atari ST", "ST"],
+        )
+        self.genesis = System.objects.create(
+            name="Sega Genesis",
+            slug="genesis-test",
+            extensions=[".gen", ".smd", ".bin", ".md", ".zip"],
+            exclusive_extensions=[".gen", ".smd", ".md"],
+            folder_names=["Sega - Genesis - MegaDrive", "Genesis", "Mega Drive"],
+        )
+        self.sega32x = System.objects.create(
+            name="Sega 32X",
+            slug="32x-test",
+            extensions=[".32x", ".bin"],
+            exclusive_extensions=[".32x"],
+            folder_names=["32X", "Sega 32X"],
+        )
+        self.psp = System.objects.create(
+            name="PSP",
+            slug="psp-test",
+            extensions=[".iso", ".cso", ".chd"],
+            exclusive_extensions=[".cso"],
+            folder_names=["Sony - Playstation Portable", "PSP"],
+        )
+        self.ps2 = System.objects.create(
+            name="PlayStation 2",
+            slug="ps2-test",
+            extensions=[".iso", ".cso", ".chd", ".bin"],
+            exclusive_extensions=[],
+            folder_names=["Sony - PlayStation 2", "PS2"],
+        )
+        self.xbox360 = System.objects.create(
+            name="Microsoft Xbox 360",
+            slug="xbox360-test",
+            extensions=[".iso", ".xex"],
+            exclusive_extensions=[".xex"],
+            folder_names=["Microsoft Xbox 360", "XBOX360"],
+        )
+        # Cache order mirrors systems.json order: genesis precedes 32x.
+        self.systems_cache = [
+            self.genesis,
+            self.sega32x,
+            self.amiga,
+            self.atarist,
+            self.psp,
+            self.ps2,
+            self.xbox360,
+        ]
+        self.exclusive_map = build_extension_map(self.systems_cache)
+
+    def _detect(self, path):
+        return detect_system(path, self.systems_cache, self.exclusive_map)
+
+    def _detect_member(self, archive_path, internal_path):
+        return detect_system_for_archived_file(
+            archive_path, internal_path, self.systems_cache, self.exclusive_map
+        )
+
+    def test_atari_st_ipf_member_is_atarist_not_amiga(self):
+        """An .ipf member under Atari - ST is an Atari ST disk, not Amiga."""
+        self.assertEqual(
+            self._detect_member(
+                "/roms/Atari - ST/10th Frame (Europe).zip", "10th Frame (Europe).ipf"
+            ),
+            self.atarist,
+        )
+
+    def test_atari_st_ipf_disk_is_atarist_not_amiga(self):
+        self.assertEqual(
+            self._detect("/roms/Atari - ST/10th Frame (Europe).ipf"), self.atarist
+        )
+
+    def test_deepest_folder_component_wins(self):
+        """A .bin in the nested 32X folder must not be captured by the outer
+        Genesis folder, regardless of system config order."""
+        self.assertEqual(
+            self._detect("/roms/Sega - Genesis - MegaDrive/32X/36 Great Holes.bin"),
+            self.sega32x,
+        )
+
+    def test_internal_folder_beats_accepting_outer_folder(self):
+        """An inner member folder that accepts the extension wins even when the
+        outer archive folder would accept it too."""
+        self.assertEqual(
+            self._detect_member(
+                "/roms/Sega - Genesis - MegaDrive/collection.zip", "32X/game.bin"
+            ),
+            self.sega32x,
+        )
+
+    def test_rejecting_internal_folder_blocks_outer_fallback(self):
+        """An explicit inner folder that rejects the extension must not be
+        silently overridden by the accepting outer archive folder."""
+        self.assertIsNone(
+            self._detect_member(
+                "/roms/Sony - PlayStation 2/collection.zip", "XBOX360/game.bin"
+            )
+        )
+
+    def test_genesis_md_member_in_genesis_archive(self):
+        """.md is a Mega Drive ROM extension inside Genesis archives, not markdown."""
+        self.assertEqual(
+            self._detect_member(
+                "/roms/Sega - Genesis - MegaDrive/AAAHH!!! Real Monsters (Europe).zip",
+                "AAAHH!!! Real Monsters (Europe).md",
+            ),
+            self.genesis,
+        )
+
+    def test_md_elsewhere_stays_non_rom(self):
+        """.md must stay blocked (markdown) outside a Genesis folder context."""
+        self.assertIsNone(
+            self._detect_member("/roms/Commodore - Amiga/Game.zip", "readme.md")
+        )
+
+    def test_disk_md_in_genesis_folder_is_genesis(self):
+        """.md on disk inside the Genesis folder is a Mega Drive ROM, not markdown."""
+        self.assertEqual(
+            self._detect("/roms/Sega - Genesis - MegaDrive/Cool Spot (J) [!].md"),
+            self.genesis,
+        )
+
+    def test_unscoped_disk_md_stays_non_rom(self):
+        """Unscoped README.md must not import as Genesis despite the exclusive .md claim."""
+        self.assertIsNone(self._detect("/roms/README.md"))
+
+    def test_disk_md_in_foreign_folder_stays_non_rom(self):
+        """Markdown in a foreign system folder stays blocked."""
+        self.assertIsNone(self._detect("/roms/Amiga/readme.md"))
+
+    def test_custom_declared_non_rom_extension_stays_blocked(self):
+        """A folder system merely listing a non-ROM extension (.txt) must not
+        import it, on disk or inside archives; only the extension's configured
+        exclusive claimant may override the blocklist."""
+        reader = System.objects.create(
+            name="Reader",
+            slug="reader-test",
+            extensions=[".txt", ".zip"],
+            exclusive_extensions=[],
+            folder_names=["Reader"],
+        )
+        cache = self.systems_cache + [reader]
+        reader_map = build_extension_map(cache)
+        self.assertIsNone(detect_system("/roms/Reader/notes.txt", cache, reader_map))
+        self.assertIsNone(
+            detect_system_for_archived_file(
+                "/roms/Reader/bundle.zip", "notes.txt", cache, reader_map
+            )
+        )
+
+    def test_cso_in_ps2_folder_overrides_psp_exclusive(self):
+        """.cso is exclusively claimed by PSP but a PS2 folder context is compatible."""
+        self.assertEqual(self._detect("/roms/Sony - PlayStation 2/Game.cso"), self.ps2)
+
+    def test_xex_in_psp_folder_stays_xbox360(self):
+        """Issue evidence: Fable II default.xex under the PSP folder is a genuine
+        Xbox 360 executable; PSP does not accept .xex so the exclusive mapping
+        must keep winning. Guards the preserved behavior."""
+        self.assertEqual(
+            self._detect_member(
+                "/roms/Sony - Playstation Portable/Fable II - Game of the Year Edition (USA, Europe).7z",
+                "Fable II - Game of the Year Edition (En,Zh,Ko,Pl,Cs,Hu)/default.xex",
+            ),
+            self.xbox360,
+        )
+
+    def test_gbc_in_gb_folder_still_gbc(self):
+        """Regression guard: GB folder does not accept .gbc so the exclusive
+        Game Boy Color mapping must still win."""
+        gb = System.objects.create(
+            name="Game Boy",
+            slug="gb-test",
+            extensions=[".gb"],
+            exclusive_extensions=[".gb"],
+            folder_names=["Nintendo - Game Boy", "Game Boy"],
+        )
+        gbc = System.objects.create(
+            name="Game Boy Color",
+            slug="gbc-test",
+            extensions=[".gbc"],
+            exclusive_extensions=[".gbc"],
+            folder_names=["Game Boy Color"],
+        )
+        cache = [gb, gbc] + self.systems_cache
+        self.assertEqual(
+            detect_system(
+                "/roms/Nintendo - Game Boy/Tetris.gbc",
+                cache,
+                build_extension_map(cache),
+            ),
+            gbc,
+        )
+
+
+class TestIssue3ScanIntegration(TestCase):
+    """End-to-end scan_directory regressions for issue #3 folders."""
+
+    def setUp(self):
+        import tempfile
+
+        sync_systems()
+        self.temp_dir = Path(tempfile.mkdtemp())
+        self.rom_library = self.temp_dir / "roms"
+        self.rom_library.mkdir(parents=True)
+        ROM.objects.all().delete()
+        Game.objects.all().delete()
+        ROMSet.objects.all().delete()
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_scan_atari_st_zip_stores_atarist(self):
+        """Atari - ST zip containing .ipf must become an Atari ST ROMSet, not Amiga."""
+        import zipfile
+
+        st_folder = self.rom_library / "Atari - ST"
+        st_folder.mkdir()
+        with zipfile.ZipFile(st_folder / "10th Frame (Europe).zip", "w") as zf:
+            zf.writestr("10th Frame (Europe).ipf", b"fake ipf")
+
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
+        self.assertEqual(result["added"], 1)
+        rom = ROM.objects.first()
+        self.assertEqual(rom.rom_set.game.system.slug, "atarist")
+
+    def test_scan_neogeo_zip_uses_archive_as_rom(self):
+        """SNK - Neo Geo MAME-style zip must resolve to Neo Geo and become one
+        archive-as-ROM ROMSet (previously: 0 added, all members skipped)."""
+        import zipfile
+
+        ng_folder = self.rom_library / "SNK - Neo Geo"
+        ng_folder.mkdir()
+        with zipfile.ZipFile(ng_folder / "mslug.zip", "w") as zf:
+            zf.writestr("030-p1.rom", b"fake p1")
+            zf.writestr("030-s1.rom", b"fake s1")
+            zf.writestr("030-m1.rom", b"fake m1")
+
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
+        self.assertEqual(result["added"], 1)
+        rom = ROM.objects.first()
+        self.assertEqual(rom.rom_set.game.system.slug, "neogeo")
+
+    def test_scan_genesis_no_intro_folder(self):
+        """Genesis .bin in the No-Intro named folder must be detected."""
+        gen_folder = self.rom_library / "Sega - Genesis - MegaDrive"
+        gen_folder.mkdir()
+        (gen_folder / "Cool Spot (J) [!].bin").write_bytes(b"fake genesis rom")
+
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
+        self.assertEqual(result["added"], 1)
+        rom = ROM.objects.first()
+        self.assertEqual(rom.rom_set.game.system.slug, "genesis")

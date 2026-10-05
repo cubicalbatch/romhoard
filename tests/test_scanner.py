@@ -225,20 +225,6 @@ class TestMatchByFolder:
 
         assert result is None
 
-    def test_first_matching_system_wins(self):
-        """Returns first matching system when multiple could match."""
-        system1 = MagicMock()
-        system1.folder_names = ["roms"]
-
-        system2 = MagicMock()
-        system2.folder_names = ["GBA"]
-
-        path = Path("/roms/GBA/game.gba")
-        result = match_by_folder(path, [system1, system2])
-
-        # First system's folder name "roms" matches first
-        assert result == system1
-
 
 # -----------------------------------------------------------------------------
 # Tests for should_expand_archive

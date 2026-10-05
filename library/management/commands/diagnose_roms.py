@@ -22,7 +22,7 @@ from library.scanner import (
     build_extension_map,
     detect_system_details,
     is_bios_file,
-    match_by_folder,
+    resolve_folder_decision,
     should_expand_archive,
 )
 from library.system_loader import get_systems_config
@@ -128,12 +128,17 @@ class Command(BaseCommand):
         )
 
         def folder_info(path, system, root):
-            """Expose only public system aliases, never private directory names."""
+            """Expose only public system aliases, never private directory names.
+
+            Reports the folder component nearest the filename, mirroring the
+            scanner's nearest-folder decision.
+            """
             if not system:
                 return None, None
             aliases = {name.casefold() for name in system.folder_names}
             parts = Path(path).parts
-            for index, part in enumerate(parts[:-1]):
+            for index in range(len(parts) - 2, -1, -1):
+                part = parts[index]
                 if part.casefold() in aliases:
                     scope = (
                         "archive_member"
@@ -227,13 +232,26 @@ class Command(BaseCommand):
                 nonlocal first, sequence
                 sequence += 1
                 records = stored.pop(file_path + ("!" + member if member else ""), [])
-                folder_path = member if reason == "internal_folder" else file_path
-                folder_system = predicted
-                if reason == "unsupported_extension":
-                    folder_system = match_by_folder(Path(member or file_path), systems)
-                    if member and not folder_system:
-                        folder_system = match_by_folder(Path(file_path), systems)
-                        folder_path = file_path
+                folder_system = None
+                folder_path = ""
+                if reason in (
+                    "internal_folder",
+                    "folder",
+                    "archive_folder",
+                    "archive_as_rom",
+                ):
+                    folder_system = predicted
+                    folder_path = member if reason == "internal_folder" else file_path
+                elif reason in (
+                    "exclusive_extension",
+                    "unsupported_extension",
+                    "non_rom_extension",
+                ):
+                    # Rejected/exclusive decisions still report the nearest
+                    # folder context that produced them.
+                    folder_system, folder_path = resolve_folder_decision(
+                        file_path, systems, member if kind == "member" else ""
+                    )
                 folder_alias, folder_scope = folder_info(
                     folder_path, folder_system, root
                 )

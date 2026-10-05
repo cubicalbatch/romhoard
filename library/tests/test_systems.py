@@ -23,8 +23,8 @@ class TestSystemModelScreenscraperIds:
 
     def test_all_screenscraper_ids_returns_list_in_priority_order(self):
         """all_screenscraper_ids should return all IDs in priority order."""
-        sys = System(name="Neo Geo", slug="neogeo", screenscraper_ids=[142, 82, 25])
-        assert sys.all_screenscraper_ids == [142, 82, 25]
+        sys = System(name="Neo Geo Pocket", slug="ngp", screenscraper_ids=[25, 82])
+        assert sys.all_screenscraper_ids == [25, 82]
 
     def test_all_screenscraper_ids_returns_empty_list_when_empty(self):
         """all_screenscraper_ids should return empty list when no IDs configured."""
@@ -47,7 +47,6 @@ class TestSystemsConfig:
 
         expected = {
             "sms": [2, 21, 109],       # Master System, Game Gear, SG-1000
-            "neogeo": [142, 82, 25],   # Neo Geo MVS/AES, NGPC, NGP
             "nes": [3, 106],           # NES, Famicom Disk System
             "pce": [31, 105],          # PC Engine / TG16, SuperGrafx
             "msx": [113, 116, 117, 118],  # MSX, MSX2, MSX2+, Turbo R
@@ -72,7 +71,6 @@ class TestSyncSystems:
 
         expected = {
             "sms": ([2, 21, 109], 2),
-            "neogeo": ([142, 82, 25], 142),
             "nes": ([3, 106], 3),
             "pce": ([31, 105], 31),
         }
@@ -119,41 +117,56 @@ class TestSyncSystems:
         # It checked primary (2), then alternate (21), and stopped before (109)
         assert called_system_ids == [2, 21]
 
-    def test_neogeo_lookup_tries_ids_in_priority_order(self):
-        """ScreenScraper lookup for Neo Geo tries MVS (142) then NGPC (82) then NGP (25)."""
-        neogeo = System.objects.create(
-            name="Neo Geo",
-            slug="test_neogeo_lookup",
-            extensions=[],
-            folder_names=["Neo Geo"],
-            archive_as_rom=True,
-            screenscraper_ids=[142, 82, 25],
-        )
+    @pytest.mark.parametrize(
+        "candidates, expected_game_id",
+        [
+            pytest.param(
+                [{"id": 111, "name": "Samurai Shodown", "system_id": 25}],
+                None,
+                id="same-title-handheld-response-rejected",
+            ),
+            pytest.param(
+                [
+                    {"id": 111, "name": "Samurai Shodown", "system_id": 25},
+                    {"id": 777, "name": "Samurai Shodown", "system_id": 142},
+                ],
+                777,
+                id="home-console-match-retained",
+            ),
+        ],
+    )
+    def test_neogeo_name_search_rejects_handheld_and_accepts_home_console(
+        self, candidates, expected_game_id
+    ):
+        """Issue #3 regression: Neo Geo must not accept handheld metadata.
+
+        With the real loaded config, Neo Geo probes only its home console
+        ScreenScraper ID (142). A same-title response attributed to the NGP
+        handheld (system 25, game ID 111 — lower than the home entry, so the
+        1.0 tie resolver would prefer it if the handheld were still mapped)
+        must never surface, while the legitimate home-console match still
+        succeeds.
+        """
+        sync_systems()
+        neogeo = System.objects.get(slug="neogeo")
 
         service = ScreenScraperLookupService()
         mock_client = MagicMock()
         mock_client.has_credentials.return_value = True
-
-        called_system_ids = []
-
-        def mock_search_by_romnom(romnom, sys_id):
-            called_system_ids.append(sys_id)
-            if sys_id == 82:
-                return {"id": 8888, "name": "SNK Gals Fighters", "system_id": 82}
-            return None
-
-        mock_client.search_by_romnom.side_effect = mock_search_by_romnom
+        mock_client.search_game.return_value = candidates
 
         with patch.object(service, "_get_client", return_value=mock_client):
             result = service.lookup(
                 system=neogeo,
-                crc32="11223344",
-                file_path="/roms/neogeo/galsfight.zip",
+                game_name="Samurai Shodown",
             )
 
-        assert result is not None
-        assert result.screenscraper_id == 8888
-        assert called_system_ids == [142, 82]
+        if expected_game_id is None:
+            assert result is None
+        else:
+            assert result is not None
+            assert result.screenscraper_id == expected_game_id
+            assert result.matched_system_id == 142
 
     def test_nes_lookup_tries_ids_in_priority_order(self):
         """ScreenScraper lookup for NES tries NES (3) then FDS (106)."""

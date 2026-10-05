@@ -152,14 +152,23 @@ def test_diagnose_roms_archive_members_and_missing_records(tmp_path):
 def test_diagnose_roms_exposes_ancestor_precedence_and_redacts_custom_alias(tmp_path):
     sync_systems()
     root = tmp_path / "XBOX360" / "roms"
-    (root / "PSP").mkdir(parents=True)
+    root.mkdir(parents=True)
+    (root / "game.iso").write_bytes(b"rom")
+    (root / "PSP").mkdir()
     (root / "PSP" / "game.iso").write_bytes(b"rom")
     out = StringIO()
     call_command("diagnose_roms", str(root), stdout=out)
-    row = json.loads(out.getvalue())["scan_paths"][0]["files"][0]
-    assert row["predicted_system"] == "xbox360"
-    assert row["folder_alias"] == "XBOX360"
-    assert row["folder_scope"] == "ancestor_of_scan_root"
+    rows = json.loads(out.getvalue())["scan_paths"][0]["files"]
+    # The scan-root ancestor alias classifies files with no nearer folder.
+    ancestor = next(
+        row for row in rows if row["folder_scope"] == "ancestor_of_scan_root"
+    )
+    assert ancestor["predicted_system"] == "xbox360"
+    assert ancestor["folder_alias"] == "XBOX360"
+    # A nearer folder inside the scan root wins over the ancestor alias.
+    nested = next(row for row in rows if row["folder_scope"] == "within_scan_root")
+    assert nested["predicted_system"] == "psp"
+    assert nested["folder_alias"] == "PSP"
 
     psp = System.objects.get(slug="psp")
     psp.folder_names = ["private-custom-alias"]

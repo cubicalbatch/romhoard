@@ -136,23 +136,30 @@ def build_extension_map(systems: list) -> dict:
 
 
 def match_by_folder(path: Path, systems: list) -> Optional[System]:
-    """
-    Match system by folder name in path.
-
-    Args:
-        path: Path object for the file
-        systems: List of System objects
-
-    Returns:
-        System instance or None if no match
-    """
-    for system in systems:
-        folder_names_lower = [f.lower() for f in system.folder_names]
-        # Check each path component (excluding filename)
-        for part in path.parts[:-1]:
-            if part.lower() in folder_names_lower:
+    """Return the system whose folder alias claims the path component nearest
+    the filename; config order breaks shared-alias ties. None if no match."""
+    for part in reversed(path.parts[:-1]):
+        part_lower = part.lower()
+        for system in systems:
+            if any(name.lower() == part_lower for name in system.folder_names):
                 return system
     return None
+
+
+def resolve_folder_decision(
+    file_path: str, systems_cache: list, internal_path: str = ""
+) -> tuple[Optional[System], str]:
+    """Return (nearest folder system, decision path) for a disk file or
+    archive member; the internal member folder is consulted first and a
+    matched inner folder is final. (None, "") if no alias matched anywhere."""
+    if internal_path:
+        system = match_by_folder(Path(internal_path), systems_cache)
+        if system:
+            return system, internal_path
+    system = match_by_folder(Path(file_path), systems_cache)
+    if system:
+        return system, file_path
+    return None, ""
 
 
 def detect_system_details(
@@ -161,34 +168,49 @@ def detect_system_details(
     exclusive_map: dict,
     internal_path: str = "",
 ) -> tuple[Optional[System], str]:
-    """Classify a disk file or archive member, including the scan decision."""
+    """Classify a disk file or archive member as (system, reason).
+
+    The nearest folder wins when it accepts the extension; non-ROM extensions
+    pass only through their configured exclusive claimant's folder (.md in
+    Genesis); otherwise the exclusive extension mapping falls back, and a
+    rejecting folder without one blocks the file.
+    """
     path = Path(internal_path or file_path)
     extension = get_full_extension(path.name)
     if not extension:
         return None, "no_extension"
 
-    # Archive members reject non-ROM files before exclusive extension matching.
-    if internal_path and is_non_rom_extension(extension):
-        return None, "non_rom_extension"
+    folder_system, folder_path = resolve_folder_decision(
+        file_path, systems_cache, internal_path
+    )
+    if internal_path:
+        folder_reason = (
+            "internal_folder" if folder_path == internal_path else "archive_folder"
+        )
+    else:
+        folder_reason = "folder"
+    exclusive_system = exclusive_map.get(extension)
+    non_rom = is_non_rom_extension(extension)
 
-    if extension in exclusive_map:
-        return exclusive_map[extension], "exclusive_extension"
-
-    folder_system = match_by_folder(path, systems_cache)
-    if folder_system:
-        if is_acceptable_extension(extension, folder_system):
-            return folder_system, "internal_folder" if internal_path else "folder"
-        if not internal_path and is_non_rom_extension(extension):
+    if folder_system is not None:
+        if not non_rom and is_acceptable_extension(extension, folder_system):
+            # Keep the common same-system exclusive reason stable.
+            if exclusive_system is folder_system:
+                return folder_system, "exclusive_extension"
+            return folder_system, folder_reason
+        if non_rom:
+            # The blocklist yields only to the claimant's own folder context.
+            if exclusive_system is folder_system:
+                return folder_system, "exclusive_extension"
             return None, "non_rom_extension"
+        if exclusive_system is not None:
+            return exclusive_system, "exclusive_extension"
         return None, "unsupported_extension"
 
-    if internal_path:
-        archive_system = match_by_folder(Path(file_path), systems_cache)
-        if archive_system:
-            if is_acceptable_extension(extension, archive_system):
-                return archive_system, "archive_folder"
-            return None, "unsupported_extension"
-
+    if non_rom:
+        return None, "non_rom_extension"
+    if exclusive_system is not None:
+        return exclusive_system, "exclusive_extension"
     return None, "no_folder_match"
 
 
