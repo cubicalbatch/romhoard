@@ -47,6 +47,17 @@
     ".ps1",
     ".spc",
     ".srm",
-    ".sav"
+    ".sav",
+    ".c",
+    ".h",
+    ".asm",
+    ".rc",
+    ".res"
+  ],
+  "non_rom_filenames": [
+    "makefile",
+    "readme",
+    "license",
+    "copying"
   ]
 }

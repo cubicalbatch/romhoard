@@ -9,11 +9,12 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from django.conf import settings
-from django.db import DatabaseError, IntegrityError, transaction
+from django.db import DatabaseError, IntegrityError, models, transaction
 
 from . import archive as archive_utils
 from .chd import extract_chd_sha1, is_chd_file
 from .extensions import (
+    archive_has_game_content,
     build_exclusive_extension_map,
     get_full_extension,
     is_acceptable_extension,
@@ -564,6 +565,65 @@ def should_expand_archive(
     return len(game_names) > 1
 
 
+def delete_rom_and_orphans(rom: ROM) -> tuple[int, int]:
+    """Delete a ROM plus the ROMSet and Game it leaves empty.
+
+    Returns:
+        (ROMSets deleted, Games deleted)
+    """
+    rom_set = rom.rom_set
+    game = rom_set.game
+    rom.delete()
+    if rom_set.roms.exists():
+        return 0, 0
+    rom_set.delete()
+    if game.rom_sets.exists():
+        return 1, 0
+    game.delete()
+    return 1, 1
+
+
+def reconcile_stored_rom(system: System, **lookup) -> str:
+    """Check a stored ROM against the system detected for it now.
+
+    A ROM stored under another system (an older detector misread its folder)
+    is deleted with its orphans so the caller re-imports it; a system the
+    user picked by hand always stands.
+
+    Args:
+        system: System the current detector assigns to the file
+        **lookup: ROM field filters identifying the stored record
+
+    Returns:
+        "absent" (nothing stored), "current" (keep it) or "reclassified"
+        (stale record removed; import the file again)
+    """
+    rom = ROM.objects.filter(**lookup).select_related("rom_set__game").first()
+    if rom is None:
+        return "absent"
+    game = rom.rom_set.game
+    if game.system_id == system.pk or game.name_source == Game.SOURCE_MANUAL:
+        return "current"
+    logger.info(
+        "Reclassifying %s: system %s -> %s",
+        rom.file_path,
+        game.system_id,
+        system.slug,
+    )
+    with transaction.atomic():
+        delete_rom_and_orphans(rom)
+    return "reclassified"
+
+
+def keep_stored_archive_roms(archive_path: str, seen_paths: set) -> None:
+    """Mark an unreadable archive's stored ROMs as seen so cleanup keeps them."""
+    seen_paths.update(
+        ROM.objects.filter(
+            models.Q(archive_path=archive_path) | models.Q(file_path=archive_path)
+        ).values_list("file_path", flat=True)
+    )
+
+
 def create_rom_from_archive_as_rom(
     archive_path: str,
     system: System,
@@ -575,6 +635,7 @@ def create_rom_from_archive_as_rom(
     results = {
         "added": 0,
         "skipped": 0,
+        "reclassified": 0,
         "errors": [],
         "game_ids": [],
         "added_rom_ids": [],
@@ -582,11 +643,12 @@ def create_rom_from_archive_as_rom(
 
     seen_paths.add(archive_path)
 
-    # Skip if already exists
-    if ROM.objects.filter(file_path=archive_path, archive_path="").exists():
+    stored = reconcile_stored_rom(system, file_path=archive_path, archive_path="")
+    if stored == "current":
         logger.debug("Skipped existing archive-as-ROM: %s", archive_path)
         results["skipped"] = 1
         return results
+    results["reclassified"] = int(stored == "reclassified")
 
     filename = Path(archive_path).name
     parsed = parse_rom_filename(filename, arcade=system.archive_as_rom)
@@ -700,12 +762,18 @@ def create_archived_rom(
     composite_path = f"{archive_path}!{path_in_archive}"
     seen_paths.add(composite_path)
 
-    # Skip if already exists
-    if ROM.objects.filter(
-        archive_path=archive_path, path_in_archive=path_in_archive
-    ).exists():
+    stored = reconcile_stored_rom(
+        system, archive_path=archive_path, path_in_archive=path_in_archive
+    )
+    if stored == "current":
         logger.debug("Skipped existing archived ROM: %s", composite_path)
-        return {"added": 0, "skipped": 1, "game_ids": [], "added_rom_ids": []}
+        return {
+            "added": 0,
+            "skipped": 1,
+            "reclassified": 0,
+            "game_ids": [],
+            "added_rom_ids": [],
+        }
 
     # Parse filename (use internal file's name for metadata)
     if parsing_filename:
@@ -783,6 +851,7 @@ def create_archived_rom(
     return {
         "added": 1,
         "skipped": 0,
+        "reclassified": int(stored == "reclassified"),
         # Metadata is queued by scan_directory after all scan writes finish.
         "game_ids": [rom_set.game_id] if metadata_needed else [],
         "added_rom_ids": [rom.pk],
@@ -828,14 +897,31 @@ def process_archive(
     results = {
         "added": 0,
         "skipped": 0,
+        "reclassified": 0,
         "errors": [],
         "game_ids": [],
         "added_rom_ids": [],
     }
 
+    # List archive contents first (we always open archives now)
+    contents: list[archive_utils.ArchiveInfo] | None = None
+    read_error: Exception | None = None
+    try:
+        contents = archive_utils.list_archive_contents(archive_path)
+    except Exception as e:
+        read_error = e
+
     # Check if archive should be treated as ROM (e.g., Arcade/MAME)
     system = detect_system(archive_path, systems_cache, exclusive_map)
     if system and system.archive_as_rom:
+        # Docs/config/source bundles (emulator INI packs, plugin sources)
+        # living in an arcade folder are not games. An unreadable archive is
+        # still imported: its content cannot be judged.
+        if contents is not None and not archive_has_game_content(
+            [item.name for item in contents]
+        ):
+            logger.debug("Skipped archive without game data: %s", archive_path)
+            return results
         # Treat archive itself as the ROM, don't look inside
         return create_rom_from_archive_as_rom(
             archive_path=archive_path,
@@ -845,12 +931,10 @@ def process_archive(
             fetch_metadata=fetch_metadata,
         )
 
-    # List archive contents first (we always open archives now)
-    try:
-        contents = archive_utils.list_archive_contents(archive_path)
-    except Exception as e:
-        logger.error("Failed to read archive %s: %s", archive_path, e)
-        results["errors"].append(f"Failed to read archive {archive_path}: {e}")
+    if contents is None:
+        logger.error("Failed to read archive %s: %s", archive_path, read_error)
+        results["errors"].append(f"Failed to read archive {archive_path}: {read_error}")
+        keep_stored_archive_roms(archive_path, seen_paths)
         return results
 
     # Filter to valid ROM files, skipping nested archives
@@ -907,6 +991,7 @@ def process_archive(
             )
             results["added"] += result["added"]
             results["skipped"] += result["skipped"]
+            results["reclassified"] += result["reclassified"]
             results["game_ids"].extend(result.get("game_ids", []))
             results["added_rom_ids"].extend(result.get("added_rom_ids", []))
 
@@ -938,6 +1023,7 @@ def process_archive(
         )
         results["added"] += result["added"]
         results["skipped"] += result["skipped"]
+        results["reclassified"] += result["reclassified"]
         results["game_ids"].extend(result.get("game_ids", []))
         results["added_rom_ids"].extend(result.get("added_rom_ids", []))
 
@@ -959,8 +1045,11 @@ def scan_directory(
     """
     Scan a directory for ROMs and images, adding them to the database.
 
-    ROMs that exist in the database but are no longer on disk are deleted,
-    along with any orphaned ROMSets and Games.
+    Stored ROMs are reconciled with the current detector: a ROM detected as
+    another system is re-imported there (unless the user set its system by
+    hand), and a stored ROM the scan no longer finds as a ROM, on disk or as
+    a recognized archive member, is deleted along with any orphaned ROMSets
+    and Games. ROMs inside unreadable archives or directories are kept.
 
     Args:
         base_path: Path to scan recursively
@@ -972,7 +1061,8 @@ def scan_directory(
         dict with keys:
             - added: Number of new ROMs added
             - skipped: Number of existing ROMs skipped
-            - deleted_roms: Number of ROMs deleted (no longer on disk)
+            - reclassified: Number of ROMs re-imported under another system
+            - deleted_roms: Number of ROMs deleted (gone or no longer ROMs)
             - images_added: Number of new images added
             - images_skipped: Number of existing images skipped
             - metadata_queued: Number of metadata jobs queued
@@ -996,8 +1086,10 @@ def scan_directory(
 
     added = 0
     skipped = 0
+    reclassified = 0
     errors = []
     seen_paths = set()
+    unreadable_dirs: list[str] = []
     images_added = 0
     images_skipped = 0
     metadata_game_ids = []  # Games to queue metadata for, after all writes
@@ -1018,8 +1110,14 @@ def scan_directory(
         "callback": progress_callback,
     }
 
+    def walk_error(error: OSError) -> None:
+        """Record directories os.walk cannot list; their ROMs must survive."""
+        logger.error("Cannot read directory %s: %s", error.filename, error)
+        errors.append(f"Cannot read directory {error.filename}: {error}")
+        unreadable_dirs.append(os.path.join(str(error.filename), ""))
+
     # Walk directory - process ALL files, let detect_system filter
-    for root, _dirs, files in os.walk(base_path):
+    for root, _dirs, files in os.walk(base_path, onerror=walk_error):
         current_dir = root  # Track current directory
         progress_state["current_directory"] = current_dir
         for filename in files:
@@ -1079,9 +1177,11 @@ def scan_directory(
                 except Exception as e:
                     logger.error("Failed to process %s: %s", file_path, e)
                     errors.append(f"Failed to process {file_path}: {e}")
+                    keep_stored_archive_roms(file_path, seen_paths)
                     continue
                 added += archive_results["added"]
                 skipped += archive_results["skipped"]
+                reclassified += archive_results["reclassified"]
                 metadata_game_ids.extend(archive_results.get("game_ids", []))
                 added_rom_ids.extend(archive_results.get("added_rom_ids", []))
                 errors.extend(archive_results["errors"])
@@ -1095,11 +1195,13 @@ def scan_directory(
 
             seen_paths.add(file_path)
 
-            # Skip if already in database
-            if ROM.objects.filter(file_path=file_path).exists():
+            # Skip if already stored under the detected system
+            stored = reconcile_stored_rom(system, file_path=file_path)
+            if stored == "current":
                 logger.debug("Skipped existing ROM: %s", file_path)
                 skipped += 1
                 continue
+            reclassified += int(stored == "reclassified")
 
             # Parse filename
             try:
@@ -1243,41 +1345,29 @@ def scan_directory(
             }
         )
 
-    # Delete ROMs that are in DB but no longer on disk
+    # Delete stored ROMs this scan did not find as ROMs: files gone from disk,
+    # files no longer recognized (e.g. now non-ROM types), and stale members
+    # of archives that are now imported differently. Every ROM found or kept
+    # by this scan is in seen_paths.
     deleted_roms = 0
     deleted_romsets = 0
     deleted_games = 0
 
     roms_under_path = ROM.objects.filter(
-        file_path__startswith=base_path,
+        file_path__startswith=os.path.join(base_path, ""),
     ).select_related("rom_set", "rom_set__game")
 
     for rom in roms_under_path:
-        # For archived ROMs, check if archive exists
-        # For regular ROMs, check if file_path exists
-        check_path = to_absolute_path(
-            rom.archive_path if rom.is_archived else rom.file_path
-        )
-
-        if check_path not in seen_paths and not os.path.exists(check_path):
-            rom_set = rom.rom_set
-            game = rom_set.game
-
-            rom.delete()
-            deleted_roms += 1
-            logger.debug("Deleted ROM: %s", rom.file_path)
-
-            # Delete orphaned ROMSet (no ROMs left)
-            if not rom_set.roms.exists():
-                rom_set.delete()
-                deleted_romsets += 1
-                logger.debug("Deleted orphan ROMSet for: %s", game.name)
-
-                # Delete orphaned Game (no ROMSets left)
-                if not game.rom_sets.exists():
-                    game.delete()
-                    deleted_games += 1
-                    logger.debug("Deleted orphan Game: %s", game.name)
+        if rom.file_path in seen_paths:
+            continue
+        container = rom.archive_path or rom.file_path
+        if any(container.startswith(folder) for folder in unreadable_dirs):
+            continue
+        romsets, games = delete_rom_and_orphans(rom)
+        deleted_roms += 1
+        deleted_romsets += romsets
+        deleted_games += games
+        logger.debug("Deleted ROM: %s", rom.file_path)
 
     # Queue metadata only after all scan writes and orphan cleanup are done,
     # so a metadata merge cannot race the scan's own inserts. Deduplicate:
@@ -1293,10 +1383,12 @@ def scan_directory(
             metadata_queued += 1
 
     logger.info(
-        "Scan complete: added=%d, skipped=%d, deleted_roms=%d (romsets=%d, games=%d), "
+        "Scan complete: added=%d, skipped=%d, reclassified=%d, "
+        "deleted_roms=%d (romsets=%d, games=%d), "
         "images_added=%d, images_skipped=%d, metadata_queued=%d, errors=%d",
         added,
         skipped,
+        reclassified,
         deleted_roms,
         deleted_romsets,
         deleted_games,
@@ -1308,6 +1400,7 @@ def scan_directory(
     return {
         "added": added,
         "skipped": skipped,
+        "reclassified": reclassified,
         "deleted_roms": deleted_roms,
         "images_added": images_added,
         "images_skipped": images_skipped,

@@ -13,6 +13,7 @@ from library import archive
 from library.extensions import (
     COMPRESSED_EXTENSIONS,
     IMAGE_EXTENSIONS,
+    archive_has_game_content,
     get_full_extension,
     is_compound_rom_extension,
     load_non_rom_extensions,
@@ -365,13 +366,35 @@ class Command(BaseCommand):
                                 file_path, systems, exclusive_map
                             )
                             if system and system.archive_as_rom:
-                                emit(
-                                    file_path,
-                                    extension,
-                                    system,
-                                    "archive_as_rom",
-                                    kind="archive",
-                                )
+                                # Mirror the scanner: readable archives with
+                                # only docs/config/source are not games.
+                                try:
+                                    names = [
+                                        item.name
+                                        for item in archive.list_archive_contents(
+                                            file_path
+                                        )
+                                    ]
+                                except Exception:
+                                    names = None
+                                if names is not None and not archive_has_game_content(
+                                    names
+                                ):
+                                    emit(
+                                        file_path,
+                                        extension,
+                                        None,
+                                        "no_game_content",
+                                        kind="archive",
+                                    )
+                                else:
+                                    emit(
+                                        file_path,
+                                        extension,
+                                        system,
+                                        "archive_as_rom",
+                                        kind="archive",
+                                    )
                                 continue
                             try:
                                 contents = archive.list_archive_contents(file_path)

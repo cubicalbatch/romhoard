@@ -192,3 +192,26 @@ def test_diagnose_roms_exposes_ancestor_precedence_and_redacts_custom_alias(tmp_
     assert {"system": "psp", "fields": ["missing_from_database"]} in json.loads(
         out.getvalue()
     )["config_drift"]
+
+
+@pytest.mark.django_db
+def test_diagnose_roms_flags_archive_as_rom_zip_without_game_data(tmp_path):
+    sync_systems()
+    root = tmp_path / "roms"
+    (root / "SNK - Neo Geo" / "Kawaks").mkdir(parents=True)
+    with ZipFile(root / "SNK - Neo Geo" / "Kawaks" / "inis.zip", "w") as zf:
+        zf.writestr("WinKawaks.ini", b"[cfg]")
+    with ZipFile(root / "SNK - Neo Geo" / "garou.zip", "w") as zf:
+        zf.writestr("253d-p1.rom", b"rom")
+    ScanPath.objects.create(path=str(root))
+
+    out = StringIO()
+    call_command("diagnose_roms", "--details", stdout=out, stderr=StringIO())
+    files = {
+        f["relative_path"]: f for f in json.loads(out.getvalue())["scan_paths"][0]["files"]
+    }
+
+    junk = files["SNK - Neo Geo/Kawaks/inis.zip"]
+    assert junk["reason"] == "no_game_content"
+    assert junk["predicted_system"] is None
+    assert files["SNK - Neo Geo/garou.zip"]["predicted_system"] == "neogeo"

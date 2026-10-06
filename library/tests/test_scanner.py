@@ -1277,3 +1277,255 @@ class TestIssue3ScanIntegration(TestCase):
         self.assertEqual(result["added"], 1)
         rom = ROM.objects.first()
         self.assertEqual(rom.rom_set.game.system.slug, "genesis")
+
+
+class TestRescanReconciliation(TestCase):
+    """Rescans bring stored records in line with the current detector."""
+
+    def setUp(self):
+        import tempfile
+
+        sync_systems()
+        self.temp_dir = Path(tempfile.mkdtemp())
+        self.rom_library = self.temp_dir / "roms"
+        self.rom_library.mkdir(parents=True)
+        ROM.objects.all().delete()
+        Game.objects.all().delete()
+        ROMSet.objects.all().delete()
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def _store(self, slug, name, file_path, **rom_fields):
+        """Create a record as an older detector would have stored it."""
+        game = Game.objects.create(name=name, system=System.objects.get(slug=slug))
+        rom_set = ROMSet.objects.create(game=game, region="")
+        return ROM.objects.create(
+            rom_set=rom_set,
+            file_path=file_path,
+            file_name=Path(file_path.split("!")[-1]).name,
+            file_size=1,
+            **rom_fields,
+        )
+
+    def test_rescan_moves_wrong_system_archive_member(self):
+        """An Atari ST .ipf stored as Amiga is re-imported as Atari ST."""
+        import zipfile
+
+        archive = self.rom_library / "Atari - ST" / "10th Frame (Europe).zip"
+        archive.parent.mkdir()
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("10th Frame (Europe).ipf", b"fake ipf")
+        member = "10th Frame (Europe).ipf"
+        self._store(
+            "amiga",
+            "10th Frame",
+            f"{archive}!{member}",
+            archive_path=str(archive),
+            path_in_archive=member,
+        )
+
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
+
+        self.assertEqual(result["reclassified"], 1)
+        rom = ROM.objects.get()
+        self.assertEqual(rom.rom_set.game.system.slug, "atarist")
+        self.assertFalse(Game.objects.filter(system__slug="amiga").exists())
+
+    def test_rescan_moves_wrong_system_loose_file(self):
+        """A SuperGrafx .pce stored as PC Engine is re-imported as SuperGrafx."""
+        rom_file = self.rom_library / "NEC - Super Grafx" / "Daimakaimura (Japan).pce"
+        rom_file.parent.mkdir()
+        rom_file.write_bytes(b"fake sgx")
+        self._store("pce", "Daimakaimura", str(rom_file))
+
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
+
+        self.assertEqual(result["reclassified"], 1)
+        self.assertEqual(ROM.objects.get().rom_set.game.system.slug, "sgfx")
+
+    def test_rescan_keeps_manual_system_choice(self):
+        """A system the user picked by hand is never overridden."""
+        rom_file = self.rom_library / "NEC - Super Grafx" / "Daimakaimura (Japan).pce"
+        rom_file.parent.mkdir()
+        rom_file.write_bytes(b"fake sgx")
+        rom = self._store("pce", "Daimakaimura", str(rom_file))
+        Game.objects.filter(pk=rom.rom_set.game_id).update(
+            name_source=Game.SOURCE_MANUAL
+        )
+
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
+
+        self.assertEqual(result["reclassified"], 0)
+        self.assertEqual(ROM.objects.get().rom_set.game.system.slug, "pce")
+
+    def test_rescan_removes_records_no_longer_recognized(self):
+        """A stored file that is now a non-ROM type (.spc) is removed."""
+        spc = self.rom_library / "SNES" / "Chrono Trigger - 01 Title.spc"
+        spc.parent.mkdir()
+        spc.write_bytes(b"sound dump")
+        self._store("snes", "Chrono Trigger - 01 Title", str(spc))
+
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
+
+        self.assertEqual(result["deleted_roms"], 1)
+        self.assertFalse(ROM.objects.exists())
+        self.assertFalse(Game.objects.exists())
+
+    def test_rescan_replaces_expanded_members_of_archive_as_rom_zip(self):
+        """Members stored from a now archive-as-ROM zip give way to one ROM."""
+        import zipfile
+
+        archive = self.rom_library / "SNK - Neo Geo" / "garou.zip"
+        archive.parent.mkdir()
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("253d-p1.rom", b"p1")
+            zf.writestr("253d-s1.rom", b"s1")
+        self._store(
+            "neogeo",
+            "253d-p1",
+            f"{archive}!253d-p1.rom",
+            archive_path=str(archive),
+            path_in_archive="253d-p1.rom",
+        )
+
+        scan_directory(str(self.rom_library), fetch_metadata=False)
+
+        rom = ROM.objects.get()
+        self.assertEqual(rom.file_path, str(archive))
+        self.assertEqual(rom.archive_path, "")
+
+    def test_rescan_keeps_records_of_unreadable_archive(self):
+        """A read failure is not evidence that the archive's ROMs are gone."""
+        archive = self.rom_library / "GBA" / "Pack.zip"
+        archive.parent.mkdir()
+        archive.write_bytes(b"not a zip")
+        self._store(
+            "gba",
+            "Mario",
+            f"{archive}!Mario.gba",
+            archive_path=str(archive),
+            path_in_archive="Mario.gba",
+        )
+
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
+
+        self.assertEqual(result["deleted_roms"], 0)
+        self.assertTrue(ROM.objects.exists())
+        self.assertTrue(result["errors"])
+
+    def test_rescan_keeps_records_in_unreadable_directory(self):
+        """A directory the scan cannot list keeps its stored ROMs."""
+        import os
+
+        folder = self.rom_library / "GBA"
+        folder.mkdir()
+        rom_file = folder / "Mario.gba"
+        rom_file.write_bytes(b"fake gba")
+        self._store("gba", "Mario", str(rom_file))
+        os.chmod(folder, 0)
+        try:
+            if os.access(folder, os.R_OK):
+                self.skipTest("running with privileges that bypass permissions")
+            result = scan_directory(str(self.rom_library), fetch_metadata=False)
+        finally:
+            os.chmod(folder, 0o755)
+
+        self.assertEqual(result["deleted_roms"], 0)
+        self.assertTrue(ROM.objects.exists())
+        self.assertTrue(result["errors"])
+
+    def test_scan_leaves_sibling_folder_with_shared_prefix_alone(self):
+        """Scanning /roms/GB must not touch ROMs stored under /roms/GBA."""
+        gb = self.rom_library / "GB"
+        gb.mkdir()
+        gba_file = self.rom_library / "GBA" / "Mario.gba"
+        gba_file.parent.mkdir()
+        gba_file.write_bytes(b"fake gba")
+        self._store("gba", "Mario", str(gba_file))
+
+        result = scan_directory(str(gb), fetch_metadata=False)
+
+        self.assertEqual(result["deleted_roms"], 0)
+        self.assertTrue(ROM.objects.exists())
+
+    def test_rescan_is_idempotent(self):
+        """A second scan of an up-to-date library changes nothing."""
+        rom_file = self.rom_library / "NEC - Super Grafx" / "Daimakaimura (Japan).pce"
+        rom_file.parent.mkdir()
+        rom_file.write_bytes(b"fake sgx")
+        scan_directory(str(self.rom_library), fetch_metadata=False)
+        rom_pk = ROM.objects.get().pk
+
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
+
+        self.assertEqual(result["reclassified"], 0)
+        self.assertEqual(result["deleted_roms"], 0)
+        self.assertEqual(result["skipped"], 1)
+        self.assertEqual(ROM.objects.get().pk, rom_pk)
+
+
+class TestArchiveAsRomContentGate(TestCase):
+    """Archive-as-ROM folders skip archives that hold no game data."""
+
+    def setUp(self):
+        import tempfile
+
+        sync_systems()
+        self.temp_dir = Path(tempfile.mkdtemp())
+        self.rom_library = self.temp_dir / "roms"
+        self.rom_library.mkdir(parents=True)
+        ROM.objects.all().delete()
+        Game.objects.all().delete()
+        ROMSet.objects.all().delete()
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def _zip(self, relative, members):
+        import zipfile
+
+        path = self.rom_library / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(path, "w") as zf:
+            for name in members:
+                zf.writestr(name, b"data")
+        return path
+
+    def test_emulator_config_and_source_zips_are_not_games(self):
+        """Kawaks INI packs and Nebula plugin sources are not Neo Geo games."""
+        self._zip("SNK - Neo Geo/Kawaks/DefaultWinKawaksINI.zip", ["WinKawaks.ini"])
+        self._zip(
+            "SNK - Neo Geo/Nebula/Plugins/hq2xsrc.zip",
+            ["hq2x.asm", "hq2x.c", "readme.txt", "Makefile"],
+        )
+        self._zip(
+            "SNK - Neo Geo/Nebula/Plugins/PLUGSRC.ZIP",
+            ["plug.c", "plug.h", "plug.rc", "plug.res", "Makefile"],
+        )
+        self._zip("SNK - Neo Geo/garou.zip", ["253d-p1.rom", "253d-s1.rom"])
+
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
+
+        self.assertEqual(result["added"], 1)
+        self.assertEqual(ROM.objects.get().file_name, "garou.zip")
+
+    def test_extensionless_chip_dumps_still_count(self):
+        """MAME sets with extensionless chip dumps stay games."""
+        self._zip("MAME/zookeep.zip", ["za10", "za11"])
+
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
+
+        self.assertEqual(result["added"], 1)
+
+    def test_dos_game_with_only_com_executable_is_kept(self):
+        """A DOS game shipped as a lone .COM file is still a game."""
+        self._zip("DOS/digger.zip", ["DIGGER.COM", "README.TXT"])
+
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
+
+        self.assertEqual(result["added"], 1)

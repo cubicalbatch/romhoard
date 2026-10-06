@@ -49,6 +49,45 @@ def is_non_rom_extension(ext: str) -> bool:
     return ext.lower() in load_non_rom_extensions()
 
 
+@lru_cache(maxsize=1)
+def load_non_rom_filenames() -> set[str]:
+    """Load extensionless filenames (Makefile, README, ...) that are never ROMs."""
+    config_path = Path(__file__).parent / "non_rom_extensions.json"
+    try:
+        with open(config_path) as f:
+            return {name.lower() for name in json.load(f).get("non_rom_filenames", [])}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return set()
+
+
+# Program files that ARE the game on archive-as-ROM systems (MS-DOS), even
+# though they are blocklisted as loose ROM candidates.
+GAME_EXECUTABLE_EXTENSIONS = {".exe", ".com", ".bat"}
+
+
+def archive_has_game_content(member_names: list[str]) -> bool:
+    """Return whether an archive-as-ROM archive can hold game data.
+
+    Archives made only of docs, config, images or source code (emulator INI
+    packs, plugin sources) are not games. Extensionless members count as game
+    data because arcade chip dumps are often extensionless.
+
+    Args:
+        member_names: Paths of the archive's members
+
+    Returns:
+        True if at least one member may be game data.
+    """
+    for name in member_names:
+        filename = Path(name).name
+        if not filename or filename.lower() in load_non_rom_filenames():
+            continue
+        ext = get_full_extension(filename)
+        if ext in GAME_EXECUTABLE_EXTENSIONS or not is_non_rom_extension(ext):
+            return True
+    return False
+
+
 def is_archive_extension(ext: str) -> bool:
     """Check if extension is a supported archive format.
 
