@@ -15,9 +15,11 @@ import logging
 import os
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 import requests
 from django.utils import timezone
@@ -39,9 +41,26 @@ ALLOWED_MEDIA_TYPES = {"box-2D", "ss", "mixrbv1", "wheel", "sstitle"}
 # Region priority for media selection (lower index = higher priority)
 REGION_PRIORITY = ["wor", "us", "usa", "eu", "jp", "ss"]
 
-# Rate limit pause configuration
-PAUSE_DURATION_HOURS = 2
-PAUSE_SETTING_KEY = "screenscraper_pause_until"
+# Throttling. ScreenScraper answers 429 when the per-minute/thread limit is
+# hit, 430 when the daily request quota is used up, 431 when the daily quota
+# of unmatched ("KO") lookups is used up, and 401/423 when the API is closed
+# (overloaded or maintenance). Daily quotas reset at midnight server time.
+PAUSE_SETTING_KEY = "screenscraper_pause"
+QUOTA_SETTING_KEY = "screenscraper_quota"
+QUOTA_RESET_TIMEZONE = ZoneInfo("Europe/Paris")
+QUOTA_RESET_GRACE = timedelta(minutes=5)
+THROTTLE_STATUS_REASONS = {
+    429: "rate_limit",
+    430: "daily_quota",
+    431: "failed_quota",
+    401: "unavailable",
+    423: "unavailable",
+}
+PAUSE_DURATIONS = {
+    "rate_limit": timedelta(minutes=1),
+    "unavailable": timedelta(minutes=10),
+}
+QUOTA_WRITE_INTERVAL = 30.0  # seconds between quota usage snapshots
 
 # Timeout configuration (connect_timeout, read_timeout)
 # Popular games can take 60-90 seconds due to server-side processing
@@ -542,42 +561,82 @@ def _get_search_variants(name: str) -> list[str]:
 
 
 class ScreenScraperRateLimited(Exception):
-    """Raised when ScreenScraper returns 429/430 rate limit error."""
+    """Raised while ScreenScraper calls are paused (throttling, quota, closure)."""
 
     def __init__(self, retry_after: datetime):
         self.retry_after = retry_after
         super().__init__(f"ScreenScraper rate limited until {retry_after}")
 
 
-def get_pause_until() -> datetime | None:
-    """Get the pause-until timestamp, or None if not paused.
+@dataclass(frozen=True)
+class ScreenScraperPause:
+    """An active pause on ScreenScraper calls and why it happened."""
+
+    until: datetime
+    reason: str
+
+    @property
+    def resumes_at_reset(self) -> bool:
+        """Whether the pause waits for the daily quota reset."""
+        return self.reason in ("daily_quota", "failed_quota")
+
+
+def next_quota_reset(now: datetime | None = None) -> datetime:
+    """Return when ScreenScraper's daily quotas next reset (plus a grace period).
+
+    Args:
+        now: Reference time (defaults to the current time)
 
     Returns:
-        datetime if currently paused and pause hasn't expired, None otherwise
+        Timezone-aware datetime of the next Paris midnight plus grace.
     """
+    local_now = (now or timezone.now()).astimezone(QUOTA_RESET_TIMEZONE)
+    next_day = local_now.date() + timedelta(days=1)
+    midnight = datetime.combine(next_day, datetime.min.time(), QUOTA_RESET_TIMEZONE)
+    return midnight + QUOTA_RESET_GRACE
+
+
+def get_pause() -> ScreenScraperPause | None:
+    """Return the active pause, or None when ScreenScraper calls may proceed."""
+    value = Setting.get(PAUSE_SETTING_KEY)
+    if not isinstance(value, dict):
+        return None
     try:
-        setting = Setting.objects.get(key=PAUSE_SETTING_KEY)
-        pause_until = setting.value
-        if isinstance(pause_until, str):
-            pause_until = datetime.fromisoformat(pause_until)
-        # Make timezone-aware if needed
-        if pause_until.tzinfo is None:
-            pause_until = timezone.make_aware(pause_until)
-        if pause_until > timezone.now():
-            return pause_until
+        until = datetime.fromisoformat(value["until"])
+    except (KeyError, TypeError, ValueError):
         return None
-    except Setting.DoesNotExist:
+    if until <= timezone.now():
         return None
+    return ScreenScraperPause(until=until, reason=value.get("reason", "rate_limit"))
 
 
-def set_pause_until(hours: int = PAUSE_DURATION_HOURS) -> datetime:
-    """Set the pause-until timestamp. Returns the pause-until time."""
-    pause_until = timezone.now() + timedelta(hours=hours)
+def get_pause_until() -> datetime | None:
+    """Return when the active pause ends, or None if not paused."""
+    pause = get_pause()
+    return pause.until if pause else None
+
+
+def set_pause(reason: str) -> datetime:
+    """Pause ScreenScraper calls for a throttling reason.
+
+    Quota pauses last until the daily reset; other reasons use a fixed delay.
+
+    Args:
+        reason: One of "rate_limit", "daily_quota", "failed_quota", "unavailable"
+
+    Returns:
+        When calls resume.
+    """
+    if reason in PAUSE_DURATIONS:
+        until = timezone.now() + PAUSE_DURATIONS[reason]
+    else:
+        until = next_quota_reset()
     Setting.objects.update_or_create(
-        key=PAUSE_SETTING_KEY, defaults={"value": pause_until.isoformat()}
+        key=PAUSE_SETTING_KEY,
+        defaults={"value": {"until": until.isoformat(), "reason": reason}},
     )
-    logger.warning(f"ScreenScraper paused until {pause_until} due to rate limiting")
-    return pause_until
+    logger.warning("ScreenScraper paused until %s (%s)", until, reason)
+    return until
 
 
 def clear_pause():
@@ -585,6 +644,64 @@ def clear_pause():
     deleted, _ = Setting.objects.filter(key=PAUSE_SETTING_KEY).delete()
     if deleted:
         logger.info("ScreenScraper pause cleared, API calls resumed")
+
+
+_quota_written_at = 0.0
+
+
+def record_quota_usage(ssuser: dict) -> None:
+    """Store the quota counters ScreenScraper sends with each response.
+
+    Writes are throttled per process; an exhausted quota is stored and paused
+    immediately so no request is wasted on a guaranteed refusal.
+
+    Args:
+        ssuser: The response's `ssuser` block
+    """
+    global _quota_written_at
+    try:
+        used, limit = int(ssuser["requeststoday"]), int(ssuser["maxrequestsperday"])
+        failed, failed_limit = (
+            int(ssuser["requestskotoday"]),
+            int(ssuser["maxrequestskoperday"]),
+        )
+    except (KeyError, TypeError, ValueError):
+        return
+
+    exhausted = None
+    if limit and used >= limit:
+        exhausted = "daily_quota"
+    elif failed_limit and failed >= failed_limit:
+        exhausted = "failed_quota"
+
+    now = time.monotonic()
+    if not exhausted and now - _quota_written_at < QUOTA_WRITE_INTERVAL:
+        return
+    _quota_written_at = now
+    usage = {
+        "requests_today": used,
+        "max_requests_per_day": limit,
+        "failed_today": failed,
+        "max_failed_per_day": failed_limit,
+        "updated_at": timezone.now().isoformat(),
+    }
+    Setting.objects.update_or_create(key=QUOTA_SETTING_KEY, defaults={"value": usage})
+    if exhausted:
+        set_pause(exhausted)
+
+
+def get_quota_usage() -> dict | None:
+    """Return today's quota counters, or None if none were seen since the reset."""
+    usage = Setting.get(QUOTA_SETTING_KEY)
+    if not isinstance(usage, dict):
+        return None
+    try:
+        updated_at = datetime.fromisoformat(usage["updated_at"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if next_quota_reset(updated_at) <= timezone.now():
+        return None
+    return usage
 
 
 def screenscraper_available() -> bool:
@@ -752,10 +869,10 @@ class ScreenScraperClient:
         try:
             response = requests.get(url, timeout=DEFAULT_TIMEOUT)
 
-            # ScreenScraper uses these statuses for account/request throttling.
-            if response.status_code in (429, 430, 431):
-                pause_until = set_pause_until()
-                raise ScreenScraperRateLimited(pause_until)
+            # ScreenScraper uses these statuses for throttling and closures.
+            reason = THROTTLE_STATUS_REASONS.get(response.status_code)
+            if reason:
+                raise ScreenScraperRateLimited(set_pause(reason))
 
             # A missing game is a documented no-match response. ScreenScraper
             # also answers 400 for values it has no entry for (e.g. unknown
@@ -778,6 +895,9 @@ class ScreenScraperClient:
 
             if not isinstance(data, dict) or not isinstance(data.get("response"), dict):
                 raise requests.RequestException("ScreenScraper returned an invalid response")
+
+            if isinstance(data["response"].get("ssuser"), dict):
+                record_quota_usage(data["response"]["ssuser"])
 
             if "response" in data and "erreur" in data["response"]:
                 error_msg = _redact_credentials(str(data["response"]["erreur"]))

@@ -15,3 +15,12 @@ def bundled_assets(request):
     return {
         "USE_BUNDLED_ASSETS": getattr(settings, "USE_BUNDLED_ASSETS", False),
     }
+
+
+def screenscraper_status(request):
+    """Expose the active ScreenScraper pause for the site-wide banner."""
+    if getattr(settings, "COLLECTION_HUB_MODE", False):
+        return {}
+    from library.metadata.screenscraper import get_pause
+
+    return {"screenscraper_pause": get_pause()}

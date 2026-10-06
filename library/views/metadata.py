@@ -27,7 +27,7 @@ def metadata_page(request):
     from ..metadata.screenscraper import (
         CREDENTIALS_VALID_KEY,
         get_credentials_valid,
-        get_pause_until,
+        get_quota_usage,
         screenscraper_available,
         set_credentials_valid,
         validate_credentials,
@@ -197,9 +197,6 @@ def metadata_page(request):
         status__in=[MetadataBatch.STATUS_COMPLETED, MetadataBatch.STATUS_CANCELLED]
     )[:5]
 
-    # Check if ScreenScraper is paused due to rate limiting
-    pause_until = get_pause_until()
-
     total_games = Game.objects.count()
     games_with_metadata = Game.objects.filter(metadata_updated_at__isnull=False).count()
     # Games that we tried to match but failed (red state)
@@ -309,7 +306,7 @@ def metadata_page(request):
         "systems_with_stats": systems_with_stats,
         "active_batches": active_batches,
         "recent_batches": recent_batches,
-        "pause_until": pause_until,
+        "quota_usage": get_quota_usage(),
         "fetching_all": fetching_all,
         "active_migration_job": active_migration_job,
         "recent_migration_job": recent_migration_job,
@@ -336,7 +333,7 @@ def _render_metadata_page_with_modal(
     the modal-specific context variables.
     """
     from ..image_utils import get_image_storage_path, validate_metadata_path
-    from ..metadata.screenscraper import get_pause_until
+    from ..metadata.screenscraper import get_quota_usage
 
     # Validate metadata path - use shared function for effective path
     effective_metadata_path = str(get_image_storage_path())
@@ -355,8 +352,6 @@ def _render_metadata_page_with_modal(
     recent_batches = MetadataBatch.objects.filter(
         status__in=[MetadataBatch.STATUS_COMPLETED, MetadataBatch.STATUS_CANCELLED]
     )[:5]
-
-    pause_until = get_pause_until()
 
     total_games = Game.objects.count()
     games_with_metadata = Game.objects.filter(metadata_updated_at__isnull=False).count()
@@ -438,7 +433,7 @@ def _render_metadata_page_with_modal(
         "systems_with_stats": systems_with_stats,
         "active_batches": active_batches,
         "recent_batches": recent_batches,
-        "pause_until": pause_until,
+        "quota_usage": get_quota_usage(),
         "fetching_all": fetching_all,
         # Modal-specific context
         "show_migration_modal": show_migration_modal,

@@ -143,6 +143,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "romhoard.context_processors.bundled_assets",
+                "romhoard.context_processors.screenscraper_status",
             ],
         },
     },

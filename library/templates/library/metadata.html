@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static retro_components %}
+{% load static retro_components humanize %}
 
 {% block title %}Settings - RomHoard{% endblock %}
 
@@ -62,6 +62,11 @@
             <div class="mt-3 p-3 bg-[var(--color-danger-bg)] border border-[var(--color-error)] rounded text-base text-[var(--color-error)]">
                 Your credentials could not be verified. Metadata fetching may fail until you correct your username and password.
             </div>
+            {% endif %}
+            {% if quota_usage %}
+            <p class="mt-3 text-base text-[var(--color-text-muted)]">
+                Today's ScreenScraper usage: {{ quota_usage.requests_today|intcomma }} / {{ quota_usage.max_requests_per_day|intcomma }} requests &middot; {{ quota_usage.failed_today|intcomma }} / {{ quota_usage.max_failed_per_day|intcomma }} unmatched lookups. Limits reset daily at midnight (Paris time).
+            </p>
             {% endif %}
         </div>
         {% else %}
@@ -343,26 +348,6 @@ document.addEventListener('DOMContentLoaded', () => {
      x-init="document.addEventListener('htmx:afterSwap', (e) => { if (e.detail.target.id === 'metadata-status-container') checkForCompletion(); })">
     {% include "library/_active_batches_status.html" %}
 </div>
-
-{% if pause_until %}
-<div class="retro-system-card retro-system-card-static mb-6">
-    <div class="retro-system-card-header retro-header-orange flex items-center gap-2 !text-left">
-        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-        </svg>
-        <h3>ScreenScraper API Paused</h3>
-    </div>
-    <div class="retro-system-card-body !text-left !items-start">
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 w-full">
-            <div class="text-base text-[var(--color-text)]">Rate limit reached. API calls paused until {{ pause_until|date:"H:i" }} ({{ pause_until|timesince }} remaining). Jobs will automatically resume.</div>
-            <form method="post" action="{% url 'library:clear_screenscraper_pause' %}">
-                {% csrf_token %}
-                <button type="submit" class="retro-btn retro-btn-sm retro-btn-yellow">Resume Now</button>
-            </form>
-        </div>
-    </div>
-</div>
-{% endif %}
 
 <!-- Library Root Path Settings -->
 <div class="retro-system-card retro-system-card-static mb-8">

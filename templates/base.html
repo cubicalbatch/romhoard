@@ -194,6 +194,7 @@
     </nav>
 
     <main class="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
+        {% if screenscraper_pause %}{% include "components/_screenscraper_pause_banner.html" with pause=screenscraper_pause %}{% endif %}
         {% block content %}{% endblock %}
     </main>
 

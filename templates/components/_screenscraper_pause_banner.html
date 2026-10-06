@@ -1,0 +1,30 @@
+{# Site-wide notice while ScreenScraper calls are paused. Expects `pause` (ScreenScraperPause). #}
+<div class="retro-system-card retro-system-card-static mb-6">
+    <div class="retro-system-card-header retro-header-orange flex items-center gap-2 !text-left">
+        <svg class="w-5 h-5 text-white flex-shrink-0" style="filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <h3>
+            {% if pause.reason == "daily_quota" %}ScreenScraper daily quota reached
+            {% elif pause.reason == "failed_quota" %}ScreenScraper daily limit for unmatched lookups reached
+            {% elif pause.reason == "unavailable" %}ScreenScraper is temporarily unavailable
+            {% else %}ScreenScraper is throttling requests{% endif %}
+        </h3>
+    </div>
+    <div class="retro-system-card-body !text-left !items-start">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 w-full">
+            <div class="text-base text-[var(--color-text)]">
+                {% if pause.reason == "failed_quota" %}ScreenScraper limits how many lookups per day may come back without a match.{% endif %}
+                {% if pause.resumes_at_reset or pause.reason == "unavailable" %}
+                Metadata fetching will continue automatically at {{ pause.until|date:"H:i" }} (in {{ pause.until|timeuntil }}). Nothing is lost while it waits.
+                {% else %}
+                Metadata fetching will continue automatically in a moment.
+                {% endif %}
+            </div>
+            <form method="post" action="{% url 'library:clear_screenscraper_pause' %}">
+                {% csrf_token %}
+                <button type="submit" class="retro-btn retro-btn-sm retro-btn-yellow" title="Retry ScreenScraper now instead of waiting">Try Now</button>
+            </form>
+        </div>
+    </div>
+</div>

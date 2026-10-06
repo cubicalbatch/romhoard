@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from django.db.models import Count, OuterRef, Q, Subquery
 from django.utils import timezone
 from procrastinate import RetryStrategy, job_context
 from procrastinate.contrib.django import app
@@ -777,14 +778,24 @@ def identify_rom(context: job_context.JobContext, rom_id: int) -> dict:
     if context.should_abort():
         raise JobAborted()
 
-    # Perform the lookup
-    result = lookup_rom(
-        system=system,
-        crc32=crc32,
-        sha1=sha1,
-        file_path=rom.file_path,
-        use_hasheous=True,
-    )
+    # Perform the lookup; while ScreenScraper is paused, wait for it instead
+    # of burning retries.
+    try:
+        result = lookup_rom(
+            system=system,
+            crc32=crc32,
+            sha1=sha1,
+            file_path=rom.file_path,
+            use_hasheous=True,
+        )
+    except ScreenScraperRateLimited as e:
+        from .queues import PRIORITY_NORMAL
+
+        identify_rom.configure(
+            schedule_at=e.retry_after, priority=PRIORITY_NORMAL
+        ).defer(rom_id=rom_id)
+        logger.info(f"Rescheduled identification of ROM {rom_id} for {e.retry_after}")
+        return {"status": "rescheduled", "retry_after": e.retry_after.isoformat()}
 
     if result:
         # Update game with matched info
@@ -1534,6 +1545,55 @@ def check_scheduled_scans(timestamp) -> dict:
         scans_triggered += 1
 
     return {"scans_triggered": scans_triggered}
+
+
+# A game whose metadata job failed this many times is left for a manual retry.
+MAX_METADATA_JOB_FAILURES = 3
+
+
+@app.periodic(cron="*/30 * * * *")
+@app.task(queue=QUEUE_BACKGROUND, queueing_lock="resume_stranded_metadata")
+def resume_stranded_metadata(timestamp) -> dict:
+    """Re-queue metadata for games whose last fetch job died.
+
+    Jobs that hit a ScreenScraper pause reschedule themselves, but jobs can
+    still die from transient errors (network failures after retries, worker
+    restarts). Without this sweep those games would stay unresolved until
+    the user retried by hand. Waits while ScreenScraper is paused; games
+    whose jobs failed MAX_METADATA_JOB_FAILURES times are left alone, as are
+    games whose last job the user cancelled.
+    """
+    from .metadata.screenscraper import get_pause_until, screenscraper_available
+
+    if not screenscraper_available() or get_pause_until():
+        return {"queued": 0}
+
+    last_job_status = Subquery(
+        MetadataJob.objects.filter(game=OuterRef("pk"))
+        .order_by("-created_at", "-pk")
+        .values("status")[:1]
+    )
+    stranded = (
+        Game.objects.filter(
+            metadata_updated_at__isnull=True, metadata_match_failed=False
+        )
+        .annotate(
+            last_job_status=last_job_status,
+            failed_jobs=Count(
+                "metadata_jobs",
+                filter=Q(metadata_jobs__status=MetadataJob.STATUS_FAILED),
+            ),
+        )
+        .filter(
+            last_job_status=MetadataJob.STATUS_FAILED,
+            failed_jobs__lt=MAX_METADATA_JOB_FAILURES,
+        )
+        .select_related("system")
+    )
+    queued = sum(queue_game_metadata(game) for game in stranded.iterator())
+    if queued:
+        logger.info(f"Re-queued metadata for {queued} stranded game(s)")
+    return {"queued": queued}
 
 
 @app.task(queue=QUEUE_BACKGROUND, pass_context=True)
