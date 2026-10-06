@@ -1145,13 +1145,37 @@ class TestIssue3FolderContextOverExclusive(TestCase):
             self.genesis,
         )
 
+    def _write(self, relative, content):
+        import tempfile
+
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(__import__("shutil").rmtree, root, True)
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        return str(path)
+
     def test_unscoped_disk_md_stays_non_rom(self):
         """Unscoped README.md must not import as Genesis despite the exclusive .md claim."""
-        self.assertIsNone(self._detect("/roms/README.md"))
+        self.assertIsNone(self._detect(self._write("README.md", b"# Readme\n")))
 
     def test_disk_md_in_foreign_folder_stays_non_rom(self):
         """Markdown in a foreign system folder stays blocked."""
-        self.assertIsNone(self._detect("/roms/Amiga/readme.md"))
+        self.assertIsNone(self._detect(self._write("Amiga/readme.md", b"Notes\n")))
+
+    def test_binary_disk_md_outside_genesis_folder_is_genesis(self):
+        """A real Mega Drive ROM in an unrecognized folder still imports.
+
+        Markdown is text; ROM images are binary. Upgraders with .md ROMs in
+        folders like "SEGA Genesis" must not lose them.
+        """
+        rom = b"\x00\xff\xfe\x00" * 64 + b"SEGA MEGA DRIVE " + b"\x00" * 64
+        path = self._write("Curated/SEGA Genesis/04. Sonic (USA, Europe).md", rom)
+        self.assertEqual(self._detect(path), self.genesis)
+
+    def test_unreadable_disk_md_counts_as_rom(self):
+        """A read failure must never make a stored ROM look like markdown."""
+        self.assertEqual(self._detect("/nonexistent/Sonic (USA).md"), self.genesis)
 
     def test_custom_declared_non_rom_extension_stays_blocked(self):
         """A folder system merely listing a non-ROM extension (.txt) must not
@@ -1450,6 +1474,25 @@ class TestRescanReconciliation(TestCase):
 
         self.assertEqual(result["deleted_roms"], 0)
         self.assertTrue(ROM.objects.exists())
+
+    def test_rescan_keeps_binary_md_rom_in_unrecognized_folder(self):
+        """Upgrade safety: a stored .md ROM outside a Genesis alias survives,
+        while a stored README.md next to it is removed."""
+        folder = self.rom_library / "Curated" / "SEGA Genesis"
+        folder.mkdir(parents=True)
+        rom = folder / "04. Sonic The Hedgehog (USA, Europe).md"
+        rom.write_bytes(b"\x00\xff" * 128 + b"SEGA MEGA DRIVE ")
+        readme = folder / "README.md"
+        readme.write_bytes(b"# My curated set\n")
+        self._store("genesis", "Sonic The Hedgehog", str(rom))
+        self._store("genesis", "README", str(readme))
+
+        result = scan_directory(str(self.rom_library), fetch_metadata=False)
+
+        self.assertEqual(result["deleted_roms"], 1)
+        self.assertEqual(
+            list(ROM.objects.values_list("file_path", flat=True)), [str(rom)]
+        )
 
     def test_rescan_is_idempotent(self):
         """A second scan of an up-to-date library changes nothing."""

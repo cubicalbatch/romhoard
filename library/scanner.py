@@ -147,6 +147,19 @@ def match_by_folder(path: Path, systems: list) -> Optional[System]:
     return None
 
 
+def is_binary_file(file_path: str) -> bool:
+    """Return whether a file looks binary (has NUL bytes in its first 4 KiB).
+
+    Unreadable files count as binary so a read failure never reclassifies a
+    stored ROM as a text document.
+    """
+    try:
+        with open(file_path, "rb") as f:
+            return b"\0" in f.read(4096)
+    except OSError:
+        return True
+
+
 def resolve_folder_decision(
     file_path: str, systems_cache: list, internal_path: str = ""
 ) -> tuple[Optional[System], str]:
@@ -173,8 +186,9 @@ def detect_system_details(
 
     The nearest folder wins when it accepts the extension; non-ROM extensions
     pass only through their configured exclusive claimant's folder (.md in
-    Genesis); otherwise the exclusive extension mapping falls back, and a
-    rejecting folder without one blocks the file.
+    Genesis) or, for files on disk, when the content is binary (a Mega Drive
+    .md ROM, not markdown); otherwise the exclusive extension mapping falls
+    back, and a rejecting folder without one blocks the file.
     """
     path = Path(internal_path or file_path)
     extension = get_full_extension(path.name)
@@ -191,25 +205,27 @@ def detect_system_details(
     else:
         folder_reason = "folder"
     exclusive_system = exclusive_map.get(extension)
-    non_rom = is_non_rom_extension(extension)
+
+    if is_non_rom_extension(extension):
+        # The blocklist yields only to the claimant's own folder context, or
+        # to a binary file on disk: text formats never contain NUL bytes.
+        if exclusive_system is not None and (
+            exclusive_system is folder_system
+            or (not internal_path and is_binary_file(file_path))
+        ):
+            return exclusive_system, "exclusive_extension"
+        return None, "non_rom_extension"
 
     if folder_system is not None:
-        if not non_rom and is_acceptable_extension(extension, folder_system):
+        if is_acceptable_extension(extension, folder_system):
             # Keep the common same-system exclusive reason stable.
             if exclusive_system is folder_system:
                 return folder_system, "exclusive_extension"
             return folder_system, folder_reason
-        if non_rom:
-            # The blocklist yields only to the claimant's own folder context.
-            if exclusive_system is folder_system:
-                return folder_system, "exclusive_extension"
-            return None, "non_rom_extension"
         if exclusive_system is not None:
             return exclusive_system, "exclusive_extension"
         return None, "unsupported_extension"
 
-    if non_rom:
-        return None, "non_rom_extension"
     if exclusive_system is not None:
         return exclusive_system, "exclusive_extension"
     return None, "no_folder_match"

@@ -125,8 +125,9 @@ fetched:
   skipped. An exclusive extension still wins inside a folder that can't use
   it: an Xbox 360 `.xex` stays Xbox 360 even inside a PSP folder.
 - **Listed non-ROM types never import** — e.g. music dumps like `.spc`, saves,
-  docs, and source code. `.md` is accepted only inside a folder configured to
-  claim it; in practice that is Genesis/Mega Drive.
+  docs, and source code. `.md` is both a Mega Drive ROM and Markdown: inside a
+  Genesis/Mega Drive folder it is always a ROM; elsewhere a `.md` file on disk
+  is a ROM only if it is binary (Markdown READMEs are text).
 - **ZIP and 7z archives are opened and their members scanned individually**,
   except archive-as-ROM systems (Neo Geo, arcade, MS-DOS) where the archive
   itself is the game. Archives there that hold only docs, config, or source
