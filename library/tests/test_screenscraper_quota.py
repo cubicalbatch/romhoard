@@ -363,3 +363,20 @@ class TestResumeStrandedMetadata:
         result, _ = self._sweep()
 
         assert result["queued"] == 0
+
+
+@pytest.mark.django_db
+def test_legacy_pause_setting_is_removed_by_migration():
+    from importlib import import_module
+
+    from django.apps import apps
+
+    Setting.objects.create(
+        key="screenscraper_pause_until", value=timezone.now().isoformat()
+    )
+    migration = import_module("library.migrations.0005_remove_legacy_screenscraper_pause")
+
+    migration.remove_legacy_pause(apps, None)
+
+    assert not Setting.objects.filter(key="screenscraper_pause_until").exists()
+    assert get_pause() is None
