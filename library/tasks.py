@@ -3,12 +3,17 @@
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+from django.db import transaction
 from django.db.models import Count, OuterRef, Q, Subquery
 from django.utils import timezone
 from procrastinate import RetryStrategy, job_context
 from procrastinate.contrib.django import app
 from procrastinate.exceptions import JobAborted
+
+if TYPE_CHECKING:
+    from .lookup import LookupResult
 
 from .metadata.screenscraper import ScreenScraperRateLimited
 from .models import (
@@ -45,52 +50,45 @@ api_retry = RetryStrategy(
 )
 
 
+def metadata_skip_reason(game: Game) -> str | None:
+    """Return why a game should not get an automatic metadata fetch, or None.
+
+    A game is skipped when ScreenScraper credentials are missing, it already
+    has metadata, a previous match failed (the user can force a retry), its
+    system has no ScreenScraper ID, or a metadata job is already pending.
+    """
+    from .metadata.screenscraper import screenscraper_available
+
+    if not screenscraper_available():
+        return "no ScreenScraper credentials"
+    if game.metadata_updated_at:
+        return "already has metadata"
+    if game.metadata_match_failed:
+        return "previously failed"
+    if not game.system.screenscraper_id:
+        return "system has no SS ID"
+    if MetadataJob.objects.filter(
+        game=game,
+        status__in=[MetadataJob.STATUS_PENDING, MetadataJob.STATUS_RUNNING],
+    ).exists():
+        return "job already pending"
+    return None
+
+
 def queue_game_metadata(game: Game) -> bool:
     """Queue metadata fetch for a single game immediately.
 
-    This is called during scan/upload when a new game is created or a ROM
-    is added to an existing game that lacks metadata.
+    Called after scans/uploads (directly or once Hasheous identification
+    finished) for new games and games that gained a ROM without metadata.
 
-    Returns True if a job was queued, False if skipped.
-
-    Skips if:
-    - ScreenScraper credentials are not configured
-    - Game already has screenscraper_id
-    - Game already has metadata_updated_at
-    - Game has metadata_match_failed=True
-    - Game's system has no screenscraper_id (can't query ScreenScraper)
-    - A pending/running MetadataJob already exists for this game
+    Returns:
+        True if a job was queued, False if skipped (see metadata_skip_reason).
     """
-    from .metadata.screenscraper import screenscraper_available
     from .queues import PRIORITY_BULK
 
-    # Skip if ScreenScraper credentials are not configured
-    if not screenscraper_available():
-        logger.debug(f"Skip metadata queue for {game}: no ScreenScraper credentials")
-        return False
-
-    # Skip if game already has metadata fetched
-    if game.metadata_updated_at:
-        logger.debug(f"Skip metadata queue for {game}: already has metadata")
-        return False
-
-    # Skip if metadata match already failed (user can force via batch)
-    if game.metadata_match_failed:
-        logger.debug(f"Skip metadata queue for {game}: previously failed")
-        return False
-
-    # Skip if system doesn't have ScreenScraper ID
-    if not game.system.screenscraper_id:
-        logger.debug(f"Skip metadata queue for {game}: system has no SS ID")
-        return False
-
-    # Check for existing pending/running job to avoid duplicates
-    existing_job = MetadataJob.objects.filter(
-        game=game,
-        status__in=[MetadataJob.STATUS_PENDING, MetadataJob.STATUS_RUNNING],
-    ).exists()
-    if existing_job:
-        logger.debug(f"Skip metadata queue for {game}: job already pending")
+    reason = metadata_skip_reason(game)
+    if reason:
+        logger.debug(f"Skip metadata queue for {game}: {reason}")
         return False
 
     # Create job without a batch (standalone auto-queued job)
@@ -160,15 +158,6 @@ def run_scan(context: job_context.JobContext, scan_job_id: int) -> dict:
         scan_path.use_hasheous = scan_job.use_hasheous
         scan_path.fetch_metadata = scan_job.fetch_metadata
         scan_path.save()
-
-        # Queue identification tasks for all added ROMs
-        added_rom_ids = result.get("added_rom_ids", [])
-        identification_queued = 0
-        if added_rom_ids:
-            for rom_id in added_rom_ids:
-                if queue_rom_identification(rom_id):
-                    identification_queued += 1
-            logger.info(f"Queued {identification_queued} identification tasks for scan")
 
         # Auto-fetch system icons if any are missing
         auto_fetch_system_icons.defer()
@@ -638,13 +627,73 @@ def _trigger_cover_for_collections_if_done(game: Game) -> None:
         logger.exception(f"Error checking cover generation for game {game}")
 
 
+# ROMs tried per game: ROMs of one game are all known to Hasheous or none
+# are, so a few cover multi-disc games without hammering the API.
+MAX_HASHEOUS_ROMS = 5
+
+# Hasheous-only retries after an outage, backing off from the outage
+# cooldown (10 min, 20, 40, 80, 160: about 5 hours in all).
+MAX_HASHEOUS_RETRIES = 5
+
+
+def apply_hash_name(
+    game: Game, result: "LookupResult", only_from: str | None = None
+) -> Game | None:
+    """Rename a game to its hash-database name.
+
+    If another game of the same system already has that name, the two are
+    the same game: this one is merged into it.
+
+    Args:
+        game: Game identified by hash
+        result: Lookup result carrying the canonical name and its source
+        only_from: Rename only if the game's name still has this source.
+            Checked under a row lock, since the metadata job may have
+            renamed the game while the lookup ran.
+
+    Returns:
+        The game now holding the ROMs (the merge target when merged), or
+        None when the name source changed meanwhile and nothing was done.
+    """
+    from .merge import merge_games
+
+    known_sources = Game.HASH_SOURCES | {Game.SOURCE_SCREENSCRAPER}
+    source = result.source if result.source in known_sources else Game.SOURCE_HASHEOUS
+    with transaction.atomic():
+        game = Game.objects.select_for_update().filter(pk=game.pk).first()
+        if game is None or (only_from and game.name_source != only_from):
+            return None
+        existing = (
+            Game.objects.filter(name=result.name, system=game.system)
+            .exclude(pk=game.pk)
+            .first()
+        )
+        if existing:
+            merge_games(existing, game)
+            logger.info(f"Merged '{game.name}' into '{existing.name}' (hash match)")
+            return Game.objects.get(pk=existing.pk)
+
+        old_name = game.name
+        game.name = result.name
+        game.name_source = source
+        fields = ["name", "name_source"]
+        if result.screenscraper_id and not game.screenscraper_id:
+            game.screenscraper_id = result.screenscraper_id
+            fields.append("screenscraper_id")
+        game.save(update_fields=fields)
+    if old_name != game.name:
+        logger.info(f"Renamed '{old_name}' -> '{game.name}' (source: {source})")
+    else:
+        logger.info(f"Confirmed name '{game.name}' (source: {source})")
+    return game
+
+
 @app.task(queue=QUEUE_USER_ACTIONS)
 def run_hash_lookup(game_id: int) -> dict:
-    """Background task to identify game via hash lookup.
+    """Background task to identify a game via hash lookup (game page action).
 
-    Tries Hasheous.
-    Only processes games identified by filename or manual entry.
-    Updates game name and name_source if a hash match is found.
+    Tries Hasheous, then ScreenScraper. Only processes games not already
+    named from a hash database.
     """
     from .lookup import lookup_rom
 
@@ -652,17 +701,8 @@ def run_hash_lookup(game_id: int) -> dict:
     if not game:
         return {"matched": False, "error": "Game not found"}
 
-    # Skip if already identified via hash-based source
-    hash_sources = {
-        Game.SOURCE_HASHEOUS,
-        "NoIntros",
-        "Redump",
-    }
-    if game.name_source in hash_sources:
+    if game.name_source in Game.HASH_SOURCES:
         return {"matched": False, "skipped": "Already hash-based"}
-
-    # Collect all ROMs from all ROMSets
-    from .models import ROM
 
     roms = ROM.objects.filter(rom_set__game=game).select_related("rom_set").all()
 
@@ -679,155 +719,133 @@ def run_hash_lookup(game_id: int) -> dict:
         )
 
         if result:
-            # Update game with matched info
             old_name = game.name
-            game.name = result.name
-            game.name_source = result.source
-            if result.screenscraper_id:
-                game.screenscraper_id = result.screenscraper_id
-            game.save()
+            game = apply_hash_name(game, result)
+            if game is None:
+                return {"matched": False, "error": "Game no longer exists"}
             return {
                 "matched": True,
-                "source": result.source,
-                "new_name": result.name,
+                "source": game.name_source,
+                "new_name": game.name,
                 "old_name": old_name,
             }
 
     return {"matched": False, "error": "No hash match found"}
 
 
-def queue_rom_identification(rom_id: int) -> bool:
-    """Queue an identification task for a ROM.
+def queue_game_followup(
+    game: Game, use_hasheous: bool, fetch_metadata: bool
+) -> tuple[bool, bool]:
+    """Queue what a newly scanned/uploaded game needs next.
 
-    This is called during scan when a new ROM is created with identify_later=True.
-    The identification task will look up the game name via hash and update it.
+    The Hasheous naming job (free, no account needed) and the ScreenScraper
+    metadata fetch run side by side on separate workers; neither waits for
+    the other. Their order does not matter: an exact ScreenScraper match
+    names the game either way, and Hasheous only names games whose name
+    still comes from the filename. Arcade systems skip Hasheous (they are
+    identified by MAME short name instead), as do systems that never hash
+    their ROMs (Hasheous looks games up by hash only).
 
     Args:
-        rom_id: ID of the ROM to identify
+        game: Game that was created or gained a ROMSet
+        use_hasheous: Whether Hasheous naming is enabled for this scan
+        fetch_metadata: Whether ScreenScraper metadata should be fetched
 
     Returns:
-        True if task was queued, False otherwise
+        Tuple of (identification_queued, metadata_queued).
     """
     from .queues import PRIORITY_NORMAL
 
-    # Defer the identification task
-    job_id = identify_rom.configure(priority=PRIORITY_NORMAL).defer(rom_id=rom_id)
-    logger.debug(f"Queued identification for ROM {rom_id} (job {job_id})")
-    return True
+    identification = (
+        use_hasheous
+        and game.name_source == Game.SOURCE_FILENAME
+        and not game.system.archive_as_rom
+        and not game.system.skip_checksum
+    )
+    if identification:
+        identify_game.configure(priority=PRIORITY_NORMAL).defer(game_id=game.pk)
+    metadata = fetch_metadata and queue_game_metadata(game)
+    return identification, metadata
 
 
-@app.task(queue=QUEUE_IDENTIFICATION, retry=api_retry, pass_context=True)
-def identify_rom(context: job_context.JobContext, rom_id: int) -> dict:
-    """Background task to identify a ROM via hash lookup and update its game.
+@app.task(queue=QUEUE_IDENTIFICATION, pass_context=True)
+def identify_game(
+    context: job_context.JobContext, game_id: int, attempt: int = 0
+) -> dict:
+    """Name a scanned game from Hasheous (No-Intro/Redump/TOSEC).
 
-    This task performs hash-based lookup for a ROM that was created during
-    a scan with identify_later=True. It updates the game name and source
-    if a match is found, and optionally queues metadata fetch.
+    Runs alongside the ScreenScraper metadata fetch, never blocking it.
+    When Hasheous is down, a retry is scheduled after the outage cooldown
+    (with backoff), so a short outage does not cost the names of every game
+    queued meanwhile.
 
     Args:
-        rom_id: ID of the ROM to identify
+        game_id: Game to identify
+        attempt: Number of earlier tries cut short by a Hasheous outage
 
     Returns:
-        Dict with identification results
+        Dict with the identification outcome
     """
-    from .lookup import lookup_rom
+    from .lookup.hasheous import (
+        OUTAGE_COOLDOWN,
+        HasheousLookupService,
+        hasheous_available,
+    )
+    from .queues import PRIORITY_LOW
 
-    # Check for cancellation before starting
-    if context.should_abort():
-        raise JobAborted()
+    game = Game.objects.select_related("system").filter(pk=game_id).first()
+    if game is None:
+        return {"status": "skipped", "reason": "game_deleted"}
 
-    try:
-        rom = ROM.objects.select_related(
-            "rom_set", "rom_set__game", "rom_set__game__system"
-        ).get(pk=rom_id)
-    except ROM.DoesNotExist:
-        # ROM was deleted since the scan - this is fine, just skip
-        logger.info(f"ROM {rom_id} no longer exists, skipping identification")
-        return {"identified": False, "rom_id": rom_id, "reason": "rom_deleted"}
+    old_name = game.name
+    status = "skipped"
+    if game.name_source == Game.SOURCE_FILENAME:
+        status = "no_match"
+        roms = (
+            ROM.objects.filter(rom_set__game=game)
+            .exclude(crc32="", sha1="")
+            .order_by("pk")[:MAX_HASHEOUS_ROMS]
+        )
+        service = HasheousLookupService()
+        try:
+            for rom in roms:
+                if context.should_abort():
+                    raise JobAborted()
+                result = service.lookup(
+                    system=game.system, crc32=rom.crc32, sha1=rom.sha1
+                )
+                if result:
+                    renamed = apply_hash_name(
+                        game, result, only_from=Game.SOURCE_FILENAME
+                    )
+                    if renamed is None:
+                        status = "skipped"  # named by ScreenScraper meanwhile
+                    else:
+                        game = renamed
+                        status = "identified"
+                    break
+                if not hasheous_available():
+                    status = "hasheous_unavailable"
+                    break
+        except JobAborted:
+            raise
+        except Exception:
+            logger.exception(f"Hasheous identification failed for '{game.name}'")
+            status = "error"
 
-    game = rom.rom_set.game
-    system = game.system
+    if status == "hasheous_unavailable" and attempt < MAX_HASHEOUS_RETRIES:
+        identify_game.configure(
+            schedule_in={"seconds": OUTAGE_COOLDOWN * 2**attempt},
+            priority=PRIORITY_LOW,
+        ).defer(game_id=game.pk, attempt=attempt + 1)
+        status = "retry_scheduled"
 
-    # Skip if already identified via hash-based source
-    hash_sources = {
-        Game.SOURCE_HASHEOUS,
-        "NoIntros",
-        "Redump",
+    return {
+        "status": status,
+        "game_id": game.pk,
+        "old_name": old_name,
+        "new_name": game.name,
     }
-    if game.name_source in hash_sources:
-        return {
-            "identified": False,
-            "rom_id": rom_id,
-            "reason": "already_hash_based",
-            "source": game.name_source,
-        }
-
-    # Skip if game already has screenscraper_id (already identified)
-    if game.screenscraper_id:
-        return {
-            "identified": False,
-            "rom_id": rom_id,
-            "reason": "has_screenscraper_id",
-        }
-
-    # Determine which hash and file path to use
-    crc32 = rom.crc32
-    sha1 = rom.sha1
-
-    # Check for cancellation before API call
-    if context.should_abort():
-        raise JobAborted()
-
-    # Perform the lookup; while ScreenScraper is paused, wait for it instead
-    # of burning retries.
-    try:
-        result = lookup_rom(
-            system=system,
-            crc32=crc32,
-            sha1=sha1,
-            file_path=rom.file_path,
-            use_hasheous=True,
-        )
-    except ScreenScraperRateLimited as e:
-        from .queues import PRIORITY_NORMAL
-
-        identify_rom.configure(
-            schedule_at=e.retry_after, priority=PRIORITY_NORMAL
-        ).defer(rom_id=rom_id)
-        logger.info(f"Rescheduled identification of ROM {rom_id} for {e.retry_after}")
-        return {"status": "rescheduled", "retry_after": e.retry_after.isoformat()}
-
-    if result:
-        # Update game with matched info
-        old_name = game.name
-        game.name = result.name
-        game.name_source = result.source
-        if result.screenscraper_id:
-            game.screenscraper_id = result.screenscraper_id
-        game.save()
-
-        logger.info(
-            f"Identified ROM {rom_id}: '{old_name}' -> '{game.name}' "
-            f"(source: {result.source})"
-        )
-
-        # Optionally queue metadata fetch if lookup succeeded
-        # and game doesn't already have metadata
-        metadata_queued = False
-        if not game.metadata_updated_at and not game.metadata_match_failed:
-            metadata_queued = queue_game_metadata(game)
-
-        return {
-            "identified": True,
-            "rom_id": rom_id,
-            "game_id": game.pk,
-            "old_name": old_name,
-            "new_name": game.name,
-            "source": result.source,
-            "metadata_queued": metadata_queued,
-        }
-
-    return {"identified": False, "rom_id": rom_id, "reason": "no_match_found"}
 
 
 @app.task(queue=QUEUE_METADATA, retry=api_retry, pass_context=True)
@@ -909,6 +927,10 @@ def auto_fetch_system_icons() -> dict:
     all the icon downloading logic and skips systems that already have icons.
     """
     from .metadata.matcher import fetch_system_metadata_for_job
+    from .metadata.screenscraper import screenscraper_available
+
+    if not screenscraper_available():
+        return {"status": "skipped", "reason": "no_credentials"}
 
     # Quick check: any systems with games but no icon?
     systems_needing_icons = (
@@ -1115,9 +1137,9 @@ def _process_uploaded_file(
     import os
     import shutil
 
-    from .archive import compute_file_crc32
+    from .chd import extract_chd_sha1, is_chd_file
     from .parser import parse_rom_filename
-    from .scanner import get_or_create_rom_set
+    from .scanner import get_or_create_rom_set, rom_file_crc32
     from .upload import ensure_destination_dir, get_unique_filepath
 
     try:
@@ -1128,22 +1150,28 @@ def _process_uploaded_file(
         # Move file to final location
         shutil.move(temp_path, dest_path)
 
-        # Parse filename and compute hash
+        # Parse filename and compute hashes (CHD files identify by internal SHA1)
         parsed = parse_rom_filename(filename, arcade=system.archive_as_rom)
         file_size = os.path.getsize(dest_path)
-        crc32 = compute_file_crc32(dest_path)
+        crc32 = ""
+        sha1 = ""
+
+        # For CHD files, extract internal SHA1 (more useful than outer CRC32)
+        if is_chd_file(filename):
+            sha1 = extract_chd_sha1(dest_path) or ""
+            # CRC32 of CHD container is not useful for lookup, skip it
+        else:
+            crc32 = rom_file_crc32(system, dest_path)
 
         # Create DB records using existing scanner logic
-        rom_set, _, metadata_needed, _ = get_or_create_rom_set(
+        rom_set, followup_needed = get_or_create_rom_set(
             name=parsed["name"],
             system=system,
             region=parsed["region"],
             revision=parsed["revision"],
             source_path=os.path.dirname(dest_path),
             crc32=crc32,
-            file_path=dest_path,
-            use_hasheous=True,
-            fetch_metadata=fetch_metadata,
+            sha1=sha1,
         )
 
         ROM.objects.create(
@@ -1152,6 +1180,7 @@ def _process_uploaded_file(
             file_name=os.path.basename(dest_path),
             file_size=file_size,
             crc32=crc32,
+            sha1=sha1,
             tags=parsed.get("tags", []),
             rom_number=parsed.get("rom_number", ""),
             disc=parsed.get("disc"),
@@ -1161,8 +1190,10 @@ def _process_uploaded_file(
         from library.romset_scoring import recalculate_default_romset
 
         recalculate_default_romset(rom_set.game)
-        if metadata_needed:
-            queue_game_metadata(rom_set.game)
+        if followup_needed:
+            queue_game_followup(
+                rom_set.game, use_hasheous=True, fetch_metadata=fetch_metadata
+            )
 
         return {"success": True, "added": 1}
 
@@ -1245,7 +1276,6 @@ def _process_single_game_archive(
     import os
     import shutil
 
-    from .archive import compute_file_crc32
     from .parser import parse_rom_filename
     from .scanner import get_or_create_rom_set
     from .upload import ensure_destination_dir, get_unique_filepath
@@ -1261,25 +1291,20 @@ def _process_single_game_archive(
         # Move archive to final location
         shutil.move(temp_path, dest_path)
 
-        # Parse filename and compute hash of archive
+        # Parse filename; the identifying hash is the inner ROM member's CRC
+        # (what identify_game looks up), not the outer archive's
         parsed = parse_rom_filename(first_rom.name, arcade=system.archive_as_rom)
         file_size = os.path.getsize(dest_path)
-        archive_crc = compute_file_crc32(dest_path)
-
-        # Use CRC of first ROM file inside archive for lookup
-        rom_crc = first_rom.crc32 if first_rom.crc32 else archive_crc
+        rom_crc = first_rom.crc32 or ""
 
         # Create DB records
-        rom_set, _, metadata_needed, _ = get_or_create_rom_set(
+        rom_set, followup_needed = get_or_create_rom_set(
             name=parsed["name"],
             system=system,
             region=parsed["region"],
             revision=parsed["revision"],
             source_path=dest_path,  # Archive itself is the source
             crc32=rom_crc,
-            file_path=dest_path,
-            use_hasheous=True,
-            fetch_metadata=fetch_metadata,
         )
 
         # Create ROM entry for archive
@@ -1288,7 +1313,7 @@ def _process_single_game_archive(
             file_path=dest_path,
             file_name=os.path.basename(dest_path),
             file_size=file_size,
-            crc32=archive_crc,
+            crc32=rom_crc,
             tags=parsed.get("tags", []),
             rom_number=parsed.get("rom_number", ""),
             disc=parsed.get("disc"),
@@ -1298,8 +1323,10 @@ def _process_single_game_archive(
         from library.romset_scoring import recalculate_default_romset
 
         recalculate_default_romset(rom_set.game)
-        if metadata_needed:
-            queue_game_metadata(rom_set.game)
+        if followup_needed:
+            queue_game_followup(
+                rom_set.game, use_hasheous=True, fetch_metadata=fetch_metadata
+            )
 
         return {"success": True, "added": 1}
 
@@ -1450,21 +1477,18 @@ def _process_extracted_rom(
 
         # Use pre-computed CRC32 if available, otherwise compute
         if not crc32:
-            from .archive import compute_file_crc32
+            from .scanner import rom_file_crc32
 
-            crc32 = compute_file_crc32(dest_path)
+            crc32 = rom_file_crc32(system, dest_path)
 
         # Create DB records
-        rom_set, _, metadata_needed, _ = get_or_create_rom_set(
+        rom_set, followup_needed = get_or_create_rom_set(
             name=parsed["name"],
             system=system,
             region=parsed["region"],
             revision=parsed["revision"],
             source_path=os.path.dirname(dest_path),
             crc32=crc32,
-            file_path=dest_path,
-            use_hasheous=True,
-            fetch_metadata=fetch_metadata,
         )
 
         ROM.objects.create(
@@ -1482,8 +1506,10 @@ def _process_extracted_rom(
         from library.romset_scoring import recalculate_default_romset
 
         recalculate_default_romset(rom_set.game)
-        if metadata_needed:
-            queue_game_metadata(rom_set.game)
+        if followup_needed:
+            queue_game_followup(
+                rom_set.game, use_hasheous=True, fetch_metadata=fetch_metadata
+            )
 
         job.games_added += 1
         job.save()
@@ -1549,6 +1575,15 @@ def check_scheduled_scans(timestamp) -> dict:
 
 # A game whose metadata job failed this many times is left for a manual retry.
 MAX_METADATA_JOB_FAILURES = 3
+
+
+@app.periodic(cron="*/5 * * * *")
+@app.task(queue=QUEUE_BACKGROUND, queueing_lock="cleanup_orphaned_jobs")
+def cleanup_orphaned_jobs(timestamp) -> dict:
+    """Fail job records whose worker died (crash, OOM kill, container stop)."""
+    from .job_cleanup import mark_orphaned_jobs
+
+    return {"failed": mark_orphaned_jobs()}
 
 
 @app.periodic(cron="*/30 * * * *")

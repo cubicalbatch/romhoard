@@ -23,6 +23,9 @@ from library.parser import parse_rom_filename
 
 logger = logging.getLogger(__name__)
 
+# Name sources an exact ScreenScraper match may replace with its canonical name
+RENAMEABLE_SOURCES = Game.HASH_SOURCES | {Game.SOURCE_FILENAME}
+
 if TYPE_CHECKING:
     from library.lookup.base import LookupResult
     from library.models import ROM
@@ -289,7 +292,7 @@ def _identify_game(
             crc32=rom.crc32,
             file_path=_rom_lookup_file_path(game, rom),
             allow_name_search=False,
-            use_hasheous=False,  # Hasheous already tried during scan
+            use_hasheous=False,  # Hasheous naming runs in identify_game
         )
         if result and result.screenscraper_id:
             return result
@@ -426,12 +429,17 @@ def apply_metadata_to_game(game: Game, metadata: dict) -> bool:
         return False
 
     try:
-        # Check if we should rename the game
-        # Only rename on CRC32/romnom matches when game was named via filename parsing
+        # Hasheous naming runs in parallel and may have renamed the game
+        # since this job loaded it; decide and save from the current name.
+        game.refresh_from_db(fields=["name", "name_source"])
+
+        # Exact CRC32/romnom matches give the ScreenScraper canonical name to
+        # games named from their filename or by Hasheous, so names stay the
+        # same whether or not Hasheous ran. Manual and collection names stay.
         match_type = metadata.get("_match_type")
         should_rename = (
             match_type in ("crc32", "romnom")
-            and game.name_source == Game.SOURCE_FILENAME
+            and game.name_source in RENAMEABLE_SOURCES
             and metadata.get("_screenscraper_name")
         )
 

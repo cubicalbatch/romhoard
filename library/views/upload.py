@@ -188,9 +188,8 @@ def upload_status(request, job_id: int):
 @require_POST
 def resolve_unidentified(request, job_id: int):
     """Handle user system selection for unidentified games."""
-    from ..archive import compute_file_crc32
     from ..parser import parse_rom_filename
-    from ..scanner import get_or_create_rom_set
+    from ..scanner import get_or_create_rom_set, rom_file_crc32
     from ..upload import (
         check_duplicate,
         ensure_destination_dir,
@@ -252,19 +251,16 @@ def resolve_unidentified(request, job_id: int):
             # Parse filename and compute hash
             parsed = parse_rom_filename(filename, arcade=system.archive_as_rom)
             file_size = os.path.getsize(dest_path)
-            crc32 = compute_file_crc32(dest_path)
+            crc32 = rom_file_crc32(system, dest_path)
 
             # Create DB records using existing scanner logic
-            rom_set, _, metadata_needed, _ = get_or_create_rom_set(
+            rom_set, followup_needed = get_or_create_rom_set(
                 name=parsed["name"],
                 system=system,
                 region=parsed["region"],
                 revision=parsed["revision"],
                 source_path=os.path.dirname(dest_path),
                 crc32=crc32,
-                file_path=dest_path,
-                use_hasheous=True,
-                fetch_metadata=job.fetch_metadata,
             )
 
             ROM.objects.create(
@@ -282,10 +278,12 @@ def resolve_unidentified(request, job_id: int):
             from library.romset_scoring import recalculate_default_romset
 
             recalculate_default_romset(rom_set.game)
-            if metadata_needed:
-                from ..tasks import queue_game_metadata
+            if followup_needed:
+                from ..tasks import queue_game_followup
 
-                queue_game_metadata(rom_set.game)
+                queue_game_followup(
+                    rom_set.game, use_hasheous=True, fetch_metadata=job.fetch_metadata
+                )
 
             job.games_added += 1
             processed_count += 1

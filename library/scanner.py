@@ -23,7 +23,6 @@ from .extensions import (
     COMPRESSED_EXTENSIONS,
     IMAGE_EXTENSIONS,
 )
-from .lookup import lookup_rom, LookupResult
 from .merge import find_existing_game
 from .models import Game, GameImage, ROM, ROMSet, System
 from .parser import (
@@ -356,6 +355,25 @@ def get_source_path(
     return os.path.dirname(file_path)
 
 
+def rom_file_crc32(system: System, file_path: str) -> str:
+    """CRC32 of a whole ROM file, or "" for systems that skip checksums.
+
+    Switch dumps are multi-gigabyte and their CRC almost never identifies a
+    game that ScreenScraper's filename lookups miss, so hashing them only
+    costs hours of disk reads.
+
+    Args:
+        system: System the file belongs to
+        file_path: Path to the ROM file
+
+    Returns:
+        Lowercase hex CRC32, or "" when the system skips checksums.
+    """
+    if system.skip_checksum:
+        return ""
+    return archive_utils.compute_file_crc32(file_path)
+
+
 def get_or_create_rom_set(
     name: str,
     system: System,
@@ -364,13 +382,12 @@ def get_or_create_rom_set(
     source_path: str = "",
     crc32: str = "",
     sha1: str = "",
-    file_path: str = "",
-    use_hasheous: bool = False,
-    fetch_metadata: bool = True,
-    identify_later: bool = True,
-) -> tuple[ROMSet, LookupResult | None, bool, bool]:
+) -> tuple[ROMSet, bool]:
     """
     Find or create a Game and ROMSet.
+
+    Identification (Hasheous naming, ScreenScraper metadata) runs after the
+    scan in background jobs; see `queue_game_followup`.
 
     Args:
         name: Game name (from parsed filename)
@@ -378,53 +395,14 @@ def get_or_create_rom_set(
         region: Region string (may be empty)
         revision: Revision string (may be empty)
         source_path: Source identifier for grouping (archive path or parent dir)
-        crc32: Optional CRC32 hash for lookup
-        sha1: Optional SHA1 hash for lookup (used for CHD files)
-        file_path: Path to ROM file (for romnom lookup fallback)
-        use_hasheous: Enable Hasheous API lookup as fallback
-        fetch_metadata: Whether the caller wants ScreenScraper metadata queued
-            after creating the ROM.
-        identify_later: If True, skip hash lookup during scan and queue for later
+        crc32: Optional CRC32 hash used to find an existing game
+        sha1: Optional SHA1 hash used to find an existing game (CHD files)
 
-        Tuple of (ROMSet, LookupResult or None if no match, metadata_needed bool,
-                  identification_needed bool). The caller queues metadata when needed.
+    Returns:
+        Tuple of (ROMSet, followup_needed). followup_needed is True for new
+        games and for unidentified games that just gained a ROMSet; the
+        caller queues their identification/metadata once its writes finish.
     """
-    # Try hash-based lookup first if we have any hash or file_path
-    # The lookup chain will try Hasheous first, then ScreenScraper (CRC + romnom)
-    # Skip lookup if identify_later=True (for parallel identification after scan)
-    name_source = Game.SOURCE_FILENAME
-    result: LookupResult | None = None
-    screenscraper_id: int | None = None
-    identification_needed = False
-
-    if not identify_later and (crc32 or sha1 or file_path):
-        result = lookup_rom(
-            system=system,
-            crc32=crc32,
-            sha1=sha1,
-            file_path=file_path,
-            use_hasheous=use_hasheous,
-        )
-        if result:
-            original_name = name  # Preserve for logging
-            name = result.name
-            # Keep filename-parsed region/revision if lookup returns empty
-            region = result.region or region
-            revision = result.revision or revision
-            # Use source from lookup result
-            name_source = result.source
-            # Capture screenscraper_id if present (from ScreenScraper lookup)
-            screenscraper_id = result.screenscraper_id
-            hash_info = f"SHA1: {sha1}" if sha1 else f"CRC32: {crc32}"
-            logger.info(
-                f"Lookup match ({result.source}) for {system.slug}: "
-                f"'{original_name}' -> '{name}' [{region}] ({hash_info})"
-            )
-    elif identify_later and (crc32 or sha1 or file_path):
-        # Mark for later identification
-        identification_needed = True
-
-
     # Resolve-lock-or-create in one bounded flow. Every existing candidate is
     # reloaded with select_for_update() before use so a concurrent merge
     # cannot delete it between selection and ROMSet/ROM creation. A candidate
@@ -433,28 +411,16 @@ def get_or_create_rom_set(
     # and returns to the same lock path. Creation runs behind a savepoint so
     # a constraint conflict leaves the caller's transaction usable. After the
     # bounded attempts, fail rather than continue with an unlocked game.
-    game = find_existing_game(
-        name=name,
-        system=system,
-        crc32=crc32,
-        sha1=sha1,
-        screenscraper_id=screenscraper_id,
-    )
+    game = find_existing_game(name=name, system=system, crc32=crc32, sha1=sha1)
     game_created = False
     for _ in range(3):
         if game is not None and transaction.get_connection().in_atomic_block:
             try:
                 game = Game.objects.select_for_update().get(pk=game.pk)
             except Game.DoesNotExist:
-                logger.debug(
-                    "Game pk=%s vanished before lock; re-resolving", game.pk
-                )
+                logger.debug("Game pk=%s vanished before lock; re-resolving", game.pk)
                 game = find_existing_game(
-                    name=name,
-                    system=system,
-                    crc32=crc32,
-                    sha1=sha1,
-                    screenscraper_id=screenscraper_id,
+                    name=name, system=system, crc32=crc32, sha1=sha1
                 )
                 continue
         try:
@@ -462,42 +428,20 @@ def get_or_create_rom_set(
                 if game:
                     logger.debug(f"Found existing game: {game} (pk={game.pk})")
                 else:
-                    # Create new game
                     game = Game.objects.create(
-                        name=name, system=system, name_source=name_source
+                        name=name, system=system, name_source=Game.SOURCE_FILENAME
                     )
                     game_created = True
                     logger.debug(f"Created new game: {game} (pk={game.pk})")
-
-                # Update name_source if this is a new game or if we have a hash-based match
-                # (anything except filename parsing, screenscraper, or manual entry)
-                non_hash_sources = {
-                    Game.SOURCE_FILENAME,
-                    Game.SOURCE_SCREENSCRAPER,
-                    Game.SOURCE_MANUAL,
-                }
-                needs_save = False
-                if not game_created and name_source not in non_hash_sources:
-                    # Existing game but we have a better name source - update it
-                    game.name_source = name_source
-                    needs_save = True
-
-                # Update screenscraper_id if provided (from ScreenScraper lookup)
-                if screenscraper_id and not game.screenscraper_id:
-                    game.screenscraper_id = screenscraper_id
-                    needs_save = True
-
-                if needs_save:
-                    game.save()
                 break
         except IntegrityError:
-            # Savepoint rolled back: another scan created the game or set
-            # screenscraper_id first. Re-resolve and loop back to the lock
-            # path above; the recovered candidate is locked before use.
-            logger.debug(f"IntegrityError creating game '{name}' - finding existing game")
-            game = find_existing_game(
-                name=name, system=system, screenscraper_id=screenscraper_id
+            # Savepoint rolled back: another scan created the game first.
+            # Re-resolve and loop back to the lock path above; the recovered
+            # candidate is locked before use.
+            logger.debug(
+                f"IntegrityError creating game '{name}' - finding existing game"
             )
+            game = find_existing_game(name=name, system=system)
             game_created = False
     else:
         raise DatabaseError(
@@ -517,13 +461,11 @@ def get_or_create_rom_set(
     # Note: default ROMSet recalculation happens AFTER ROM creation in the caller,
     # since the ROMSet needs at least one ROM for scoring to work.
 
-    # Metadata candidates: new games, or existing games without a
+    # Follow-up candidates: new games, or existing games without a
     # screenscraper_id that just gained a ROMSet. Callers queue later.
-    metadata_needed = fetch_metadata and (
-        game_created or (not game.screenscraper_id and rom_set_created)
-    )
+    followup_needed = game_created or (not game.screenscraper_id and rom_set_created)
 
-    return rom_set, result, metadata_needed, identification_needed
+    return rom_set, followup_needed
 
 
 def filter_rom_files_in_archive(
@@ -644,8 +586,6 @@ def create_rom_from_archive_as_rom(
     archive_path: str,
     system: System,
     seen_paths: set,
-    use_hasheous: bool = False,
-    fetch_metadata: bool = True,
 ) -> dict:
     """Create ROM entry for an archive that IS the ROM (e.g., MAME ZIPs)."""
     results = {
@@ -654,7 +594,6 @@ def create_rom_from_archive_as_rom(
         "reclassified": 0,
         "errors": [],
         "game_ids": [],
-        "added_rom_ids": [],
     }
 
     seen_paths.add(archive_path)
@@ -677,53 +616,38 @@ def create_rom_from_archive_as_rom(
 
     # Compute CRC32 for the archive file itself
     try:
-        crc32 = archive_utils.compute_file_crc32(archive_path)
+        crc32 = rom_file_crc32(system, archive_path)
     except Exception:
         crc32 = ""
 
-    # For arcade systems (archive_as_rom), the lookup chain will use romnom
-    # to identify games via ScreenScraper. The ScreenScraperLookupService
-    # handles this automatically when file_path is provided.
-    rom_set, lookup_result, metadata_needed, _ = get_or_create_rom_set(
+    # Arcade games (archive_as_rom) are identified later by the metadata job
+    # via ScreenScraper romnom (the archive name is the MAME short name).
+    rom_set, followup_needed = get_or_create_rom_set(
         parsed["name"],
         system,
         parsed["region"],
         parsed["revision"],
         source_path=archive_path,  # Archive itself is the source
         crc32=crc32,
-        file_path=archive_path,
-        use_hasheous=use_hasheous,
-        fetch_metadata=fetch_metadata,
     )
-
-    # Use matched internal CRC32 if available, otherwise use archive's CRC32
-    rom_crc32 = crc32
-    if lookup_result and lookup_result.matched_crc32:
-        rom_crc32 = lookup_result.matched_crc32
-        logger.debug(
-            "Using matched internal CRC32: %s (instead of archive: %s)",
-            rom_crc32,
-            crc32,
-        )
 
     # Extract Switch content type if applicable
     switch_title_id, content_type = (
         get_switch_content_info(filename) if system.slug == "switch" else ("", "")
     )
 
-    rom = ROM.objects.create(
+    ROM.objects.create(
         rom_set=rom_set,
         file_path=archive_path,
         file_name=filename,
         file_size=file_size,
-        crc32=rom_crc32,
+        crc32=crc32,
         tags=parsed["tags"],
         rom_number=parsed["rom_number"],
         disc=parsed["disc"],
         content_type=content_type,
         switch_title_id=switch_title_id,
     )
-    results["added_rom_ids"].append(rom.pk)
 
     # Recalculate default ROMSet now that a ROM exists
     from .romset_scoring import recalculate_default_romset
@@ -734,12 +658,12 @@ def create_rom_from_archive_as_rom(
         "Added archive-as-ROM: %s (system: %s, crc32: %s)",
         filename,
         system.name,
-        rom_crc32 or "(none)",
+        crc32 or "(none)",
     )
     results["added"] = 1
-    if metadata_needed:
-        # Metadata is queued by scan_directory after all scan writes finish,
-        # so a metadata merge cannot race this transaction.
+    if followup_needed:
+        # Follow-up jobs are queued by scan_directory after all scan writes
+        # finish, so a merge cannot race this transaction.
         results["game_ids"].append(rom_set.game_id)
     return results
 
@@ -754,8 +678,6 @@ def create_archived_rom(
     display_filename: str | None = None,
     crc32: str = "",
     parsing_filename: str | None = None,
-    use_hasheous: bool = False,
-    fetch_metadata: bool = True,
 ) -> dict:
     """
     Create a ROM record for a file inside an archive.
@@ -788,7 +710,6 @@ def create_archived_rom(
             "skipped": 1,
             "reclassified": 0,
             "game_ids": [],
-            "added_rom_ids": [],
         }
 
     # Parse filename (use internal file's name for metadata)
@@ -814,17 +735,13 @@ def create_archived_rom(
             or ""
         )
 
-    # Find or create rom set (hash lookup happens here)
-    rom_set, _, metadata_needed, _ = get_or_create_rom_set(
+    rom_set, followup_needed = get_or_create_rom_set(
         parsed["name"],
         system,
         parsed["region"],
         parsed["revision"],
         source_path=get_source_path("", archive_path, path_in_archive),
         crc32=crc32,
-        file_path=archive_path,
-        use_hasheous=use_hasheous,
-        fetch_metadata=fetch_metadata,
     )
 
     # Extract Switch content type if applicable
@@ -835,7 +752,7 @@ def create_archived_rom(
     )
 
     # Create ROM record with archive info
-    rom = ROM.objects.create(
+    ROM.objects.create(
         rom_set=rom_set,
         file_path=composite_path,  # Logical path for display
         file_name=final_display_filename,
@@ -868,9 +785,8 @@ def create_archived_rom(
         "added": 1,
         "skipped": 0,
         "reclassified": int(stored == "reclassified"),
-        # Metadata is queued by scan_directory after all scan writes finish.
-        "game_ids": [rom_set.game_id] if metadata_needed else [],
-        "added_rom_ids": [rom.pk],
+        # Follow-up jobs are queued by scan_directory after all writes finish.
+        "game_ids": [rom_set.game_id] if followup_needed else [],
     }
 
 
@@ -879,8 +795,6 @@ def process_archive(
     systems_cache: list,
     exclusive_map: dict,
     seen_paths: set,
-    use_hasheous: bool = False,
-    fetch_metadata: bool = True,
     progress_state: dict | None = None,
 ) -> dict:
     """
@@ -898,8 +812,6 @@ def process_archive(
         systems_cache: List of all System objects
         exclusive_map: Map of exclusive extensions to systems
         seen_paths: Set of paths seen in scan
-        use_hasheous: Enable Hasheous API lookup as fallback
-        fetch_metadata: Auto-queue ScreenScraper metadata for new games
         progress_state: Optional dict for tracking progress with keys:
             - files_processed: current count (will be incremented)
             - callback: function to call with progress updates
@@ -908,7 +820,8 @@ def process_archive(
             - current_directory: current directory being scanned
 
     Returns:
-        dict with keys: added, skipped, errors, game_ids, added_rom_ids
+        dict with keys: added, skipped, reclassified, errors, game_ids
+        (games needing follow-up identification/metadata)
     """
     results = {
         "added": 0,
@@ -916,7 +829,6 @@ def process_archive(
         "reclassified": 0,
         "errors": [],
         "game_ids": [],
-        "added_rom_ids": [],
     }
 
     # List archive contents first (we always open archives now)
@@ -943,8 +855,6 @@ def process_archive(
             archive_path=archive_path,
             system=system,
             seen_paths=seen_paths,
-            use_hasheous=use_hasheous,
-            fetch_metadata=fetch_metadata,
         )
 
     if contents is None:
@@ -1002,14 +912,11 @@ def process_archive(
                 seen_paths=seen_paths,
                 crc32=item.crc32,  # Use CRC32 from archive header if available
                 parsing_filename=item.name,
-                use_hasheous=use_hasheous,
-                fetch_metadata=fetch_metadata,
             )
             results["added"] += result["added"]
             results["skipped"] += result["skipped"]
             results["reclassified"] += result["reclassified"]
             results["game_ids"].extend(result.get("game_ids", []))
-            results["added_rom_ids"].extend(result.get("added_rom_ids", []))
 
             # Update roms_found in progress_state for next callback
             if progress_state:
@@ -1034,14 +941,11 @@ def process_archive(
             use_archive_as_filename=True,  # Display archive name instead of internal filename
             crc32=first_item.crc32,  # Use CRC32 from archive header if available
             parsing_filename=first_item.name,
-            use_hasheous=use_hasheous,
-            fetch_metadata=fetch_metadata,
         )
         results["added"] += result["added"]
         results["skipped"] += result["skipped"]
         results["reclassified"] += result["reclassified"]
         results["game_ids"].extend(result.get("game_ids", []))
-        results["added_rom_ids"].extend(result.get("added_rom_ids", []))
 
         # Update roms_found in progress_state
         if progress_state:
@@ -1070,7 +974,8 @@ def scan_directory(
     Args:
         base_path: Path to scan recursively
         progress_callback: Optional callback function to report progress
-        use_hasheous: If True, use Hasheous API as fallback for ROM identification
+        use_hasheous: If True, queue Hasheous naming for new games (runs
+            alongside their metadata fetch)
         fetch_metadata: If True, auto-queue ScreenScraper metadata for new games
 
     Returns:
@@ -1081,8 +986,8 @@ def scan_directory(
             - deleted_roms: Number of ROMs deleted (gone or no longer ROMs)
             - images_added: Number of new images added
             - images_skipped: Number of existing images skipped
-            - metadata_queued: Number of metadata jobs queued
-            - added_rom_ids: List of IDs of ROMs that need identification
+            - identification_queued: Number of Hasheous identification jobs
+            - metadata_queued: Number of games whose metadata fetch was queued
             - errors: List of error messages
     """
     base_path = os.path.abspath(base_path)
@@ -1096,6 +1001,7 @@ def scan_directory(
             "marked_missing": 0,
             "images_added": 0,
             "images_skipped": 0,
+            "identification_queued": 0,
             "metadata_queued": 0,
             "errors": [f"Directory not found: {base_path}"],
         }
@@ -1108,8 +1014,7 @@ def scan_directory(
     unreadable_dirs: list[str] = []
     images_added = 0
     images_skipped = 0
-    metadata_game_ids = []  # Games to queue metadata for, after all writes
-    added_rom_ids = []  # Track ROM IDs for parallel identification
+    followup_game_ids = []  # Games to identify/fetch metadata for, after all writes
     collected_images = []  # [(file_path, filename, system), ...]
 
     # Cache all systems and build extension map
@@ -1186,8 +1091,6 @@ def scan_directory(
                             all_systems,
                             exclusive_map,
                             seen_paths,
-                            use_hasheous=use_hasheous,
-                            fetch_metadata=fetch_metadata,
                             progress_state=progress_state,
                         )
                 except Exception as e:
@@ -1198,8 +1101,7 @@ def scan_directory(
                 added += archive_results["added"]
                 skipped += archive_results["skipped"]
                 reclassified += archive_results["reclassified"]
-                metadata_game_ids.extend(archive_results.get("game_ids", []))
-                added_rom_ids.extend(archive_results.get("added_rom_ids", []))
+                followup_game_ids.extend(archive_results.get("game_ids", []))
                 errors.extend(archive_results["errors"])
                 continue
 
@@ -1245,14 +1147,14 @@ def scan_directory(
                 # CRC32 of CHD container is not useful for lookup, skip it
             else:
                 try:
-                    crc32 = archive_utils.compute_file_crc32(file_path)
+                    crc32 = rom_file_crc32(system, file_path)
                 except Exception:
                     pass
 
             # A savepoint lets PostgreSQL recover after one file fails.
             try:
                 with transaction.atomic():
-                    rom_set, _, rom_metadata_needed, _ = get_or_create_rom_set(
+                    rom_set, followup_needed = get_or_create_rom_set(
                         parsed["name"],
                         system,
                         parsed["region"],
@@ -1260,9 +1162,6 @@ def scan_directory(
                         source_path=os.path.dirname(file_path),  # Group by directory
                         crc32=crc32,
                         sha1=sha1,
-                        file_path=file_path,
-                        use_hasheous=use_hasheous,
-                        fetch_metadata=fetch_metadata,
                     )
 
                     # Extract Switch content type if applicable
@@ -1297,11 +1196,10 @@ def scan_directory(
                 continue
 
             added += 1
-            if rom_metadata_needed:
-                # Metadata is queued after all scan writes finish, so a
-                # metadata merge cannot race this transaction.
-                metadata_game_ids.append(rom_set.game_id)
-            added_rom_ids.append(rom.pk)
+            if followup_needed:
+                # Follow-up jobs are queued after all scan writes finish, so
+                # a merge cannot race this transaction.
+                followup_game_ids.append(rom_set.game_id)
             hash_info = f"sha1={sha1}" if sha1 else f"crc32={crc32 or '(none)'}"
             logger.debug(
                 "Added ROM: %s (game: %s, system: %s, region: %s, %s)",
@@ -1385,23 +1283,28 @@ def scan_directory(
         deleted_games += games
         logger.debug("Deleted ROM: %s", rom.file_path)
 
-    # Queue metadata only after all scan writes and orphan cleanup are done,
-    # so a metadata merge cannot race the scan's own inserts. Deduplicate:
+    # Queue follow-up jobs only after all scan writes and orphan cleanup are
+    # done, so a merge cannot race the scan's own inserts. Deduplicate:
     # multi-ROM archives can touch the same game repeatedly.
+    identification_queued = 0
     metadata_queued = 0
-    from .tasks import queue_game_metadata
+    from .tasks import queue_game_followup
 
-    for game_pk in dict.fromkeys(metadata_game_ids):
-        game = Game.objects.filter(pk=game_pk).first()
+    for game_pk in dict.fromkeys(followup_game_ids):
+        game = Game.objects.select_related("system").filter(pk=game_pk).first()
         if game is None:
-            continue  # Merged away by a concurrent job; nothing to fetch
-        if queue_game_metadata(game):
-            metadata_queued += 1
+            continue  # Merged away by a concurrent job; nothing to do
+        identified, metadata = queue_game_followup(
+            game, use_hasheous=use_hasheous, fetch_metadata=fetch_metadata
+        )
+        identification_queued += identified
+        metadata_queued += metadata
 
     logger.info(
         "Scan complete: added=%d, skipped=%d, reclassified=%d, "
         "deleted_roms=%d (romsets=%d, games=%d), "
-        "images_added=%d, images_skipped=%d, metadata_queued=%d, errors=%d",
+        "images_added=%d, images_skipped=%d, identification_queued=%d, "
+        "metadata_queued=%d, errors=%d",
         added,
         skipped,
         reclassified,
@@ -1410,6 +1313,7 @@ def scan_directory(
         deleted_games,
         images_added,
         images_skipped,
+        identification_queued,
         metadata_queued,
         len(errors),
     )
@@ -1420,7 +1324,7 @@ def scan_directory(
         "deleted_roms": deleted_roms,
         "images_added": images_added,
         "images_skipped": images_skipped,
+        "identification_queued": identification_queued,
         "metadata_queued": metadata_queued,
-        "added_rom_ids": added_rom_ids,
         "errors": errors,
     }

@@ -68,6 +68,19 @@ VS_PREFIX_PATTERN = re.compile(r"^(VS\.)\s+", re.IGNORECASE)
 # Inverted article pattern at end of base name: "Berenstain Bears' Camping Adventure, The"
 INVERTED_ARTICLE_PATTERN = re.compile(r"^(.*?),\s*(The|A|An)$", re.IGNORECASE)
 
+
+def uninvert_article(name: str) -> str:
+    """Move a trailing article to the front, as game names are stored.
+
+    "Berenstain Bears' Camping Adventure, The" -> "The Berenstain Bears'
+    Camping Adventure". Only a final article moves; "Legend of Zelda, The -
+    A Link to the Past" is left as is.
+    """
+    match = INVERTED_ARTICLE_PATTERN.match(name)
+    if not match:
+        return name
+    return f"{match.group(2).capitalize()} {match.group(1).strip()}"
+
 # Retail patch and QoL mod suffix pattern outside brackets
 PATCH_SUFFIX_PATTERN = re.compile(
     r"(?:\s*[-–—]\s*|\s+)("
@@ -271,12 +284,8 @@ def parse_rom_filename(filename: str, arcade: bool = False) -> dict:
         if not stripped_suffix:
             break
 
-    # e) Inverted articles at end of base name: "Berenstain Bears' Camping Adventure, The" -> "The Berenstain Bears' Camping Adventure"
-    base_name = base_name.rstrip(" -–—").strip()
-    inv_match = INVERTED_ARTICLE_PATTERN.match(base_name)
-    if inv_match:
-        article = inv_match.group(2).capitalize()
-        base_name = f"{article} {inv_match.group(1).strip()}"
+    # e) Inverted articles at end of base name
+    base_name = uninvert_article(base_name.rstrip(" -–—").strip())
 
     # Extract all tags from parentheses and brackets
     raw_tags = tag_pattern.findall(remainder)

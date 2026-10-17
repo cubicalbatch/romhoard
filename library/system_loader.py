@@ -29,6 +29,7 @@ def sync_systems():
                 "exclusive_extensions": system_data.get("exclusive_extensions", []),
                 "folder_names": system_data["folder_names"],
                 "archive_as_rom": system_data.get("archive_as_rom", False),
+                "skip_checksum": system_data.get("skip_checksum", False),
                 "screenscraper_ids": system_data.get("screenscraper_ids", []),
             },
         )

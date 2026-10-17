@@ -53,7 +53,7 @@ case "$1" in
         wait_for_db
         echo "Starting Procrastinate worker..."
         exec python manage.py worker \
-            --queues=${WORKER_QUEUES:-user_actions,background,metadata} \
+            --queues=${WORKER_QUEUES:-user_actions,background,metadata,identification} \
             --concurrency=${WORKER_CONCURRENCY:-4}
         ;;
     migrate)

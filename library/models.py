@@ -47,6 +47,9 @@ class System(models.Model):
     archive_as_rom = models.BooleanField(
         default=False
     )  # Treat archives as ROMs (e.g., MAME)
+    skip_checksum = models.BooleanField(
+        default=False
+    )  # Never hash ROM files: huge dumps no checksum database identifies
     screenscraper_ids = models.JSONField(
         default=list, blank=True
     )  # [primary_id, alt1, alt2, ...] ScreenScraper system IDs
@@ -85,6 +88,9 @@ class Game(models.Model):
     # "NoIntros", "Redump", etc.
 
     SOURCE_COLLECTION = "collection"
+
+    # Names that came from a checksum database through Hasheous
+    HASH_SOURCES = frozenset({"NoIntros", "Redump", SOURCE_HASHEOUS})
 
     SOURCE_CHOICES = [
         ("NoIntros", "No-Intro (Hasheous)"),

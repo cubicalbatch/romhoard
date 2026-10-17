@@ -695,6 +695,7 @@
       "extensions": [".nsp", ".xci", ".nsz", ".xcz"],
       "exclusive_extensions": [".nsp", ".xci", ".nsz", ".xcz"],
       "folder_names": ["Switch", "Nintendo Switch", "NintendoSwitch"],
+      "skip_checksum": true,
       "screenscraper_ids": [225]
     }
   ]

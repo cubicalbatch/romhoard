@@ -2,7 +2,7 @@
 
 import os
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -255,31 +255,6 @@ def _game_with_rom(name: str = "Sonic") -> Game:
         file_size=1,
     )
     return game
-
-
-@pytest.mark.django_db
-class TestIdentificationDuringPause:
-    def test_identify_rom_reschedules_instead_of_failing(self):
-        from library import tasks
-
-        game = _game_with_rom()
-        rom = ROM.objects.get(rom_set__game=game)
-        until = set_pause("daily_quota")
-        context = MagicMock()
-        context.should_abort.return_value = False
-
-        with (
-            patch(
-                "library.lookup.lookup_rom",
-                side_effect=ScreenScraperRateLimited(until),
-            ),
-            patch.object(tasks.identify_rom, "configure") as configure,
-        ):
-            result = tasks.identify_rom.func(context, rom.pk)
-
-        assert result["status"] == "rescheduled"
-        configure.assert_called_once()
-        assert configure.call_args.kwargs["schedule_at"] == until
 
 
 @pytest.mark.django_db

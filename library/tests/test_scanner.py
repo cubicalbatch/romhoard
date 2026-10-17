@@ -850,7 +850,7 @@ class TestSourcePathGrouping(TestCase):
         from library.scanner import get_or_create_rom_set
 
         # Create first ROMSet
-        rom_set1, _, _, _ = get_or_create_rom_set(
+        rom_set1, _ = get_or_create_rom_set(
             name="Test Game",
             system=self.gba_system,
             region="USA",
@@ -859,7 +859,7 @@ class TestSourcePathGrouping(TestCase):
         )
 
         # Create second ROMSet with same game/region but different source
-        rom_set2, _, _, _ = get_or_create_rom_set(
+        rom_set2, _ = get_or_create_rom_set(
             name="Test Game",
             system=self.gba_system,
             region="USA",
@@ -880,7 +880,7 @@ class TestSourcePathGrouping(TestCase):
         from library.scanner import get_or_create_rom_set
 
         # Create ROMSet
-        rom_set1, _, _, _ = get_or_create_rom_set(
+        rom_set1, _ = get_or_create_rom_set(
             name="Test Game",
             system=self.gba_system,
             region="USA",
@@ -889,7 +889,7 @@ class TestSourcePathGrouping(TestCase):
         )
 
         # Get same ROMSet again (same source)
-        rom_set2, _, _, _ = get_or_create_rom_set(
+        rom_set2, _ = get_or_create_rom_set(
             name="Test Game",
             system=self.gba_system,
             region="USA",

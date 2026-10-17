@@ -186,3 +186,127 @@ class TestCleanupOrphanedJobs(TestCase):
         cleaned = self.command.cleanup_orphaned_jobs()
 
         self.assertEqual(cleaned, 0)
+
+
+class TestOrphanDetectionRespectsLiveWorkers(TestCase):
+    """A starting worker must not fail jobs that other live workers are running."""
+
+    def _procrastinate_job(self, heartbeat_age_seconds: int | None) -> str:
+        from django.db import connection
+
+        with connection.cursor() as cursor:
+            worker_id = None
+            if heartbeat_age_seconds is not None:
+                cursor.execute(
+                    "INSERT INTO procrastinate_workers (last_heartbeat) "
+                    "VALUES (now() - make_interval(secs => %s)) RETURNING id",
+                    [heartbeat_age_seconds],
+                )
+                worker_id = cursor.fetchone()[0]
+            cursor.execute(
+                "INSERT INTO procrastinate_jobs (queue_name, task_name, status, worker_id) "
+                "VALUES ('background', 'library.tasks.run_scan', 'doing', %s) RETURNING id",
+                [worker_id],
+            )
+            return str(cursor.fetchone()[0])
+
+    def _running_scan(self, task_id: str) -> ScanJob:
+        return ScanJob.objects.create(
+            path="/roms", task_id=task_id, status=ScanJob.STATUS_RUNNING
+        )
+
+    def test_job_held_by_live_worker_is_kept(self):
+        scan = self._running_scan(self._procrastinate_job(heartbeat_age_seconds=5))
+
+        cleaned = WorkerCommand().cleanup_orphaned_jobs()
+
+        scan.refresh_from_db()
+        self.assertEqual(cleaned, 0)
+        self.assertEqual(scan.status, ScanJob.STATUS_RUNNING)
+
+    def test_job_of_worker_with_stale_heartbeat_is_failed(self):
+        scan = self._running_scan(self._procrastinate_job(heartbeat_age_seconds=600))
+
+        WorkerCommand().cleanup_orphaned_jobs()
+
+        scan.refresh_from_db()
+        self.assertEqual(scan.status, ScanJob.STATUS_FAILED)
+
+    def test_job_whose_worker_was_pruned_is_failed(self):
+        scan = self._running_scan(self._procrastinate_job(heartbeat_age_seconds=None))
+
+        WorkerCommand().cleanup_orphaned_jobs()
+
+        scan.refresh_from_db()
+        self.assertEqual(scan.status, ScanJob.STATUS_FAILED)
+
+    def test_metadata_job_held_by_live_worker_is_kept(self):
+        system = System.objects.create(
+            name="Live", slug="live", extensions=[".x"], folder_names=[]
+        )
+        job = MetadataJob.objects.create(
+            task_id=self._procrastinate_job(heartbeat_age_seconds=1),
+            status=MetadataJob.STATUS_RUNNING,
+            game=Game.objects.create(name="G", system=system),
+        )
+
+        WorkerCommand().cleanup_orphaned_jobs()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, MetadataJob.STATUS_RUNNING)
+
+    def test_periodic_sweep_fails_orphans(self):
+        from library.tasks import cleanup_orphaned_jobs
+
+        scan = self._running_scan(self._procrastinate_job(heartbeat_age_seconds=600))
+
+        result = cleanup_orphaned_jobs.func(0)
+
+        scan.refresh_from_db()
+        self.assertEqual(result, {"failed": 1})
+        self.assertEqual(scan.status, ScanJob.STATUS_FAILED)
+
+    def test_claim_landing_mid_cleanup_is_respected(self):
+        """A claim committed while cleanup runs must not fail the job.
+
+        The live-worker check has to happen inside the UPDATE statement: a
+        snapshot taken before the update would miss this claim and falsely
+        fail a job a worker just picked up.
+        """
+        from django.db import connection
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO procrastinate_jobs (queue_name, task_name, status) "
+                "VALUES ('background', 'library.tasks.run_scan', 'todo') RETURNING id"
+            )
+            job_id = cursor.fetchone()[0]
+        scan = self._running_scan(str(job_id))
+
+        intercepted: list[str] = []
+
+        def claim_before_update(execute, sql, params, many, context):
+            # Simulate a worker claiming the job after cleanup started: the
+            # claim is committed just before cleanup's first UPDATE runs.
+            if not intercepted and sql.lstrip().upper().startswith("UPDATE"):
+                intercepted.append(sql)
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "INSERT INTO procrastinate_workers (last_heartbeat) "
+                        "VALUES (now()) RETURNING id"
+                    )
+                    worker_id = cursor.fetchone()[0]
+                    cursor.execute(
+                        "UPDATE procrastinate_jobs "
+                        "SET status = 'doing', worker_id = %s WHERE id = %s",
+                        [worker_id, job_id],
+                    )
+            return execute(sql, params, many, context)
+
+        with connection.execute_wrapper(claim_before_update):
+            cleaned = WorkerCommand().cleanup_orphaned_jobs()
+
+        self.assertTrue(intercepted)
+        self.assertEqual(cleaned, 0)
+        scan.refresh_from_db()
+        self.assertEqual(scan.status, ScanJob.STATUS_RUNNING)

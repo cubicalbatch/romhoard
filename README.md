@@ -150,6 +150,23 @@ RomHoard and rescanning is all it takes after a detection fix:
 
 Your ROM files are never modified.
 
+### Game names and metadata
+
+After a scan, two background jobs handle each new game, side by side:
+
+- **Hasheous** (free, no account): when "Use Hasheous" is on for the scan
+  path, the ROM's checksum is looked up in No-Intro, Redump and TOSEC
+  databases and the game gets the canonical name. If Hasheous is down or
+  slow, the lookup is retried later (for up to about 5 hours); ScreenScraper
+  never waits for it.
+- **ScreenScraper** (needs credentials): the game is matched by checksum,
+  then filename, then title, and its description, artwork and ratings are
+  downloaded.
+
+An exact ScreenScraper match (checksum or filename) sets the game's name;
+otherwise the Hasheous name is used, and otherwise the name comes from the
+filename. Names you set by hand are never changed.
+
 ### ScreenScraper limits
 
 ScreenScraper accounts have two daily limits: total requests and requests

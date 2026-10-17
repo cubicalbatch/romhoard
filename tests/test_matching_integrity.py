@@ -89,8 +89,9 @@ def test_name_match_does_not_claim_hash_identity():
 @pytest.mark.parametrize("archived", [False, True])
 @pytest.mark.parametrize("manual", [False, True])
 def test_identification_recognizes_rom_filename_in_loose_and_archived_files(archived, manual):
+    from library.metadata.matcher import _identify_game
     from library.models import ROM, ROMSet
-    from library.tasks import identify_rom, run_hash_lookup
+    from library.tasks import run_hash_lookup
 
     system = System.objects.create(
         name="ROM test", slug="rom-test", extensions=[".nes"],
@@ -99,7 +100,7 @@ def test_identification_recognizes_rom_filename_in_loose_and_archived_files(arch
     game = Game.objects.create(name="Unknown", system=system)
     rom_set = ROMSet.objects.create(game=game)
     filename = "Unique Adventure (USA).nes"
-    rom = ROM.objects.create(
+    ROM.objects.create(
         rom_set=rom_set, file_name=filename, file_size=16,
         file_path=f"/roms/pack.zip!{filename}" if archived else f"/roms/{filename}",
         archive_path="/roms/pack.zip" if archived else "",
@@ -123,10 +124,15 @@ def test_identification_recognizes_rom_filename_in_loose_and_archived_files(arch
             result = run_hash_lookup.func(game.pk)
             assert result["old_name"] == "Unknown"
         else:
-            identify_rom.func(SimpleNamespace(should_abort=lambda: False), rom.pk)
-    game.refresh_from_db()
-    assert game.screenscraper_id == 456
-    assert game.name == "Unique Adventure"
+            # The metadata job's identification step
+            result = _identify_game(game, get_client.return_value)
+    if manual:
+        game.refresh_from_db()
+        assert game.screenscraper_id == 456
+        assert game.name == "Unique Adventure"
+    else:
+        assert result.screenscraper_id == 456
+        assert result.match_type == "romnom"
 
 
 def test_ambiguous_live_name_candidates_are_not_selected_by_order():

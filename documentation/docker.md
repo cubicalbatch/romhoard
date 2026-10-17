@@ -40,7 +40,7 @@ Override these in your `.env` file or docker-compose to customize behavior:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WORKER_QUEUES` | `user_actions,background,metadata` | Comma-separated list of queues to process |
+| `WORKER_QUEUES` | `user_actions,background,metadata,identification` | Comma-separated list of queues to process (`worker` command only) |
 | `WORKER_CONCURRENCY` | `4` | Number of concurrent task workers |
 
 #### ScreenScraper Integration
@@ -70,6 +70,17 @@ SCREENSCRAPER_API_BASE=http://127.0.0.1:8765/api2/ uv run ./manage.py worker
 
 Cache reset is complete when the file is gone: `rm data/screenscraper-proxy.sqlite3`.
 Without `SCREENSCRAPER_API_BASE`, RomHoard calls ScreenScraper directly.
+
+Hasheous (free hash-based naming) has the same kind of proxy, which also paces
+upstream requests to one per second so test scans never flood hasheous.org:
+
+```bash
+uv run python scripts/hasheous_proxy.py          # listens on 127.0.0.1:8766
+HASHEOUS_API_BASE=http://127.0.0.1:8766/api/v1/ uv run ./manage.py worker
+```
+
+`make proxy` / `make hasheous-proxy` start the proxies; `make dev-proxy` and
+`make workers-proxy` set both variables. Cache reset: `rm data/hasheous-proxy.sqlite3`.
 
 #### Database
 

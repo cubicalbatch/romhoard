@@ -1,13 +1,15 @@
 """Hasheous.org API lookup service."""
 
 import logging
+import os
 import re
+import threading
 import time
 from typing import TYPE_CHECKING, Any, Optional
 
 import requests
 
-from library.parser import parse_rom_filename
+from library.parser import parse_rom_filename, uninvert_article
 
 from .base import LookupResult, LookupService
 
@@ -16,14 +18,21 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# API configuration
-API_BASE = "https://hasheous.org/api/v1/Lookup/ByHash"
-API_TIMEOUT = 30  # seconds
-API_RETRIES = 1  # number of retries on timeout
+# API configuration. HASHEOUS_API_BASE points at a local caching proxy in
+# development (scripts/hasheous_proxy.py).
+DEFAULT_API_BASE = "https://hasheous.org/api/v1/"
+# (connect, read) seconds: fail fast when Hasheous is unreachable, but give a
+# slow-but-alive Hasheous time (single lookups take up to ~6 s at times)
+API_TIMEOUT = (5, 20)
 REQUEST_DELAY = 0.5  # seconds between requests to be polite
+OUTAGE_COOLDOWN = 600  # seconds to skip Hasheous after it fails to answer
 
 # Last request timestamp for rate limiting
 _last_request_time = 0.0
+# Serializes rate-limit slot claims so concurrent tasks cannot post together
+_rate_limit_lock = threading.Lock()
+# time.monotonic() until which Hasheous is treated as down (per process)
+_unavailable_until = 0.0
 
 # Mapping from Hasheous platform names to our system slugs
 PLATFORM_TO_SLUG = {
@@ -221,10 +230,36 @@ def _save_to_cache(
 def _rate_limit():
     """Enforce rate limiting between API requests."""
     global _last_request_time
-    elapsed = time.time() - _last_request_time
-    if elapsed < REQUEST_DELAY:
-        time.sleep(REQUEST_DELAY - elapsed)
-    _last_request_time = time.time()
+    with _rate_limit_lock:
+        elapsed = time.monotonic() - _last_request_time
+        if elapsed < REQUEST_DELAY:
+            time.sleep(REQUEST_DELAY - elapsed)
+        _last_request_time = time.monotonic()
+
+
+def _lookup_url() -> str:
+    """Return the Lookup/ByHash endpoint, honoring HASHEOUS_API_BASE."""
+    base = os.environ.get("HASHEOUS_API_BASE") or DEFAULT_API_BASE
+    return base.rstrip("/") + "/Lookup/ByHash"
+
+
+def hasheous_available() -> bool:
+    """Return whether Hasheous may be called (no recent outage)."""
+    return time.monotonic() >= _unavailable_until
+
+
+def _mark_unavailable(reason: str) -> None:
+    """Skip Hasheous API calls for OUTAGE_COOLDOWN after it fails to answer.
+
+    An unresponsive Hasheous would otherwise cost a full timeout per ROM.
+    """
+    global _unavailable_until
+    _unavailable_until = time.monotonic() + OUTAGE_COOLDOWN
+    logger.warning(
+        "Hasheous unavailable (%s); skipping it for %d minutes",
+        reason,
+        OUTAGE_COOLDOWN // 60,
+    )
 
 
 def lookup_hasheous_cache(
@@ -265,7 +300,7 @@ def lookup_hasheous_cache(
         # The cached result has _game_name, _region, etc. from previous parsing
         if cached_result.get("_cached"):
             result = LookupResult(
-                name=cached_result.get("_game_name", ""),
+                name=uninvert_article(cached_result.get("_game_name", "")),
                 region=cached_result.get("_region", ""),
                 revision=cached_result.get("_revision", ""),
                 tags=cached_result.get("_tags", []),
@@ -386,6 +421,9 @@ class HasheousLookupService(LookupService):
         if found_in_cache:
             return cached_result  # Could be dict or None (no-match)
 
+        if not hasheous_available():
+            return None
+
         # Rate limit only for actual API calls
         _rate_limit()
 
@@ -398,56 +436,47 @@ class HasheousLookupService(LookupService):
         if md5:
             body["mD5"] = md5.lower()
 
-        # Retry loop for timeout errors
-        for attempt in range(API_RETRIES + 1):
-            try:
-                response = requests.post(
-                    API_BASE,
-                    json=body,
-                    timeout=API_TIMEOUT,
-                    headers={"Content-Type": "application/json"},
-                )
+        try:
+            response = requests.post(
+                _lookup_url(),
+                json=body,
+                timeout=API_TIMEOUT,
+                headers={"Content-Type": "application/json"},
+            )
+        except requests.RequestException as e:
+            _mark_unavailable(type(e).__name__)
+            return None
 
-                if response.status_code == 404:
-                    # Not found - cache the miss
-                    _save_to_cache(hash_type, hash_value, None)
-                    return None
+        if response.status_code == 404:
+            # Not found - cache the miss
+            _save_to_cache(hash_type, hash_value, None)
+            return None
 
-                if response.status_code != 200:
-                    logger.warning(
-                        "Hasheous API error: status=%d, body=%s",
-                        response.status_code,
-                        response.text[:200],
-                    )
-                    # Don't cache errors - might be transient
-                    return None
+        if response.status_code == 429 or response.status_code >= 500:
+            _mark_unavailable(f"HTTP {response.status_code}")
+            return None
 
-                result = response.json()
-                # Cache the successful result (parsed info added later in _parse_response)
-                _save_to_cache(hash_type, hash_value, result)
-                return result
+        if response.status_code != 200:
+            # Don't cache errors - might be transient
+            logger.warning(
+                "Hasheous API error: status=%d, body=%s",
+                response.status_code,
+                response.text[:200],
+            )
+            return None
 
-            except requests.exceptions.Timeout:
-                if attempt < API_RETRIES:
-                    logger.info(
-                        "Hasheous API timeout, retrying (%d/%d)...",
-                        attempt + 1,
-                        API_RETRIES,
-                    )
-                    _rate_limit()  # Be polite before retry
-                    continue
-                logger.warning(
-                    "Hasheous API request timed out after %d retries", API_RETRIES
-                )
-                return None
-            except requests.RequestException as e:
-                logger.warning("Hasheous API request failed: %s", e)
-                return None
-            except ValueError as e:
-                logger.warning("Hasheous API response parse error: %s", e)
-                return None
+        try:
+            result = response.json()
+        except ValueError:
+            _mark_unavailable("invalid JSON response")
+            return None
+        if not isinstance(result, dict):
+            logger.warning("Hasheous API returned unexpected payload: %r", result)
+            return None
 
-        return None
+        # Cache the successful result (parsed info added later in _parse_response)
+        _save_to_cache(hash_type, hash_value, result)
+        return result
 
     def _platform_matches(self, platform_name: str, system: "System") -> bool:
         """Check if Hasheous platform matches our target system."""
@@ -542,4 +571,5 @@ class HasheousLookupService(LookupService):
         """
         # Remove leading number prefixes like "0983 - " or "1234 - "
         cleaned = re.sub(r"^\d{3,4}\s*-\s*", "", name)
-        return cleaned.strip()
+        # "Grinch, The" -> "The Grinch", matching filename-derived names
+        return uninvert_article(cleaned.strip())

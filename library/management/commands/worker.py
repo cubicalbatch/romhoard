@@ -7,13 +7,6 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from library.models import (
-    DownloadJob,
-    MetadataJob,
-    ScanJob,
-    SystemMetadataJob,
-)
-
 logger = logging.getLogger(__name__)
 
 
@@ -74,37 +67,7 @@ class Command(BaseCommand):
             logger.warning(f"Failed to schedule cleanup tasks: {e}")
 
     def cleanup_orphaned_jobs(self) -> int:
-        """Mark all RUNNING jobs as FAILED - they're orphaned from a crash."""
-        from django.db import OperationalError, ProgrammingError
+        """Mark RUNNING jobs whose worker is gone as FAILED."""
+        from library.job_cleanup import mark_orphaned_jobs
 
-        error_msg = "Worker crashed during execution"
-        now = timezone.now()
-        cleaned = 0
-
-        try:
-            # Models with 'errors' field (JSONField)
-            for Model in [ScanJob, DownloadJob]:
-                count = Model.objects.filter(status=Model.STATUS_RUNNING).update(
-                    status=Model.STATUS_FAILED,
-                    errors=[error_msg],
-                    completed_at=now,
-                )
-                if count:
-                    logger.info(f"Marked {count} {Model.__name__}(s) as FAILED")
-                cleaned += count
-
-            # Models with 'error' field (TextField)
-            for Model in [MetadataJob, SystemMetadataJob]:
-                count = Model.objects.filter(status=Model.STATUS_RUNNING).update(
-                    status=Model.STATUS_FAILED,
-                    error=error_msg,
-                    completed_at=now,
-                )
-                if count:
-                    logger.info(f"Marked {count} {Model.__name__}(s) as FAILED")
-                cleaned += count
-        except (OperationalError, ProgrammingError):
-            # Tables don't exist yet (migrations not run)
-            logger.debug("Skipping orphan cleanup - tables not yet created")
-
-        return cleaned
+        return mark_orphaned_jobs()

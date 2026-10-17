@@ -1,10 +1,7 @@
 """Tests for upload functionality."""
 
-import os
 import pytest
-import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 
 class TestDetectSystemFromExtension:
@@ -580,6 +577,135 @@ class TestIdentifySystemByHash:
         result = identify_system_by_hash()
 
         assert result is None
+
+
+class TestProcessSingleGameArchive:
+    """Tests for _process_single_game_archive task function."""
+
+    @pytest.mark.django_db
+    def test_stores_member_crc_not_archive_crc(self, tmp_path, gba_system, monkeypatch):
+        """Uploaded single-game archives identify by the inner member's CRC."""
+        import zlib
+        import zipfile
+
+        from library.archive import list_archive_contents
+        from library.models import ROM, Setting, UploadJob
+        from library.scanner import filter_rom_files_in_archive
+        from library.tasks import _process_single_game_archive
+
+        library = tmp_path / "library"
+        Setting.objects.create(key="library_root", value=str(library))
+        monkeypatch.setattr(
+            "library.tasks.queue_game_followup",
+            lambda game, use_hasheous, fetch_metadata: (False, True),
+        )
+
+        archive_path = tmp_path / "Pokemon - Red.zip"
+        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_STORED) as zf:
+            zf.writestr("Pokemon - Red.gba", b"fake gba rom data")
+
+        rom_files = filter_rom_files_in_archive(
+            list_archive_contents(str(archive_path)), gba_system
+        )
+        member_crc = rom_files[0].crc32
+
+        # Guard: the outer archive CRC differs from the member CRC, so the
+        # assertion below cannot pass by accident
+        outer_crc = format(zlib.crc32(archive_path.read_bytes()) & 0xFFFFFFFF, "08x")
+        assert outer_crc != member_crc
+
+        job = UploadJob.objects.create()
+        result = _process_single_game_archive(
+            str(archive_path),
+            "Pokemon - Red.zip",
+            gba_system,
+            str(library),
+            job,
+            rom_files,
+            fetch_metadata=False,
+        )
+
+        assert result["success"] is True
+        rom = ROM.objects.get(file_name="Pokemon - Red.zip")
+        assert rom.crc32 == member_crc
+
+
+class TestProcessUploadedFile:
+    """Tests for _process_uploaded_file task function."""
+
+    @pytest.mark.django_db
+    def test_chd_upload_stores_header_sha1(self, tmp_path, ps1_system, monkeypatch):
+        """Uploaded CHD files identify by the internal header SHA1, not the container CRC."""
+        import struct
+
+        from library.models import ROM, Setting, UploadJob
+        from library.tasks import _process_uploaded_file
+
+        library = tmp_path / "library"
+        Setting.objects.create(key="library_root", value=str(library))
+        monkeypatch.setattr(
+            "library.tasks.queue_game_followup",
+            lambda game, use_hasheous, fetch_metadata: (False, True),
+        )
+
+        # Minimal CHD v5 header carrying the internal disc SHA1
+        sha1_hex = "5e9463fa3c0181d4fc7cf3354c50893ab6ad37d2"
+        header = bytearray(124)
+        header[0:8] = b"MComprHD"
+        header[8:16] = struct.pack(">II", 124, 5)  # header length, version 5
+        header[84:104] = bytes.fromhex(sha1_hex)
+        chd_path = tmp_path / "Game.chd"
+        chd_path.write_bytes(bytes(header))
+
+        job = UploadJob.objects.create()
+        result = _process_uploaded_file(
+            str(chd_path),
+            "Game.chd",
+            ps1_system,
+            str(library),
+            job,
+            fetch_metadata=False,
+        )
+
+        assert result["success"] is True
+        rom = ROM.objects.get(file_name="Game.chd")
+        assert rom.sha1 == sha1_hex
+        assert rom.crc32 == ""  # CHD container CRC is not useful for lookup
+
+    @pytest.mark.django_db
+    def test_regular_upload_stores_crc32(self, tmp_path, gba_system, monkeypatch):
+        """Non-CHD uploads still store the whole-file CRC32."""
+        from library.archive import compute_file_crc32
+        from library.models import ROM, Setting, UploadJob
+        from library.tasks import _process_uploaded_file
+
+        library = tmp_path / "library"
+        Setting.objects.create(key="library_root", value=str(library))
+        monkeypatch.setattr(
+            "library.tasks.queue_game_followup",
+            lambda game, use_hasheous, fetch_metadata: (False, True),
+        )
+
+        rom_path = tmp_path / "Pokemon - Red.gba"
+        rom_path.write_bytes(b"fake gba rom data")
+
+        job = UploadJob.objects.create()
+        result = _process_uploaded_file(
+            str(rom_path),
+            "Pokemon - Red.gba",
+            gba_system,
+            str(library),
+            job,
+            fetch_metadata=False,
+        )
+
+        assert result["success"] is True
+        rom = ROM.objects.get(file_name="Pokemon - Red.gba")
+        # The upload moved the source file into the library; hash it there
+        assert rom.file_path == str(library / gba_system.slug / "Pokemon - Red.gba")
+        assert not rom_path.exists()
+        assert rom.crc32 == compute_file_crc32(rom.file_path)
+        assert rom.sha1 == ""
 
 
 class TestCheckDuplicatesEndpoint:

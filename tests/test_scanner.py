@@ -291,11 +291,11 @@ def test_scan_queues_metadata_after_rom_creation(tmp_path, gba_system, monkeypat
     rom_path = tmp_path / "Duplicate Game.gba"
     rom_path.write_bytes(b"rom")
 
-    def merge_immediately(game):
+    def merge_immediately(game, use_hasheous, fetch_metadata):
         merge_games(canonical, game)
-        return True
+        return False, True
 
-    monkeypatch.setattr("library.tasks.queue_game_metadata", merge_immediately)
+    monkeypatch.setattr("library.tasks.queue_game_followup", merge_immediately)
 
     result = scan_directory(str(tmp_path), fetch_metadata=True)
 
