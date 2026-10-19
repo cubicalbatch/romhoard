@@ -163,7 +163,7 @@ def start_romset_download(request, pk: int):
         game_ids=[game.pk],
         system_slug=game.system.slug,
         games_total=1,
-        task_id="pending",
+        task_id=None,
     )
 
     job_id = create_download_bundle.configure(priority=PRIORITY_CRITICAL).defer(
@@ -243,7 +243,7 @@ def start_multi_download(request, slug):
         game_ids=list(valid_games.values_list("pk", flat=True)),
         system_slug=slug,
         games_total=valid_games.count(),
-        task_id="pending",
+        task_id=None,
         device_id=device_id,
     )
 

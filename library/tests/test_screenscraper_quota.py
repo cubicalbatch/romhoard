@@ -323,7 +323,7 @@ class TestResumeStrandedMetadata:
         game = _game_with_rom()
         self._fail_job(game)
         MetadataJob.objects.create(
-            task_id="pending", game=game, status=MetadataJob.STATUS_PENDING
+            task_id=None, game=game, status=MetadataJob.STATUS_PENDING
         )
 
         result, _ = self._sweep()

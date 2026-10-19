@@ -232,7 +232,7 @@ class ExportJob(models.Model):
     collection = models.ForeignKey(
         Collection, on_delete=models.CASCADE, related_name="export_jobs"
     )
-    task_id = models.CharField(max_length=64, unique=True)
+    task_id = models.CharField(max_length=64, unique=True, null=True)
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING
     )
@@ -308,7 +308,7 @@ class CoverJob(models.Model):
     collection = models.ForeignKey(
         Collection, on_delete=models.CASCADE, related_name="cover_jobs"
     )
-    task_id = models.CharField(max_length=64, unique=True)
+    task_id = models.CharField(max_length=64, unique=True, null=True)
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING
     )

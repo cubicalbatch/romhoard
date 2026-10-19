@@ -117,7 +117,7 @@ def scan_form(request):
                 path=path,
                 use_hasheous=use_hasheous,
                 fetch_metadata=fetch_metadata,
-                task_id="pending",
+                task_id=None,
             )
             job_id = run_scan.configure(priority=PRIORITY_LOW).defer(
                 scan_job_id=scan_job.pk
@@ -141,7 +141,7 @@ def rescan_path(request, pk):
             path=scan_path.path,
             use_hasheous=scan_path.use_hasheous,
             fetch_metadata=scan_path.fetch_metadata,
-            task_id="pending",
+            task_id=None,
         )
         job_id = run_scan.configure(priority=PRIORITY_LOW).defer(
             scan_job_id=scan_job.pk

@@ -123,7 +123,7 @@ def start_send(request, slug):
         rom_ids=job_rom_ids,
         device=device,
         files_total=files_total,
-        task_id="pending",
+        task_id=None,
     )
 
     # Enqueue with high priority (user is waiting)

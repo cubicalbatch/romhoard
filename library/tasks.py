@@ -93,7 +93,7 @@ def queue_game_metadata(game: Game) -> bool:
 
     # Create job without a batch (standalone auto-queued job)
     job = MetadataJob.objects.create(
-        task_id="pending",
+        task_id=None,
         batch=None,
         game=game,
     )
@@ -417,7 +417,7 @@ def queue_metadata_batch(batch_id: int, force_failed: bool = False) -> dict:
     job_count = 0
     for game in games:
         job = MetadataJob.objects.create(
-            task_id="pending",
+            task_id=None,
             batch=batch,
             game=game,
         )
@@ -1557,7 +1557,7 @@ def check_scheduled_scans(timestamp) -> dict:
             path=scan_path.path,
             use_hasheous=scan_path.use_hasheous,
             fetch_metadata=scan_path.fetch_metadata,
-            task_id="pending",
+            task_id=None,
         )
 
         # Use same priority as user-initiated scans

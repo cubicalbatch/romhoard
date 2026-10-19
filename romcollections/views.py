@@ -1663,7 +1663,7 @@ def download_collection(request, creator, slug):
         game_ids=game_ids,
         system_slug=collection.slug,
         games_total=len(game_ids),
-        task_id="pending",
+        task_id=None,
         device_id=device_id,
     )
 
@@ -1766,7 +1766,7 @@ def send_collection(request, creator, slug):
         game_ids=game_ids,
         device=device,
         files_total=files_total,
-        task_id="pending",
+        task_id=None,
     )
 
     # Enqueue with high priority
@@ -1868,7 +1868,7 @@ def download_multi_collections(request):
         game_ids=game_ids,
         system_slug="collections",
         games_total=len(game_ids),
-        task_id="pending",
+        task_id=None,
         device_id=device_id,
     )
 
@@ -1949,7 +1949,7 @@ def send_multi_collections(request):
         game_ids=game_ids,
         device=device,
         files_total=files_total,
-        task_id="pending",
+        task_id=None,
     )
 
     from library.queues import PRIORITY_CRITICAL

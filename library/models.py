@@ -475,7 +475,7 @@ class ScanJob(models.Model):
     ]
 
     path = models.CharField(max_length=500)
-    task_id = models.CharField(max_length=64, unique=True)  # Django task ID
+    task_id = models.CharField(max_length=64, unique=True, null=True)  # Django task ID
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING
     )
@@ -541,7 +541,7 @@ class DownloadJob(models.Model):
         (STATUS_FAILED, "Failed"),
     ]
 
-    task_id = models.CharField(max_length=64, unique=True)
+    task_id = models.CharField(max_length=64, unique=True, null=True)
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING
     )
@@ -612,7 +612,7 @@ class SendJob(models.Model):
         (STATUS_FAILED, "Failed"),
     ]
 
-    task_id = models.CharField(max_length=64, unique=True)
+    task_id = models.CharField(max_length=64, unique=True, null=True)
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING
     )
@@ -870,7 +870,7 @@ class MetadataJob(models.Model):
         (STATUS_CANCELLED, "Cancelled"),
     ]
 
-    task_id = models.CharField(max_length=64, unique=True)
+    task_id = models.CharField(max_length=64, unique=True, null=True)
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING
     )
@@ -926,7 +926,7 @@ class SystemMetadataJob(models.Model):
         (STATUS_CANCELLED, "Cancelled"),
     ]
 
-    task_id = models.CharField(max_length=64, unique=True)
+    task_id = models.CharField(max_length=64, unique=True, null=True)
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING
     )

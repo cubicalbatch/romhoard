@@ -173,7 +173,7 @@ def edit_game(request, pk):
             from ..queues import PRIORITY_HIGH
             from ..tasks import run_metadata_job_for_game
 
-            job = MetadataJob.objects.create(task_id="pending", game=game)
+            job = MetadataJob.objects.create(task_id=None, game=game)
             job_id = run_metadata_job_for_game.configure(priority=PRIORITY_HIGH).defer(
                 metadata_job_id=job.pk
             )

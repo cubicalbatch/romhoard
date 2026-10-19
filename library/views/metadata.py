@@ -602,7 +602,7 @@ def fetch_system_metadata(request):
     from ..tasks import run_system_metadata_fetch
 
     # Create job
-    job = SystemMetadataJob.objects.create(task_id="pending")
+    job = SystemMetadataJob.objects.create(task_id=None)
 
     # Enqueue task
     job_id = run_system_metadata_fetch.configure(priority=PRIORITY_NORMAL).defer(
@@ -663,7 +663,7 @@ def fetch_game_metadata(request, pk):
     game = get_object_or_404(Game, pk=pk)
 
     # Create job for single game (no batch)
-    job = MetadataJob.objects.create(task_id="pending", game=game)
+    job = MetadataJob.objects.create(task_id=None, game=game)
 
     # Enqueue task with high priority (user is viewing this game)
     job_id = run_metadata_job_for_game.configure(priority=PRIORITY_HIGH).defer(
@@ -752,7 +752,7 @@ def set_screenscraper_id(request, pk):
 
     # Optionally trigger metadata fetch
     if fetch_metadata and game.screenscraper_id:
-        job = MetadataJob.objects.create(task_id="pending", game=game)
+        job = MetadataJob.objects.create(task_id=None, game=game)
         job_id = run_metadata_job_for_game.configure(priority=PRIORITY_HIGH).defer(
             metadata_job_id=job.pk
         )
