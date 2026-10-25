@@ -1,11 +1,15 @@
 """Tests for game-related views (delete, rename)."""
 
+import re
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
-from library.models import Game, GameImage, ROMSet, System
+from library.models import Game, GameImage, ROM, ROMSet, System
 from romcollections.models import Collection, CollectionEntry
 
 
@@ -534,3 +538,137 @@ class TestMergeGameView:
             HTTP_HX_REQUEST="true",
         )
         assert response.status_code == 404
+
+
+class _BadgeParser(HTMLParser):
+    """Collect retro-badge spans from rendered HTML."""
+
+    def __init__(self):
+        super().__init__()
+        self.badges = []
+        self._current = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag != "span":
+            return
+        attributes = dict(attrs)
+        if "retro-badge" in attributes.get("class", "").split():
+            self._current = {"attrs": attributes, "text": ""}
+
+    def handle_data(self, data):
+        if self._current is not None:
+            self._current["text"] += data
+
+    def handle_endtag(self, tag):
+        if tag == "span" and self._current is not None:
+            self.badges.append(self._current)
+            self._current = None
+
+
+class TestGameDetailReleaseTags:
+    """Per-ROM release tags on the game detail page."""
+
+    @pytest.fixture
+    def tagged_game(self, game):
+        verified_set = ROMSet.objects.create(game=game, region="USA")
+        ROM.objects.create(
+            rom_set=verified_set,
+            file_path="/tmp/verified.bin",
+            file_name="verified.bin",
+            file_size=1024,
+            tags=["!"],
+        )
+        trained_set = ROMSet.objects.create(game=game, region="Japan")
+        ROM.objects.create(
+            rom_set=trained_set,
+            file_path="/tmp/trained.bin",
+            file_name="trained.bin",
+            file_size=1024,
+            tags=["t +2", "unmapped-tag"],
+        )
+        return game
+
+    def test_each_rom_renders_its_own_known_tag(self, client, tagged_game):
+        response = client.get(
+            reverse("library:game_detail", args=[tagged_game.pk])
+        )
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        rows = re.findall(r"<tr\b.*?</tr>", content, re.S)
+
+        verified_row = next(row for row in rows if "verified.bin" in row)
+        trained_row = next(row for row in rows if "trained.bin" in row)
+
+        assert "Verified good dump" in verified_row
+        assert "2 trainers added" not in verified_row
+        assert "2 trainers added" in trained_row
+        assert "Verified good dump" not in trained_row
+
+    def test_old_first_rom_tags_card_is_gone(self, client, tagged_game):
+        response = client.get(
+            reverse("library:game_detail", args=[tagged_game.pk])
+        )
+
+        assert b"<h3>Tags</h3>" not in response.content
+
+    def test_known_badges_have_tooltip_and_accessible_name(
+        self, client, tagged_game
+    ):
+        response = client.get(
+            reverse("library:game_detail", args=[tagged_game.pk])
+        )
+
+        parser = _BadgeParser()
+        parser.feed(response.content.decode())
+
+        verified_badges = [b for b in parser.badges if b["text"] == "!"]
+        trained_badges = [b for b in parser.badges if b["text"] == "t +2"]
+
+        # Desktop and mobile render the same information.
+        assert len(verified_badges) == 2
+        assert len(trained_badges) == 2
+
+        for badge in verified_badges:
+            assert badge["attrs"]["title"] == "Verified good dump"
+            assert badge["attrs"]["tabindex"] == "0"
+            assert badge["attrs"]["aria-label"] == "!: Verified good dump"
+
+        for badge in trained_badges:
+            assert badge["attrs"]["title"] == "Trained: 2 trainers added"
+            assert badge["attrs"]["tabindex"] == "0"
+            assert (
+                badge["attrs"]["aria-label"]
+                == "t +2: Trained: 2 trainers added"
+            )
+
+    def test_unknown_tag_is_verbatim_without_tooltip(self, client, tagged_game):
+        response = client.get(
+            reverse("library:game_detail", args=[tagged_game.pk])
+        )
+
+        parser = _BadgeParser()
+        parser.feed(response.content.decode())
+
+        unknown_badges = [
+            b for b in parser.badges if b["text"] == "unmapped-tag"
+        ]
+        assert len(unknown_badges) == 2
+        for badge in unknown_badges:
+            assert "title" not in badge["attrs"]
+            assert "tabindex" not in badge["attrs"]
+            assert "aria-label" not in badge["attrs"]
+
+    def test_rendering_tags_adds_no_queries(self, client, tagged_game):
+        roms = ROM.objects.filter(rom_set__game=tagged_game)
+        roms.update(tags=[])
+        url = reverse("library:game_detail", args=[tagged_game.pk])
+
+        with CaptureQueriesContext(connection) as baseline:
+            client.get(url)
+
+        roms.update(tags=["t +2", "!"])
+        with CaptureQueriesContext(connection) as with_tags:
+            client.get(url)
+
+        assert len(with_tags) == len(baseline)

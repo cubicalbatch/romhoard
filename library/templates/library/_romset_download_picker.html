@@ -1,3 +1,4 @@
+{% load release_tags %}
 <div class="retro-modal-header" x-data>
     <h3 class="retro-modal-title">{{ game.name }}</h3>
     <button @click="$store.modals.close('romset-download')" class="retro-modal-close">&times;</button>
@@ -30,6 +31,7 @@
                     {% if rom.is_archived %}
                     <span class="retro-badge retro-badge-primary">Archived</span>
                     {% endif %}
+                    {% for tag in rom.tags %}{% release_tag tag %}{% endfor %}
                 </div>
             </div>
             <div class="flex-shrink-0 text-[var(--color-text-muted)] group-hover:text-[var(--color-primary)] transition-colors">

@@ -1,0 +1,5 @@
+{% if description %}
+<span class="retro-badge cursor-help" title="{{ description }}" tabindex="0" aria-label="{{ tag }}: {{ description }}">{{ tag }}</span>
+{% else %}
+<span class="retro-badge">{{ tag }}</span>
+{% endif %}

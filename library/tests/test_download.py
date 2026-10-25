@@ -384,3 +384,53 @@ class TestDownloadViewsWithMode(TestCase):
         # For extract mode, should get the extracted ROM filename
         expected_filename = Path(rom.path_in_archive).name
         self.assertIn(expected_filename, response["Content-Disposition"])
+
+
+class TestRomsetDownloadPickerReleaseTags(TestCase):
+    """The ROMSet picker shows tags belonging to that set's ROMs."""
+
+    def setUp(self):
+        from library.models import System
+
+        system = System.objects.create(
+            name="Tag System",
+            slug="tag-system",
+            extensions=[".rom"],
+            folder_names=["tag"],
+        )
+        self.game = Game.objects.create(
+            name="Tagged Game",
+            system=system,
+            name_source=Game.SOURCE_FILENAME,
+        )
+        self.selected_set = ROMSet.objects.create(game=self.game, region="USA")
+        ROM.objects.create(
+            rom_set=self.selected_set,
+            file_path="/tmp/verified.bin",
+            file_name="verified.bin",
+            file_size=1024,
+            tags=["!", "mystery-tag"],
+        )
+        other_set = ROMSet.objects.create(game=self.game, region="Japan")
+        ROM.objects.create(
+            rom_set=other_set,
+            file_path="/tmp/trained.bin",
+            file_name="trained.bin",
+            file_size=1024,
+            tags=["t +2"],
+        )
+
+    def test_picker_shows_selected_rom_tags_and_descriptions(self):
+        from library.views import romset_download_picker
+
+        response = romset_download_picker(None, self.selected_set.pk)
+        content = response.content.decode()
+
+        self.assertIn("Verified good dump", content)
+        self.assertIn('title="Verified good dump"', content)
+        self.assertIn("mystery-tag", content)
+        self.assertIn(
+            '<span class="retro-badge">mystery-tag</span>', content
+        )
+        self.assertNotIn("2 trainers added", content)
+        self.assertNotIn("trained.bin", content)

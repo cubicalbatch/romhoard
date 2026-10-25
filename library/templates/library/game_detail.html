@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load retro_components %}
+{% load retro_components release_tags %}
 
 {% block title %}{{ game.name }} - RomHoard{% endblock %}
 
@@ -345,6 +345,7 @@
                             <div class="text-base font-medium text-[var(--color-text)] flex items-center gap-2">
                                 {{ rom_set.region|region_flag }}
                                 <span>{{ rom.file_name }}</span>
+                                {% for tag in rom.tags %}{% release_tag tag %}{% endfor %}
                                 {% if game.default_rom_set == rom_set %}
                                 <span class="retro-badge text-base bg-[var(--color-teal)] text-white">Default</span>
                                 {% endif %}
@@ -432,6 +433,7 @@
                     </div>
                     <div class="p-3">
                         <div class="flex flex-wrap gap-1 mb-3">
+                            {% for tag in rom.tags %}{% release_tag tag %}{% endfor %}
                             {% if game.default_rom_set == rom_set %}
                             <span class="retro-badge text-base bg-[var(--color-teal)] text-white">Default</span>
                             {% endif %}
@@ -477,26 +479,6 @@
         </div>
     </div>
 </div>
-
-<!-- Tags Section -->
-{% if rom_sets %}
-{% with first_rom=rom_sets.0.roms.first %}
-{% if first_rom.tags %}
-<div class="retro-system-card retro-system-card-static mb-8">
-    <div class="retro-system-card-header retro-header-gold !text-left">
-        <h3>Tags</h3>
-    </div>
-    <div class="retro-system-card-body !items-start">
-        <div class="flex flex-wrap gap-2">
-            {% for tag in first_rom.tags %}
-            <span class="retro-badge">{{ tag }}</span>
-            {% endfor %}
-        </div>
-    </div>
-</div>
-{% endif %}
-{% endwith %}
-{% endif %}
 
 <!-- Collections -->
 <div class="retro-system-card retro-system-card-static mb-8">

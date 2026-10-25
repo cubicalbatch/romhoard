@@ -33,6 +33,10 @@ Select games or an entire collection and send them directly to your handheld ove
 
 ![Send to Device](documentation/screenshots/send-modal.png)
 
+## Release Tags
+
+ROM variants show their own release tags (for example `!`, `t +2`, or `tr En`) next to each file, and the download picker shows the selected set's tags. Known TOSEC codes get a hover/focus explanation; unknown or ambiguous tags are shown verbatim without a guessed meaning.
+
 ## Why RomHoard?
 
 RomHoard didn't start as a ROM manager. The original idea was to discover and share curated game lists, because having 2000 ROMs and not knowing what to play is a real problem.
