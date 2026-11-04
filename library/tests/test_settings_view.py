@@ -10,6 +10,11 @@ from django.utils import timezone
 from library.models import Game, GameImage, Setting, System
 
 
+@pytest.fixture(autouse=True)
+def isolated_metadata_storage(tmp_path, settings):
+    settings.IMAGE_STORAGE_PATH = str(tmp_path / "metadata")
+
+
 @pytest.mark.django_db
 class TestMetadataPageGet:
     """Test GET requests to the metadata settings page."""
@@ -81,8 +86,8 @@ class TestImagePathChanges:
 
         # Should render page with modal, not redirect
         assert response.status_code == 200
-        assert b"Image Storage Path Changed" in response.content
-        assert b"1 downloaded images" in response.content
+        assert b"Metadata Storage Path Changed" in response.content
+        assert b"1 metadata files" in response.content
 
     def test_changing_image_path_creates_migration_job(self, client):
         """Test that confirming image path change creates a migration job."""
@@ -309,7 +314,7 @@ class TestImageMigrationTask:
         )
         image_downloaded = GameImage.objects.create(
             game=game_with_download,
-            file_path="/old/img.png",
+            file_path="/old/path/img.png",
             file_name="img.png",
             source="downloaded",
         )

@@ -192,6 +192,20 @@
             </button>
         </form>
 
+        <form method="post" class="w-full mt-6">
+            {% csrf_token %}
+            <input type="hidden" name="save_media_settings" value="1">
+            <label class="flex items-center gap-2">
+                <input type="checkbox" name="download_mix" value="1" {% if download_mix %}checked{% endif %}>
+                Download mix images
+            </label>
+            <p class="mt-1 mb-3 text-base text-[var(--color-text-muted)]">
+                Mix images are used for collection covers and when box art is unavailable.
+                Turning this off saves space on future downloads. Existing images are kept.
+            </p>
+            <button type="submit" class="retro-btn retro-btn-primary">Save Artwork Settings</button>
+        </form>
+
         <!-- Active Migration Job Status -->
         {% if active_migration_job %}
         <div class="mt-4 p-4 bg-[var(--color-surface-alt)] rounded-lg w-full"
@@ -201,14 +215,14 @@
             <div class="flex items-center gap-3 mb-3">
                 <div class="animate-spin h-5 w-5 border-2 border-[var(--color-primary)] border-t-transparent rounded-full"></div>
                 <span class="font-medium text-[var(--color-text)]">
-                    {% if active_migration_job.action == 'move' %}Moving{% elif active_migration_job.action == 'delete' %}Deleting{% else %}Processing{% endif %} images...
+                    {% if active_migration_job.action == 'move' %}Moving{% elif active_migration_job.action == 'delete' %}Deleting{% else %}Processing{% endif %} metadata files...
                 </span>
             </div>
             <div class="retro-progress mb-2">
                 <div class="retro-progress-bar" style="width: {{ active_migration_job.progress_percent }}%"></div>
             </div>
             <div class="text-base text-[var(--color-text-muted)]">
-                {{ active_migration_job.processed_images }} / {{ active_migration_job.total_images }} images processed
+                {{ active_migration_job.processed_images }} / {{ active_migration_job.total_images }} files processed
                 {% if active_migration_job.skipped_images > 0 %}
                 <span class="text-[var(--color-gold)]">({{ active_migration_job.skipped_images }} skipped)</span>
                 {% endif %}
@@ -231,19 +245,19 @@
                 <svg class="w-5 h-5 text-[var(--color-error)]" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
                 </svg>
-                <span class="font-medium text-[var(--color-error)]">Image migration failed</span>
+                <span class="font-medium text-[var(--color-error)]">Metadata migration failed</span>
                 {% endif %}
             </div>
             <div class="text-base text-[var(--color-text-muted)]">
                 {% if recent_migration_job.action == 'move' %}
-                Moved {{ recent_migration_job.processed_images }} images
-                {% if recent_migration_job.skipped_images > 0 %}, {{ recent_migration_job.skipped_images }} skipped (already existed){% endif %}
+                Processed {{ recent_migration_job.processed_images }} files
+                {% if recent_migration_job.skipped_images > 0 %}, {{ recent_migration_job.skipped_images }} reused existing copies{% endif %}
                 {% if recent_migration_job.failed_images > 0 %}, {{ recent_migration_job.failed_images }} failed{% endif %}
                 {% elif recent_migration_job.action == 'delete' %}
-                Deleted {{ recent_migration_job.processed_images }} images
+                Processed {{ recent_migration_job.processed_images }} files
                 {% if recent_migration_job.failed_images > 0 %}, {{ recent_migration_job.failed_images }} failed{% endif %}
                 {% else %}
-                Processed {{ recent_migration_job.processed_images }} images
+                Processed {{ recent_migration_job.processed_images }} files
                 {% endif %}
                 {% if recent_migration_job.error_message %}
                 <p class="mt-1 text-[var(--color-error)]">{{ recent_migration_job.error_message }}</p>
@@ -255,14 +269,17 @@
 </div>
 
 <!-- Image Migration Confirmation Modal -->
-{% retro_modal id="image-migration" title="Image Storage Path Changed" size="lg" %}
+{% retro_modal id="image-migration" title="Metadata Storage Path Changed" size="lg" %}
 <div class="retro-modal-body" x-data="{ selectedAction: '{% if migration_new_path %}move{% else %}delete{% endif %}' }">
     {% if migration_stats %}
     <div class="mb-4">
         <p class="text-[var(--color-text)] mb-2">
-            You have <strong>{{ migration_stats.count }} downloaded images</strong>
-            ({{ migration_stats.size_human }}) that will be affected.
+            You have <strong>{{ migration_stats.count }} metadata files</strong>
+            ({{ migration_stats.size_human }}) that will be affected, including cached artwork and metadata JSON.
         </p>
+        {% if migration_stats.missing_count %}
+        <p class="text-[var(--color-error)]">{{ migration_stats.missing_count }} referenced files are missing from both locations and could not be included in the size.</p>
+        {% endif %}
         {% if migration_old_path and migration_new_path %}
         <div class="text-base text-[var(--color-text-muted)] bg-[var(--color-surface-alt)] p-3 rounded">
             <div class="mb-1"><strong>From:</strong> <code class="text-base">{{ migration_old_path }}</code></div>
@@ -275,7 +292,7 @@
         {% endif %}
     </div>
 
-    <p class="text-base text-[var(--color-text)] mb-4">What would you like to do with the existing images?</p>
+    <p class="text-base text-[var(--color-text)] mb-4">What would you like to do with the existing metadata files?</p>
 
     <div class="space-y-3">
         {% if migration_new_path %}
@@ -283,8 +300,8 @@
                :class="selectedAction === 'move' ? 'bg-[var(--color-surface-alt)] ring-2 ring-[var(--color-primary)]' : ''">
             <input type="radio" name="action_choice" value="move" x-model="selectedAction" class="mt-1">
             <div>
-                <div class="font-medium text-[var(--color-text)]">Move images to new location</div>
-                <div class="text-base text-[var(--color-text-muted)]">Files will be moved preserving directory structure. No re-download needed.</div>
+                <div class="font-medium text-[var(--color-text)]">Move metadata to new location</div>
+                <div class="text-base text-[var(--color-text-muted)]">Files will be moved preserving directory structure. Copies already at the destination will be verified and reused; different files will not be overwritten.</div>
             </div>
         </label>
         {% endif %}
@@ -293,7 +310,7 @@
                :class="selectedAction === 'delete' ? 'bg-[var(--color-surface-alt)] ring-2 ring-[var(--color-primary)]' : ''">
             <input type="radio" name="action_choice" value="delete" x-model="selectedAction" class="mt-1">
             <div>
-                <div class="font-medium text-[var(--color-text)]">Delete images from disk</div>
+                <div class="font-medium text-[var(--color-text)]">Delete metadata files from disk</div>
                 <div class="text-base text-[var(--color-text-muted)]">Files will be permanently deleted. You can re-download them later.</div>
             </div>
         </label>

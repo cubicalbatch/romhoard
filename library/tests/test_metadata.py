@@ -112,7 +112,9 @@ class TestScreenScraperClient:
         # Explicitly neutralize any ambient dev proxy override.
         with patch.dict(os.environ, {}, clear=False) as env:
             env.pop("SCREENSCRAPER_API_BASE", None)
-            url = client._build_url("jeuRecherche", {"recherche": "test", "systemeid": 1})
+            url = client._build_url(
+                "jeuRecherche", {"recherche": "test", "systemeid": 1}
+            )
 
         assert url.startswith("https://api.screenscraper.fr/api2/jeuRecherche.php?")
         # App identifier is built-in, just verify user credentials
@@ -558,7 +560,10 @@ class TestMetadataCache:
     @patch("library.metadata.matcher.ScreenScraperClient")
     def test_fetch_metadata_backfills_id_from_cache(self, mock_client_class, tmp_path):
         """A successful disk cache restores the matching ID without an API call."""
-        from library.metadata.matcher import fetch_metadata_for_game, save_metadata_cache
+        from library.metadata.matcher import (
+            fetch_metadata_for_game,
+            save_metadata_cache,
+        )
         from library.models import Game, Setting, System
 
         system, _ = System.objects.update_or_create(
@@ -761,14 +766,14 @@ class TestWheelMiniGeneration:
         wheel_record = GameImage.objects.filter(game=game, image_type="wheel").first()
         assert wheel_record is not None
         assert wheel_record.file_name == "wheel.png"
-        assert wheel_record.source == "scanned"
+        assert wheel_record.source == "downloaded"
 
         wheel_mini_record = GameImage.objects.filter(
             game=game, image_type="wheel_mini"
         ).first()
         assert wheel_mini_record is not None
         assert wheel_mini_record.file_name == "wheel-mini.png"
-        assert wheel_mini_record.source == "scanned"
+        assert wheel_mini_record.source == "downloaded"
 
 
 class TestRatingSupport:
@@ -1262,9 +1267,7 @@ class TestMultiRomLookup:
     """P0-C: the lookup chain must try every ROM, CRC-bearing ones first."""
 
     @patch("library.metadata.matcher.ScreenScraperClient")
-    @patch(
-        "library.lookup.screenscraper.ScreenScraperLookupService._get_client"
-    )
+    @patch("library.lookup.screenscraper.ScreenScraperLookupService._get_client")
     def test_second_rom_used_when_first_crc_is_cached_no_match(
         self, mock_get_client, mock_client_class, tmp_path
     ):
@@ -1386,9 +1389,7 @@ class TestRomlessNameSearch:
         return _make_game_with_roms(slug, name, [])
 
     @patch("library.metadata.matcher.ScreenScraperClient")
-    @patch(
-        "library.lookup.screenscraper.ScreenScraperLookupService._get_client"
-    )
+    @patch("library.lookup.screenscraper.ScreenScraperLookupService._get_client")
     def test_romless_game_matches_cross_system_exact_title(
         self, mock_get_client, mock_client_class, tmp_path
     ):
@@ -1475,9 +1476,7 @@ class TestRomlessNameSearch:
         assert result.screenscraper_id == 39873
 
     @patch("library.metadata.matcher.ScreenScraperClient")
-    @patch(
-        "library.lookup.screenscraper.ScreenScraperLookupService._get_client"
-    )
+    @patch("library.lookup.screenscraper.ScreenScraperLookupService._get_client")
     def test_rom_backed_game_never_issues_unconstrained_call(
         self, mock_get_client, mock_client_class
     ):
@@ -1507,9 +1506,7 @@ class TestRomlessNameSearch:
         assert fetch_metadata_for_game(game) is None
 
     @patch("library.metadata.matcher.ScreenScraperClient")
-    @patch(
-        "library.lookup.screenscraper.ScreenScraperLookupService._get_client"
-    )
+    @patch("library.lookup.screenscraper.ScreenScraperLookupService._get_client")
     def test_romless_near_title_rejected(
         self, mock_get_client, mock_client_class, tmp_path
     ):
@@ -1549,9 +1546,7 @@ class TestIdentityFromRomStem:
     """P5: the name-search identity comes from the parsed ROM filename."""
 
     @patch("library.metadata.matcher.ScreenScraperClient")
-    @patch(
-        "library.lookup.screenscraper.ScreenScraperLookupService._get_client"
-    )
+    @patch("library.lookup.screenscraper.ScreenScraperLookupService._get_client")
     def test_identity_built_from_rom_stem_not_poisoned_game_name(
         self, mock_get_client, mock_client_class, tmp_path
     ):

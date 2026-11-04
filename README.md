@@ -185,6 +185,17 @@ sets) can take several days to finish.
 
 Most things are configured through the web UI. For ScreenScraper metadata fetching, you'll need a free account at [screenscraper.fr](https://www.screenscraper.fr/).
 
+Use a dedicated folder for **Settings → Metadata → Metadata Storage Path**.
+Changing it offers to move all files in that folder, including cached artwork
+and `metadata.json`. The size includes files that are not registered in the
+database. Artwork stored alongside ROMs outside this folder is left alone.
+If you already copied or moved the folder, choose **Move metadata to new
+location** to update image references. Identical copies are verified and reused;
+conflicting files are preserved and reported as failures.
+
+Turn off **Download mix images** to skip future ScreenScraper mix downloads.
+Existing mix artwork is kept for collection covers and image fallbacks.
+
 See [documentation/docker.md](documentation/docker.md) for environment variables and advanced configuration.
 
 ## Tech Stack

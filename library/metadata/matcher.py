@@ -13,7 +13,7 @@ from django.utils import timezone
 from PIL import Image
 
 from library.merge import merge_games
-from library.models import Game, GameImage, System
+from library.models import Game, GameImage, Setting, System
 from library.metadata.screenscraper import (
     ALLOWED_MEDIA_TYPES,
     ScreenScraperClient,
@@ -175,9 +175,7 @@ def _get_rom_for_lookup(game: Game) -> list["ROM"]:
     """
     from library.models import ROM
 
-    roms = list(
-        ROM.objects.filter(rom_set__game=game).order_by("disc", "file_name")
-    )
+    roms = list(ROM.objects.filter(rom_set__game=game).order_by("disc", "file_name"))
     return sorted(roms, key=lambda rom: 0 if rom.crc32 else 1)
 
 
@@ -231,9 +229,7 @@ def _lookup_romless_by_name(client: "ScreenScraperClient", game: Game):
         for entry in client.search_game(variant):
             if not entry.get("id"):
                 continue
-            names = _clean_names(
-                [entry.get("name", ""), *entry.get("all_names", [])]
-            )
+            names = _clean_names([entry.get("name", ""), *entry.get("all_names", [])])
             if not any(
                 normalize_name(n).replace(" ", "") == norm_identity for n in names
             ):
@@ -560,7 +556,7 @@ def _ensure_image_in_db(game: Game, image_path: Path, image_type: str) -> bool:
             file_name=image_path.name,
             file_size=image_path.stat().st_size,
             image_type=image_type,
-            source="scanned",  # Mark as scanned, not downloaded
+            source="downloaded",  # Cached artwork in managed metadata storage
         )
         logger.info(f"Added existing {image_type} image to database for '{game.name}'")
         return True
@@ -593,6 +589,7 @@ def download_images_for_game(game: Game, media_list: list[dict]) -> int:
     client = ScreenScraperClient()
     downloaded = 0
 
+    download_mix = Setting.get("metadata_download_mix", True)
     for media in media_list:
         media_type = media.get("type", "")
         media_url = media.get("url", "")
@@ -603,6 +600,9 @@ def download_images_for_game(game: Game, media_list: list[dict]) -> int:
         # Only process allowed media types
         if media_type not in {"box-2D", "ss", "mixrbv1", "wheel", "sstitle"}:
             logger.debug(f"Skipping unsupported media type: {media_type}")
+            continue
+
+        if media_type == "mixrbv1" and not download_mix:
             continue
 
         # Map ScreenScraper media types to our image types

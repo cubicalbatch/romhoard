@@ -1633,7 +1633,7 @@ def resume_stranded_metadata(timestamp) -> dict:
 
 @app.task(queue=QUEUE_BACKGROUND, pass_context=True)
 def run_image_migration(context: job_context.JobContext, migration_job_id: int) -> dict:
-    """Background task to migrate (move/delete) downloaded images.
+    """Migrate metadata files and their database references within one root.
 
     Handles three actions:
     - move: Move images from old path to new path, update DB records
@@ -1655,139 +1655,101 @@ def run_image_migration(context: job_context.JobContext, migration_job_id: int) 
         old_path = job.old_path
         new_path = job.new_path
 
-        # Get all downloaded images
-        downloaded_images = list(
-            GameImage.objects.filter(source="downloaded").values_list("pk", "file_path")
-        )
+        from .metadata_storage import metadata_inventory, validate_storage_move
 
-        # Get system icons
-        systems_with_icons = list(
-            System.objects.exclude(icon_path="").values_list("pk", "icon_path")
-        )
-
-        job.total_images = len(downloaded_images) + len(systems_with_icons)
+        if action not in {
+            ImageMigrationJob.ACTION_MOVE,
+            ImageMigrationJob.ACTION_DELETE,
+            ImageMigrationJob.ACTION_ORPHAN,
+        }:
+            raise ValueError("Unknown metadata migration action")
+        if action == ImageMigrationJob.ACTION_MOVE:
+            validate_storage_move(old_path, new_path)
+        files = metadata_inventory(old_path)
+        job.total_images = len(files)
         job.save()
 
-        processed = 0
-        skipped = 0
-        failed = 0
+        processed = skipped = failed = 0
         errors = []
-
-        if action == ImageMigrationJob.ACTION_MOVE:
-            # Move game images
-            for image_pk, file_path in downloaded_images:
-                if context.should_abort():
-                    raise JobAborted()
-
-                new_file_path, error = move_downloaded_image(
-                    file_path, old_path, new_path
+        for file_path, entry in files.items():
+            if context.should_abort():
+                raise JobAborted()
+            error = None
+            if action == ImageMigrationJob.ACTION_MOVE:
+                expected_destination = Path(new_path).resolve() / file_path.relative_to(
+                    Path(old_path).resolve()
                 )
-
-                if error == "skipped":
-                    skipped += 1
-                elif error:
-                    failed += 1
-                    errors.append(f"{Path(file_path).name}: {error}")
+                # Check ownership before touching either copy.
+                conflict = GameImage.objects.filter(file_path=str(expected_destination))
+                if (
+                    entry.images
+                    and conflict.exclude(
+                        game_id__in=[image.game_id for image in entry.images]
+                    ).exists()
+                ):
+                    error = (
+                        f"Destination belongs to another game: {expected_destination}"
+                    )
                 else:
-                    # Update DB record with new path
-                    GameImage.objects.filter(pk=image_pk).update(
-                        file_path=str(new_file_path)
+                    destination, error = move_downloaded_image(
+                        file_path, old_path, new_path
                     )
-
-                processed += 1
-                if processed % 50 == 0:
-                    ImageMigrationJob.objects.filter(pk=migration_job_id).update(
-                        processed_images=processed,
-                        skipped_images=skipped,
-                        failed_images=failed,
-                    )
-
-            # Move system icons
-            for system_pk, icon_path in systems_with_icons:
-                if context.should_abort():
-                    raise JobAborted()
-
-                new_icon_path, error = move_downloaded_image(
-                    icon_path, old_path, new_path
+                    if destination is not None:
+                        for image in entry.images:
+                            if conflict.exclude(pk=image.pk).exists():
+                                image.delete()
+                            else:
+                                GameImage.objects.filter(pk=image.pk).update(
+                                    file_path=str(destination)
+                                )
+                        for system in entry.systems:
+                            System.objects.filter(pk=system.pk).update(
+                                icon_path=str(destination)
+                            )
+                        if error == "skipped":
+                            # Relink first, then remove the verified original.
+                            skipped += 1
+                            error = delete_downloaded_image(file_path)
+            else:
+                if action == ImageMigrationJob.ACTION_DELETE:
+                    error = delete_downloaded_image(file_path)
+                if not error:
+                    for image in entry.images:
+                        Game.objects.filter(pk=image.game_id).update(
+                            metadata_updated_at=None
+                        )
+                        image.delete()
+                    for system in entry.systems:
+                        System.objects.filter(pk=system.pk).update(
+                            icon_path="", metadata_updated_at=None
+                        )
+            if error:
+                failed += 1
+                if len(errors) < 50:
+                    errors.append(f"{file_path.name}: {error}")
+            processed += 1
+            if processed % 50 == 0:
+                ImageMigrationJob.objects.filter(pk=migration_job_id).update(
+                    processed_images=processed,
+                    skipped_images=skipped,
+                    failed_images=failed,
                 )
-
-                if error == "skipped":
-                    skipped += 1
-                elif error:
-                    failed += 1
-                    errors.append(f"System icon {Path(icon_path).name}: {error}")
-                else:
-                    # Update system record with new path
-                    System.objects.filter(pk=system_pk).update(
-                        icon_path=str(new_icon_path)
-                    )
-
-                processed += 1
-
-        elif action == ImageMigrationJob.ACTION_DELETE:
-            # Delete game images from disk
-            for image_pk, file_path in downloaded_images:
-                if context.should_abort():
-                    raise JobAborted()
-
-                error = delete_downloaded_image(file_path)
-                if error:
-                    failed += 1
-                    errors.append(f"{Path(file_path).name}: {error}")
-
-                processed += 1
-                if processed % 50 == 0:
-                    ImageMigrationJob.objects.filter(pk=migration_job_id).update(
-                        processed_images=processed,
-                        failed_images=failed,
-                    )
-
-            # Delete system icons from disk
-            for system_pk, icon_path in systems_with_icons:
-                if context.should_abort():
-                    raise JobAborted()
-
-                error = delete_downloaded_image(icon_path)
-                if error:
-                    failed += 1
-                    errors.append(f"System icon {Path(icon_path).name}: {error}")
-
-                processed += 1
-
-            # Now clear DB records
-            # Get game IDs BEFORE deleting images
-            game_ids_with_downloads = list(
-                GameImage.objects.filter(source="downloaded")
-                .values_list("game_id", flat=True)
-                .distinct()
-            )
-            GameImage.objects.filter(source="downloaded").delete()
-            Game.objects.filter(pk__in=game_ids_with_downloads).update(
-                metadata_updated_at=None
-            )
-            System.objects.update(icon_path="", metadata_updated_at=None)
-
-        elif action == ImageMigrationJob.ACTION_ORPHAN:
-            # Just clear DB records, leave files on disk
-            # Get game IDs BEFORE deleting images
-            game_ids_with_downloads = list(
-                GameImage.objects.filter(source="downloaded")
-                .values_list("game_id", flat=True)
-                .distinct()
-            )
-            GameImage.objects.filter(source="downloaded").delete()
-            Game.objects.filter(pk__in=game_ids_with_downloads).update(
-                metadata_updated_at=None
-            )
-            System.objects.update(icon_path="", metadata_updated_at=None)
-            processed = job.total_images  # Mark all as processed
 
         # Update final status
         job.processed_images = processed
         job.skipped_images = skipped
         job.failed_images = failed
         job.errors = errors[:50]  # Limit stored errors
-        job.status = ImageMigrationJob.STATUS_COMPLETED
+        job.status = (
+            ImageMigrationJob.STATUS_FAILED
+            if failed
+            else ImageMigrationJob.STATUS_COMPLETED
+        )
+        job.error_message = (
+            f"{failed} metadata file(s) could not be processed. " + errors[0]
+            if failed
+            else ""
+        )
         job.completed_at = timezone.now()
         job.save()
 

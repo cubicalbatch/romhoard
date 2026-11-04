@@ -381,60 +381,31 @@ def humanize_bytes(size_bytes: int) -> str:
     return f"{size_bytes:.1f} PB"
 
 
-def get_downloaded_images_stats() -> dict:
-    """Get statistics about downloaded images (from metadata service).
+def get_downloaded_images_stats(old_base=None, new_base=None) -> dict:
+    """Measure all metadata files, including cached artwork and JSON caches.
 
-    Returns:
-        Dictionary with:
-            - count: Number of downloaded images
-            - size_bytes: Total size in bytes
-            - size_human: Human-readable size string
-            - system_icons_count: Number of system icons
-            - system_icons_size: Size of system icons in bytes
+    Missing references remain in the count so a manually moved directory can
+    be relinked. Their destination copy is used for size when available.
     """
-    from library.models import GameImage, System
+    from .metadata_storage import metadata_inventory
 
-    # Get all downloaded GameImages
-    downloaded_images = GameImage.objects.filter(source="downloaded")
-
-    count = 0
+    base = Path(old_base or get_image_storage_path()).resolve()
     total_size = 0
-
-    for image in downloaded_images:
-        count += 1
-        file_path = Path(image.file_path)
-        if file_path.exists():
-            try:
-                total_size += file_path.stat().st_size
-            except OSError:
-                pass
-
-    # Get system icons
-    systems_with_icons = System.objects.exclude(icon_path="")
-    icon_count = 0
-    icon_size = 0
-
-    for system in systems_with_icons:
-        if system.icon_path:
-            icon_path = Path(system.icon_path)
-            if icon_path.exists():
-                icon_count += 1
-                try:
-                    icon_size += icon_path.stat().st_size
-                except OSError:
-                    pass
-
-    total_count = count + icon_count
-    total_bytes = total_size + icon_size
-
+    missing = 0
+    files = metadata_inventory(base)
+    for path in files:
+        candidate = path
+        if not candidate.exists() and new_base:
+            candidate = Path(new_base) / path.relative_to(base)
+        try:
+            total_size += candidate.stat().st_size
+        except FileNotFoundError:
+            missing += 1
     return {
-        "count": total_count,
-        "size_bytes": total_bytes,
-        "size_human": humanize_bytes(total_bytes),
-        "game_images_count": count,
-        "game_images_size": total_size,
-        "system_icons_count": icon_count,
-        "system_icons_size": icon_size,
+        "count": len(files),
+        "size_bytes": total_size,
+        "size_human": humanize_bytes(total_size),
+        "missing_count": missing,
     }
 
 
@@ -443,50 +414,46 @@ def move_downloaded_image(
     old_base: str | Path,
     new_base: str | Path,
 ) -> tuple[Path | None, str | None]:
-    """Move a single downloaded image from old base to new base.
+    """Move a metadata file, or adopt an identical/already moved copy.
 
-    Preserves the directory structure relative to the base path.
-    Skips if destination already exists.
-
-    Args:
-        old_path: Current absolute path of the image
-        old_base: Base path to strip from old_path
-        new_base: New base path to prepend
-
-    Returns:
-        Tuple of (new_path, error_message). new_path is None on skip/error.
-        error_message is None on success, "skipped" if file already exists.
+    An existing destination is never overwritten. Both files are retained
+    when their contents differ. Return the destination even when no copy is
+    needed, so callers always update database references.
     """
+    import hashlib
     import shutil
 
+    from .metadata_storage import validate_storage_move
+
     old_path = Path(old_path)
-    old_base = Path(old_base)
-    new_base = Path(new_base)
-
-    if not old_path.exists():
-        return None, f"Source file not found: {old_path}"
-
+    old_base = Path(old_base).resolve()
+    new_base = Path(new_base).resolve()
     try:
-        # Calculate relative path from old base
+        validate_storage_move(old_base, new_base)
         relative_path = old_path.relative_to(old_base)
         new_path = new_base / relative_path
-
-        # Skip if destination already exists
+        if old_path.resolve() != old_path or new_path.resolve() != new_path:
+            return None, "Cannot migrate through a symbolic link"
         if new_path.exists():
-            return None, "skipped"
+            if not new_path.is_file():
+                return None, f"Destination is not a file: {new_path}"
+            if old_path.exists():
 
-        # Create destination directory
+                def digest(path):
+                    with path.open("rb") as stream:
+                        return hashlib.file_digest(stream, "sha256").digest()
+
+                if old_path.stat().st_size != new_path.stat().st_size or digest(
+                    old_path
+                ) != digest(new_path):
+                    return None, f"Destination contains a different file: {new_path}"
+            return new_path, "skipped"
+        if not old_path.exists():
+            return None, f"Source file not found: {old_path}"
         new_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Move the file
         shutil.move(str(old_path), str(new_path))
-        logger.debug(f"Moved image: {old_path} -> {new_path}")
         return new_path, None
-
-    except ValueError:
-        # old_path is not relative to old_base
-        return None, f"Path {old_path} is not under base {old_base}"
-    except Exception as e:
+    except (OSError, ValueError) as e:
         return None, str(e)
 
 

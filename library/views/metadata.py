@@ -1,6 +1,7 @@
 """Metadata management views."""
 
 import os
+from pathlib import Path
 
 from django.contrib import messages
 from django.db.models import Count
@@ -83,7 +84,6 @@ def metadata_page(request):
     )
 
     # Get current settings
-    from ..image_utils import get_image_storage_path
 
     # Get raw DB setting value for form and comparison
     try:
@@ -104,26 +104,46 @@ def metadata_page(request):
     except Setting.DoesNotExist:
         library_root = ""
 
+    if request.method == "POST" and "save_media_settings" in request.POST:
+        Setting.set("metadata_download_mix", request.POST.get("download_mix") == "1")
+        return redirect("library:metadata")
+
     # Handle Image Storage Path form submission
     if request.method == "POST" and "save_image_settings" in request.POST:
-        from ..image_utils import get_downloaded_images_stats
+        from ..image_utils import _get_images_dir, get_downloaded_images_stats
+        from ..metadata_storage import validate_storage_move
         from ..tasks import run_image_migration
 
         new_image_path = request.POST.get("image_path", "").strip()
+        image_action = request.POST.get("image_action", "")
+        if image_action == "cancel":
+            return redirect("library:metadata")
+        if ImageMigrationJob.objects.filter(status__in=["pending", "running"]).exists():
+            messages.error(
+                request, "Wait for the current metadata migration to finish."
+            )
+            return redirect("library:metadata")
+        if image_action and image_action not in {"move", "delete", "orphan"}:
+            messages.error(request, "Choose a valid metadata migration action.")
+            return redirect("library:metadata")
 
-        # Check if image storage path has changed
-        if new_image_path != image_path:
-            # Path changed - check if there are any downloaded images to handle
-            stats = get_downloaded_images_stats()
-
+        old_base = Path(effective_metadata_path).resolve()
+        new_base = Path(new_image_path) if new_image_path else _get_images_dir()
+        if not new_base.is_absolute():
+            messages.error(request, "Metadata storage requires an absolute path.")
+            return redirect("library:metadata")
+        new_base = new_base.resolve()
+        if old_base != new_base:
+            try:
+                validate_storage_move(old_base, new_base)
+                if new_base.exists() and not new_base.is_dir():
+                    raise ValueError("Metadata storage must be a directory.")
+                stats = get_downloaded_images_stats(old_base, new_base)
+            except (OSError, ValueError) as e:
+                messages.error(request, f"Cannot change metadata storage: {e}")
+                return redirect("library:metadata")
             if stats["count"] > 0:
-                # Has existing images - check for user action
-                image_action = request.POST.get("image_action", "")
-
                 if not image_action:
-                    # First submit - show confirmation modal
-                    # Build context and render with modal open
-                    # Pass new_image_path as image_path so the form submits the new value on confirm
                     return _render_metadata_page_with_modal(
                         request,
                         image_path=new_image_path,
@@ -133,44 +153,21 @@ def metadata_page(request):
                         screenscraper_from_db=screenscraper_from_db,
                         show_migration_modal=True,
                         migration_stats=stats,
-                        migration_old_path=image_path,
-                        migration_new_path=new_image_path,
+                        migration_old_path=str(old_base),
+                        migration_new_path=str(new_base),
                     )
-
-                if image_action == "cancel":
-                    # User cancelled - don't change anything
-                    return redirect("library:metadata")
-
-                # User confirmed an action - create migration job
                 job = ImageMigrationJob.objects.create(
                     action=image_action,
-                    old_path=image_path,
-                    new_path=new_image_path,
+                    old_path=str(old_base),
+                    new_path=str(new_base),
                     total_images=stats["count"],
                 )
-
-                # Update setting immediately
-                Setting.objects.update_or_create(
-                    key="metadata_image_path", defaults={"value": new_image_path}
-                )
-
-                # Queue background task
+                Setting.set("metadata_image_path", new_image_path)
                 task_id = run_image_migration.defer(migration_job_id=job.pk)
-                job.task_id = str(task_id)
-                job.save()
-
+                # Avoid overwriting progress if the worker started immediately.
+                ImageMigrationJob.objects.filter(pk=job.pk).update(task_id=str(task_id))
                 return redirect("library:metadata")
-            else:
-                # No existing images - just save the new path
-                Setting.objects.update_or_create(
-                    key="metadata_image_path", defaults={"value": new_image_path}
-                )
-        else:
-            # Path unchanged - just save (in case form submitted without changes)
-            Setting.objects.update_or_create(
-                key="metadata_image_path", defaults={"value": new_image_path}
-            )
-
+        Setting.set("metadata_image_path", new_image_path)
         return redirect("library:metadata")
 
     # Handle Library settings form submission
@@ -293,6 +290,7 @@ def metadata_page(request):
         "screenscraper_from_db": screenscraper_from_db,
         "screenscraper_credentials_valid": screenscraper_credentials_valid,
         "image_path": image_path,
+        "download_mix": Setting.get("metadata_download_mix", True),
         "effective_metadata_path": effective_metadata_path,
         "metadata_path_valid": metadata_path_valid,
         "metadata_path_status": metadata_path_status,
@@ -420,6 +418,7 @@ def _render_metadata_page_with_modal(
         "screenscraper_configured": screenscraper_configured,
         "screenscraper_from_db": screenscraper_from_db,
         "image_path": image_path,
+        "download_mix": Setting.get("metadata_download_mix", True),
         "effective_metadata_path": effective_metadata_path,
         "metadata_path_valid": metadata_path_valid,
         "metadata_path_status": metadata_path_status,
