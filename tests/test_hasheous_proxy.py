@@ -14,6 +14,11 @@ MATCH_BODY = json.dumps(
     {"name": "Tetris", "platform": {"name": "Nintendo Game Boy"}}
 ).encode()
 LOOKUP = "/api/v1/Lookup/ByHash"
+PROXY_SCRIPT = Path(__file__).parent.parent / "scripts" / "hasheous_proxy.py"
+pytestmark = pytest.mark.skipif(
+    not PROXY_SCRIPT.exists(),
+    reason="Optional local Hasheous proxy script is not included in this checkout",
+)
 
 
 class FakeUpstreamHandler(BaseHTTPRequestHandler):
@@ -44,9 +49,7 @@ class FakeUpstreamHandler(BaseHTTPRequestHandler):
 @pytest.fixture
 def proxy(tmp_path, monkeypatch):
     """Load the proxy script, point it at a fake upstream + temp cache, serve it."""
-    spec = importlib.util.spec_from_file_location(
-        "hasheous_proxy", Path(__file__).parent.parent / "scripts" / "hasheous_proxy.py"
-    )
+    spec = importlib.util.spec_from_file_location("hasheous_proxy", PROXY_SCRIPT)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
