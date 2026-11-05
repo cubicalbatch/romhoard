@@ -80,7 +80,9 @@ COPY --chmod=755 docker/docker-entrypoint.sh /usr/local/bin/
 COPY docker/supervisord.conf /etc/supervisor/conf.d/romhoard.conf
 
 # Collect static files and fix permissions
-RUN PATH="/app/.venv/bin:$PATH" python manage.py collectstatic --no-input && \
+# Static collection must not generate a persistent key shared by every image
+# installation. The real key is generated in the data volume on first startup.
+RUN DJANGO_SECRET_KEY=static-build-only PATH="/app/.venv/bin:$PATH" python manage.py collectstatic --no-input && \
     chmod -R a+rX /app && \
     mkdir -p /app/data /app/data/metadata && chown -R romhoard:romhoard /app/data
 

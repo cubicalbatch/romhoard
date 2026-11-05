@@ -24,8 +24,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 # Priority: 1) DJANGO_SECRET_KEY env var, 2) persistent file, 3) auto-generate
 def _get_secret_key() -> str:
-    """Get or generate a persistent secret key."""
+    """Read or atomically publish the shared persistent secret key."""
     import secrets
+    import tempfile
+
+    from django.core.exceptions import ImproperlyConfigured
 
     # 1. Check environment variable
     if env_key := os.environ.get("DJANGO_SECRET_KEY"):
@@ -35,25 +38,41 @@ def _get_secret_key() -> str:
     data_dir = Path(os.environ.get("DATA_DIR", BASE_DIR / "data"))
     secret_file = data_dir / ".secret_key"
 
-    if secret_file.exists():
-        return secret_file.read_text().strip()
+    def read_key() -> str:
+        value = secret_file.read_text().strip()
+        if not value:
+            raise ImproperlyConfigured(
+                f"Secret key file {secret_file} is empty. Restore its original key "
+                "or set DJANGO_SECRET_KEY; refusing to replace it automatically."
+            )
+        return value
 
-    # 3. Generate new secret and persist it
-    new_secret = secrets.token_urlsafe(50)
     try:
-        data_dir.mkdir(parents=True, exist_ok=True)
-        secret_file.write_text(new_secret)
-        secret_file.chmod(0o600)  # Owner read/write only
-    except OSError:
-        # Can't persist (read-only filesystem?) - use generated key for this run
-        import warnings
+        try:
+            return read_key()
+        except FileNotFoundError:
+            pass
 
-        warnings.warn(
-            f"Could not persist secret key to {secret_file}. Key will be regenerated on restart.",
-            UserWarning,
-            stacklevel=2,
-        )
-    return new_secret
+        # Write the complete key privately before publishing it. link() is
+        # atomic and never overwrites another process's winning key, unlike
+        # replace() or checking exists() before write_text().
+        data_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=data_dir, prefix=".secret_key."
+        ) as temporary:
+            temporary.write(secrets.token_urlsafe(50))
+            temporary.flush()
+            os.fsync(temporary.fileno())
+            try:
+                os.link(temporary.name, secret_file)
+            except FileExistsError:
+                pass  # Another process published its complete key first.
+        return read_key()
+    except OSError as exc:
+        raise ImproperlyConfigured(
+            f"Cannot read or persist secret key at {secret_file}. Set "
+            "DJANGO_SECRET_KEY or make DATA_DIR readable and writable."
+        ) from exc
 
 
 SECRET_KEY = _get_secret_key()
@@ -64,7 +83,11 @@ DEBUG = os.environ.get("DEBUG", "true").lower() in ("true", "1", "yes")
 
 # Use bundled assets (Docker) vs CDN (development)
 # Set USE_BUNDLED_ASSETS=true in Docker to serve local JS/CSS/fonts instead of CDN
-USE_BUNDLED_ASSETS = os.environ.get("USE_BUNDLED_ASSETS", "false").lower() in ("true", "1", "yes")
+USE_BUNDLED_ASSETS = os.environ.get("USE_BUNDLED_ASSETS", "false").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 
 # ALLOWED_HOSTS can be set via environment variable (comma-separated)
 # Example: ALLOWED_HOSTS=example.com,www.example.com
@@ -313,4 +336,3 @@ COLLECTION_IMPORT_MAX_UNCOMPRESSED_SIZE = 2 * 1024 * 1024 * 1024  # 2GB in bytes
 # Django upload settings - allow large file uploads
 # DATA_UPLOAD_MAX_MEMORY_SIZE must be large enough to accept the request
 DATA_UPLOAD_MAX_MEMORY_SIZE = 1 * 1024 * 1024 * 1024  # 1GB
-

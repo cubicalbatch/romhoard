@@ -1,6 +1,14 @@
 #!/bin/bash
 set -e
 
+# Publish the key before root-run migrations or supervised processes import
+# settings, and ensure the romhoard user can read it on every startup mode.
+case "$1" in
+    all|web|worker|migrate|collectstatic|shell)
+        python -m romhoard.bootstrap
+        ;;
+esac
+
 # Wait for database to be ready
 wait_for_db() {
     echo "Waiting for database..."

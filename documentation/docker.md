@@ -13,6 +13,16 @@ Access the web interface at http://localhost:6766
 
 That's it! A secure secret key is automatically generated on first run and persisted in the data volume.
 
+Back up `/app/data/.secret_key` together with the database and metadata. This key
+also protects saved credentials. Existing keys are preserved during upgrades;
+changing the key requires re-entering encrypted credentials and signing in again.
+Startup stops if the key file is empty or cannot be read or created. Restore the
+original key, fix the data volume permissions, or supply `DJANGO_SECRET_KEY`.
+
+Older images could include a key generated during the image build. Upgrading
+prevents this for new installations but preserves an existing installation's key.
+If yours came from an older image, plan a new private key and credential reset.
+
 ## Environment Variables
 
 All environment variables have sensible defaults. You only need to set them if you want to customize behavior.
