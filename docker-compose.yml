@@ -29,7 +29,7 @@ services:
       - "6766:6766"
     volumes:
       - romhoard_data:/app/data
-      - /home/loki/git/ux_testing/dependencies/smallLibrary:/roms
+      - ./roms:/roms
     environment:
       POSTGRES_PASSWORD: romhoard_password
     depends_on:
