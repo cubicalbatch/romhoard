@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from library.archive import (
-    ArchiveInfo,
     ZipSlipError,
     _validate_archive_path,
     compute_archived_file_crc32,
@@ -125,6 +124,7 @@ class TestListArchiveContents:
         [
             ("game1.gba", 1000, 0x12345678, "12345678"),
             ("game2.gba", 2000, 0xABCDEF01, "abcdef01"),
+            ("empty.gba", 0, 0, "00000000"),
         ],
     )
     @patch("library.archive.HAS_7Z_SUPPORT", True)
@@ -446,3 +446,78 @@ class TestZipSlipError:
             raise ZipSlipError("test")
         except Exception as e:
             assert isinstance(e, ZipSlipError)
+
+
+class TestExtractionIntegrity:
+    """Extraction must preserve existing files and avoid whole-ROM reads."""
+
+    @pytest.mark.parametrize("to_directory", [False, True])
+    def test_corrupt_member_preserves_destination(self, tmp_path, to_directory):
+        archive = tmp_path / "broken.zip"
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_STORED) as zf:
+            zf.writestr("game.gba", b"ROM content")
+        archive.write_bytes(
+            archive.read_bytes().replace(b"ROM content", b"BAD content")
+        )
+        output = tmp_path / "game.gba"
+        output.write_bytes(b"existing ROM")
+
+        with pytest.raises(IOError):
+            extract_file_from_archive(
+                str(archive), "game.gba", str(tmp_path if to_directory else output)
+            )
+
+        assert output.read_bytes() == b"existing ROM"
+        assert set(tmp_path.iterdir()) == {archive, output}
+
+    def test_zip_extraction_uses_bounded_reads(self, tmp_path):
+        archive = tmp_path / "game.zip"
+        content = b"ROM" * 500_000
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("game.gba", content)
+        output = tmp_path / "game.gba"
+        original_read = zipfile.ZipExtFile.read
+
+        def bounded_read(source, size=-1):
+            assert 0 < size <= 1024 * 1024
+            return original_read(source, size)
+
+        with patch.object(zipfile.ZipExtFile, "read", bounded_read):
+            extract_file_from_archive(str(archive), "game.gba", str(output))
+
+        assert output.read_bytes() == content
+
+    def test_zero_crc_is_a_valid_checksum(self, tmp_path):
+        archive = tmp_path / "empty.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("empty.gba", b"")
+        assert compute_archived_file_crc32(str(archive), "empty.gba") == "00000000"
+
+    def test_7z_symlink_cannot_escape_to_sibling_with_same_prefix(self, tmp_path):
+        from contextlib import nullcontext
+
+        staging = tmp_path / "extract"
+        staging.mkdir()
+        outside = tmp_path / "extract-other"
+        outside.mkdir()
+        private_file = outside / "private.gba"
+        private_file.write_bytes(b"private data")
+        destination = tmp_path / "download.gba"
+
+        def extract(targets, path):
+            (Path(path) / targets[0]).symlink_to(private_file)
+
+        with (
+            patch("library.archive.file_exists_in_archive", return_value=True),
+            patch("library.archive.py7zr.SevenZipFile") as archive,
+            patch(
+                "library.archive.tempfile.TemporaryDirectory",
+                return_value=nullcontext(str(staging)),
+            ),
+        ):
+            archive.return_value.__enter__.return_value.extract.side_effect = extract
+            with pytest.raises(ZipSlipError):
+                extract_file_from_archive("test.7z", "game.gba", str(destination))
+
+        assert not destination.exists()
+        assert private_file.read_bytes() == b"private data"

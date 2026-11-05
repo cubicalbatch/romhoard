@@ -2,6 +2,8 @@
 
 import binascii
 import logging
+import os
+import shutil
 import tempfile
 import zipfile
 from pathlib import Path
@@ -105,7 +107,7 @@ def _list_zip_contents(archive_path: str) -> list[ArchiveInfo]:
             for info in zf.infolist():
                 if not info.is_dir():
                     # CRC is stored as unsigned 32-bit int, convert to 8-char hex
-                    crc_hex = format(info.CRC, "08x") if info.CRC else ""
+                    crc_hex = format(info.CRC, "08x")
                     contents.append(
                         ArchiveInfo(
                             name=info.filename,
@@ -127,7 +129,9 @@ def _list_7z_contents(archive_path: str) -> list[ArchiveInfo]:
             for info in szf.list():
                 if not info.is_directory:
                     # py7zr exposes CRC32 as int, convert to 8-char hex like ZIP
-                    crc_hex = format(info.crc32, "08x") if info.crc32 else ""
+                    crc_hex = (
+                        format(info.crc32, "08x") if info.crc32 is not None else ""
+                    )
                     contents.append(
                         ArchiveInfo(
                             name=info.filename,
@@ -226,21 +230,31 @@ def _extract_from_zip(archive_path: str, internal_path: str, dest_path: str) -> 
 
     Validates paths to prevent ZIP slip attacks.
     """
+    temp_path = None
     try:
         with zipfile.ZipFile(archive_path, "r") as zf:
             # If dest_path is a directory, extract to that directory
             dest = Path(dest_path)
             if dest.is_dir():
                 # Validate path to prevent ZIP slip
-                _validate_archive_path(internal_path, dest_path)
-                zf.extract(internal_path, path=dest_path)
+                dest = _validate_archive_path(internal_path, dest_path)
+                dest.parent.mkdir(parents=True, exist_ok=True)
             else:
                 # Extract to parent directory - validate against parent
                 parent_dir = dest.parent
                 _validate_archive_path(internal_path, str(parent_dir))
-                # Extract to exact path via memory (safer)
-                with zf.open(internal_path) as source, open(dest_path, "wb") as target:
-                    target.write(source.read())
+
+            # Stream large ROMs into a sibling temporary file. Only replace the
+            # destination after decompression and CRC validation have succeeded.
+            with (
+                zf.open(internal_path) as source,
+                tempfile.NamedTemporaryFile(
+                    dir=dest.parent, prefix=".romhoard-extract-", delete=False
+                ) as target,
+            ):
+                temp_path = Path(target.name)
+                shutil.copyfileobj(source, target, length=1024 * 1024)
+            os.replace(temp_path, dest)
     except ZipSlipError:
         raise  # Re-raise our security exception
     except KeyError:
@@ -252,6 +266,9 @@ def _extract_from_zip(archive_path: str, internal_path: str, dest_path: str) -> 
     except Exception as e:
         logger.error("Failed to extract from ZIP archive %s: %s", archive_path, e)
         raise IOError(f"Failed to extract from ZIP archive: {e}") from e
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
 
 
 def _extract_from_7z(archive_path: str, internal_path: str, dest_path: str) -> None:
@@ -259,8 +276,6 @@ def _extract_from_7z(archive_path: str, internal_path: str, dest_path: str) -> N
 
     Validates paths to prevent ZIP slip attacks.
     """
-    import shutil
-
     try:
         dest = Path(dest_path)
         if dest.is_dir():
@@ -283,7 +298,7 @@ def _extract_from_7z(archive_path: str, internal_path: str, dest_path: str) -> N
                 extracted_file = Path(temp_dir) / internal_path
                 # Double-check the resolved path is within temp_dir
                 resolved = extracted_file.resolve()
-                if not str(resolved).startswith(str(Path(temp_dir).resolve())):
+                if not resolved.is_relative_to(Path(temp_dir).resolve()):
                     raise ZipSlipError(
                         f"Extracted file escaped temp directory: {internal_path}"
                     )

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from django.conf import settings
+from django.core.validators import validate_slug
 from PIL import Image, ImageFilter
 
 if TYPE_CHECKING:
@@ -42,32 +43,47 @@ def _get_images_dir() -> Path:
     return settings.BASE_DIR / "data" / "images"
 
 
-def get_collection_cover_dir(collection_slug: str) -> Path:
+def get_collection_cover_dir(
+    collection_slug: str, *, collection_id: int | None = None
+) -> Path:
     """Get the storage directory for a collection's cover image.
 
     Creates the directory if it doesn't exist.
 
     Args:
         collection_slug: The collection's slug
+        collection_id: Saved collection ID to isolate creators with the same slug
 
     Returns:
         Path to the collection's cover directory
     """
-    cover_dir = _get_images_dir() / "collections" / collection_slug
+    validate_slug(collection_slug)
+    cover_dir = _get_images_dir() / "collections"
+    # Slugs are unique only within a creator's namespace. The database ID also
+    # stays stable when a collection is renamed or its creator changes.
+    if collection_id is not None:
+        cover_dir /= str(collection_id)
+    cover_dir /= collection_slug
     cover_dir.mkdir(parents=True, exist_ok=True)
     return cover_dir
 
 
-def get_collection_cover_path(collection_slug: str) -> Path:
+def get_collection_cover_path(
+    collection_slug: str, *, collection_id: int | None = None
+) -> Path:
     """Get the full path for a collection's cover image.
 
     Args:
         collection_slug: The collection's slug
+        collection_id: Saved collection ID to isolate creators with the same slug
 
     Returns:
         Path to the cover image file (may not exist)
     """
-    return get_collection_cover_dir(collection_slug) / "cover.png"
+    return (
+        get_collection_cover_dir(collection_slug, collection_id=collection_id)
+        / "cover.png"
+    )
 
 
 def resize_cover_image(

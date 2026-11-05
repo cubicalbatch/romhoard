@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_slug
 from django.utils import timezone
 
 from .models import Device
@@ -71,10 +73,65 @@ def validate_import_data(data: dict[str, Any]) -> None:
         raise ImportError("Invalid format: missing 'device' data")
 
     device_data = data["device"]
+    if not isinstance(device_data, dict):
+        raise ImportError("Invalid format: 'device' must be an object")
     required_fields = ["slug", "name"]
     for field in required_fields:
         if field not in device_data:
             raise ImportError(f"Invalid format: missing required field '{field}'")
+
+    for field in (
+        "slug",
+        "name",
+        "description",
+        "root_path",
+        "image_type",
+        "image_path_template",
+    ):
+        if field not in device_data:
+            continue
+        value = device_data[field]
+        max_length = Device._meta.get_field(field).max_length
+        if not isinstance(value, str) or "\x00" in value:
+            raise ImportError(
+                f"Invalid format: '{field}' must be a string without NUL characters"
+            )
+        if field in required_fields and not value.strip():
+            raise ImportError(f"Invalid format: '{field}' must not be empty")
+        if max_length and len(value) > max_length:
+            raise ImportError(
+                f"Invalid format: '{field}' exceeds {max_length} characters"
+            )
+    try:
+        validate_slug(device_data["slug"])
+    except ValidationError as exc:
+        raise ImportError(
+            "Invalid format: 'slug' must contain only letters, numbers, hyphens or underscores"
+        ) from exc
+    for field in ("has_wifi", "include_images"):
+        if field in device_data and not isinstance(device_data[field], bool):
+            raise ImportError(f"Invalid format: '{field}' must be a boolean")
+    width = device_data.get("image_max_width")
+    if width is not None and (type(width) is not int or not 0 <= width <= 2147483647):
+        raise ImportError(
+            "Invalid format: 'image_max_width' must be a nonnegative integer"
+        )
+    if device_data.get("image_type", "cover") not in dict(Device.IMAGE_TYPE_CHOICES):
+        raise ImportError("Invalid format: unsupported 'image_type'")
+
+    system_paths = device_data.get("system_paths", {})
+    if not isinstance(system_paths, dict):
+        raise ImportError("Invalid format: 'system_paths' must be an object")
+    for system, config in system_paths.items():
+        if not isinstance(system, str) or not isinstance(config, (str, dict)):
+            raise ImportError(
+                "Invalid format: each system path must be a string or object"
+            )
+        if isinstance(config, dict):
+            if not isinstance(config.get("folder", ""), str):
+                raise ImportError("Invalid format: system folder must be a string")
+            if not isinstance(config.get("game_folders", False), bool):
+                raise ImportError("Invalid format: game_folders must be a boolean")
 
 
 def import_device(data: dict[str, Any], overwrite: bool = False) -> Device:

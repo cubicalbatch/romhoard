@@ -150,7 +150,12 @@ class Collection(models.Model):
 
     def delete_cover(self) -> None:
         """Delete cover image file and clear related fields."""
-        if self.cover_image_path:
+        shared_cover = (
+            Collection.objects.filter(cover_image_path=self.cover_image_path)
+            .exclude(pk=self.pk)
+            .exists()
+        )
+        if self.cover_image_path and not shared_cover:
             cover_path = Path(self.cover_image_path)
             if cover_path.exists():
                 cover_path.unlink(missing_ok=True)

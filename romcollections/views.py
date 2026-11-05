@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+from urllib.parse import urlsplit
 
 from django.contrib import messages
 from django.core.paginator import Paginator
@@ -27,6 +28,7 @@ from django.views.decorators.http import require_GET, require_POST
 from devices.models import Device
 from django.conf import settings
 from library.models import DownloadJob, Game, SendJob, System
+from library.queues import enqueue_job
 from library.tasks import create_download_bundle, run_send_upload
 
 from .models import Collection, CollectionEntry, CoverJob, ExportJob
@@ -44,7 +46,11 @@ from .serializers import (
     import_collection_with_images,
     validate_collection_zip,
 )
-from .tasks import create_collection_export, generate_collection_cover, maybe_generate_cover  # noqa: F401
+from .tasks import (
+    create_collection_export,
+    generate_collection_cover,
+    maybe_generate_cover,
+)  # noqa: F401
 
 # Character limits for text fields
 MAX_DESCRIPTION_LENGTH = 1000
@@ -362,8 +368,6 @@ def collection_game_detail(request, creator, slug, game_pk):
     This view renders the standard game_detail template but with collection
     context for the breadcrumb: Collections > {Collection} > {Game}
     """
-    from library.views.browse import game_detail as library_game_detail
-
     collection = get_object_or_404(Collection, creator=creator, slug=slug)
     game = get_object_or_404(Game, pk=game_pk)
 
@@ -1194,11 +1198,11 @@ def start_export_with_images(request, creator, slug):
     )
 
     # Queue background task
-    job_id = create_collection_export.configure(priority=PRIORITY_CRITICAL).defer(
-        export_job_id=job.pk
+    enqueue_job(
+        job,
+        create_collection_export.configure(priority=PRIORITY_CRITICAL),
+        export_job_id=job.pk,
     )
-    job.task_id = str(job_id)
-    job.save()
 
     return JsonResponse({"job_id": job.pk})
 
@@ -1239,6 +1243,15 @@ def download_export(request, creator, slug, job_id):
     return response
 
 
+def _is_collection_zip_url(url: str) -> bool:
+    """Recognize ZIP downloads even when the URL includes query parameters."""
+    try:
+        path = urlsplit(url).path.lower()
+    except ValueError:
+        return False  # The fetch helper reports malformed URLs to the user.
+    return path.endswith(".zip") or "/download" in path
+
+
 def import_collection(request):
     """Import collection from JSON file upload or URL.
 
@@ -1264,7 +1277,7 @@ def import_collection(request):
         # URL import - fetch and show preview (or import directly for ZIPs)
         if url:
             # Check if URL points to a ZIP file
-            is_zip_url = url.lower().endswith(".zip") or "/download" in url.lower()
+            is_zip_url = _is_collection_zip_url(url)
 
             if is_zip_url:
                 # Handle ZIP URL - download and import directly
@@ -1313,7 +1326,7 @@ def import_collection(request):
 
                         # Trigger cover generation if no cover was imported
                         if not collection.has_cover:
-                            generate_collection_cover.defer(collection.id)
+                            maybe_generate_cover(collection)
 
                         return redirect(collection)
                     finally:
@@ -1509,7 +1522,10 @@ def import_collection_preview(request, token):
     slug = collection_data.get("slug", "")
 
     # Check if collection already exists
-    existing = Collection.objects.filter(slug=slug).first() if slug else None
+    creator = collection_data.get("creator") or "local"
+    existing = (
+        Collection.objects.filter(creator=creator, slug=slug).first() if slug else None
+    )
 
     if request.method == "POST":
         action = request.POST.get("action")
@@ -1580,7 +1596,15 @@ def import_collection_preview(request, token):
 @require_POST
 def sync_collection_from_source(request, creator, slug):
     """Re-fetch collection from its source URL and update."""
-    from romhoard.url_fetch import URLFetchError, fetch_json_from_url
+    import tempfile
+    import zipfile
+    from pathlib import Path
+
+    from romhoard.url_fetch import (
+        URLFetchError,
+        fetch_json_from_url,
+        fetch_zip_from_url,
+    )
 
     from .serializers import validate_import_data
 
@@ -1590,14 +1614,37 @@ def sync_collection_from_source(request, creator, slug):
         messages.error(request, "This collection has no source URL.")
         return redirect("romcollections:collection_detail", creator=creator, slug=slug)
 
-    try:
-        data = fetch_json_from_url(collection.source_url)
+    def validate_source(data):
         validate_import_data(data)
-        result = serialize_import(
-            data,
-            overwrite=True,
-            source_url=collection.source_url,
-        )
+        source = data["collection"]
+        identity = (source.get("creator") or "local", source["slug"])
+        if identity != (collection.creator, collection.slug):
+            raise SerializerImportError(
+                "The source now identifies a different collection. "
+                "Import it separately to keep this collection unchanged."
+            )
+
+    try:
+        if _is_collection_zip_url(collection.source_url):
+            with tempfile.TemporaryDirectory(prefix="romhoard-sync-") as temp_dir:
+                zip_path = str(Path(temp_dir) / "collection.zip")
+                fetch_zip_from_url(collection.source_url, zip_path)
+                validation = validate_collection_zip(zip_path)
+                if not validation.is_valid:
+                    raise SerializerImportError("; ".join(validation.errors))
+                with zipfile.ZipFile(zip_path) as archive:
+                    validate_source(json.loads(archive.read("collection.json")))
+                result = import_collection_with_images(
+                    zip_path, overwrite=True, source_url=collection.source_url
+                )
+        else:
+            data = fetch_json_from_url(collection.source_url)
+            validate_source(data)
+            result = serialize_import(
+                data,
+                overwrite=True,
+                source_url=collection.source_url,
+            )
 
         # Show warnings for invalid systems
         for warning in result.get("warnings", []):
@@ -1623,6 +1670,8 @@ def sync_collection_from_source(request, creator, slug):
         messages.error(request, f"Failed to fetch source: {e}")
     except SerializerImportError as e:
         messages.error(request, f"Sync failed: {e}")
+    except zipfile.BadZipFile:
+        messages.error(request, "Sync failed: Invalid ZIP file")
 
     return redirect("romcollections:collection_detail", creator=creator, slug=slug)
 
@@ -1670,11 +1719,11 @@ def download_collection(request, creator, slug):
     # Enqueue background task with high priority (user is waiting)
     from library.queues import PRIORITY_CRITICAL
 
-    job_id = create_download_bundle.configure(priority=PRIORITY_CRITICAL).defer(
-        download_job_id=job.pk
+    enqueue_job(
+        job,
+        create_download_bundle.configure(priority=PRIORITY_CRITICAL),
+        download_job_id=job.pk,
     )
-    job.task_id = str(job_id)
-    job.save()
 
     return JsonResponse({"job_id": job.pk})
 
@@ -1772,11 +1821,11 @@ def send_collection(request, creator, slug):
     # Enqueue with high priority
     from library.queues import PRIORITY_CRITICAL
 
-    task_id = run_send_upload.configure(priority=PRIORITY_CRITICAL).defer(
-        send_job_id=job.pk
+    enqueue_job(
+        job,
+        run_send_upload.configure(priority=PRIORITY_CRITICAL),
+        send_job_id=job.pk,
     )
-    job.task_id = str(task_id)
-    job.save()
 
     return JsonResponse({"job_id": job.pk})
 
@@ -1874,11 +1923,11 @@ def download_multi_collections(request):
 
     from library.queues import PRIORITY_CRITICAL
 
-    job_id = create_download_bundle.configure(priority=PRIORITY_CRITICAL).defer(
-        download_job_id=job.pk
+    enqueue_job(
+        job,
+        create_download_bundle.configure(priority=PRIORITY_CRITICAL),
+        download_job_id=job.pk,
     )
-    job.task_id = str(job_id)
-    job.save()
 
     return JsonResponse({"job_id": job.pk})
 
@@ -1954,11 +2003,11 @@ def send_multi_collections(request):
 
     from library.queues import PRIORITY_CRITICAL
 
-    task_id = run_send_upload.configure(priority=PRIORITY_CRITICAL).defer(
-        send_job_id=job.pk
+    enqueue_job(
+        job,
+        run_send_upload.configure(priority=PRIORITY_CRITICAL),
+        send_job_id=job.pk,
     )
-    job.task_id = str(task_id)
-    job.save()
 
     return JsonResponse({"job_id": job.pk})
 
@@ -2075,11 +2124,11 @@ def upload_cover(request, creator, slug):
     )
 
     # Queue background task
-    job_id = process_cover_upload.configure(priority=PRIORITY_CRITICAL).defer(
-        cover_job_id=job.pk
+    enqueue_job(
+        job,
+        process_cover_upload.configure(priority=PRIORITY_CRITICAL),
+        cover_job_id=job.pk,
     )
-    job.task_id = str(job_id)
-    job.save()
 
     return JsonResponse({"job_id": job.pk})
 
@@ -2088,8 +2137,6 @@ def upload_cover(request, creator, slug):
 def generate_cover(request, creator, slug):
     """Start cover generation job."""
     from library.queues import PRIORITY_NORMAL
-
-    from .tasks import generate_collection_cover
 
     collection = get_object_or_404(Collection, creator=creator, slug=slug)
 
@@ -2132,11 +2179,11 @@ def generate_cover(request, creator, slug):
     )
 
     # Queue background task
-    job_id = generate_collection_cover.configure(priority=PRIORITY_NORMAL).defer(
-        cover_job_id=job.pk
+    enqueue_job(
+        job,
+        generate_collection_cover.configure(priority=PRIORITY_NORMAL),
+        cover_job_id=job.pk,
     )
-    job.task_id = str(job_id)
-    job.save()
 
     return JsonResponse({"job_id": job.pk})
 

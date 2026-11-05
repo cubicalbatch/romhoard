@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Generator
 
-from .download import get_rom_file
+from .download import get_rom_file, roms_have_file_references
 from .image_utils import prepare_image_for_device
 from .models import Game, ROMSet
 
@@ -48,7 +48,7 @@ def iter_game_files(
 ) -> Generator[tuple[str, str], None, None]:
     """Yield (filename_in_zip, temp_or_real_file_path) tuples for a game.
 
-    Handles multi-disc games by adding disc numbers to filenames.
+    Adds disc numbers unless a descriptor or playlist requires original names.
 
     Args:
         game: Game instance to get files for
@@ -60,10 +60,12 @@ def iter_game_files(
     if not rom_set:
         return
 
-    for rom in rom_set.roms.all():
+    roms = list(rom_set.roms.all())
+    preserve_filenames = roms_have_file_references(roms)
+    for rom in roms:
         with get_rom_file(rom) as (file_path, filename):
             # For multi-disc, include disc number
-            if rom.disc is not None:
+            if rom.disc is not None and not preserve_filenames:
                 name_stem = Path(filename).stem
                 extension = Path(filename).suffix
                 filename = f"{name_stem} (Disc {rom.disc}){extension}"

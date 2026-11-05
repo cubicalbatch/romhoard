@@ -573,6 +573,18 @@ def reconcile_stored_rom(system: System, **lookup) -> str:
     return "reclassified"
 
 
+def stored_rom_matches_system(system: System, **lookup) -> bool:
+    """Check whether an existing ROM can be kept without modifying it."""
+    return (
+        ROM.objects.filter(**lookup)
+        .filter(
+            models.Q(rom_set__game__system=system)
+            | models.Q(rom_set__game__name_source=Game.SOURCE_MANUAL)
+        )
+        .exists()
+    )
+
+
 def keep_stored_archive_roms(archive_path: str, seen_paths: set) -> None:
     """Mark an unreadable archive's stored ROMs as seen so cleanup keeps them."""
     seen_paths.update(
@@ -598,12 +610,10 @@ def create_rom_from_archive_as_rom(
 
     seen_paths.add(archive_path)
 
-    stored = reconcile_stored_rom(system, file_path=archive_path, archive_path="")
-    if stored == "current":
+    if stored_rom_matches_system(system, file_path=archive_path, archive_path=""):
         logger.debug("Skipped existing archive-as-ROM: %s", archive_path)
         results["skipped"] = 1
         return results
-    results["reclassified"] = int(stored == "reclassified")
 
     filename = Path(archive_path).name
     parsed = parse_rom_filename(filename, arcade=system.archive_as_rom)
@@ -612,7 +622,11 @@ def create_rom_from_archive_as_rom(
         file_size = os.path.getsize(archive_path)
     except OSError as e:
         results["errors"].append(f"Cannot read size: {archive_path}: {e}")
+        keep_stored_archive_roms(archive_path, seen_paths)
         return results
+
+    stored = reconcile_stored_rom(system, file_path=archive_path, archive_path="")
+    results["reclassified"] = int(stored == "reclassified")
 
     # Compute CRC32 for the archive file itself
     try:
@@ -1114,12 +1128,10 @@ def scan_directory(
             seen_paths.add(file_path)
 
             # Skip if already stored under the detected system
-            stored = reconcile_stored_rom(system, file_path=file_path)
-            if stored == "current":
+            if stored_rom_matches_system(system, file_path=file_path):
                 logger.debug("Skipped existing ROM: %s", file_path)
                 skipped += 1
                 continue
-            reclassified += int(stored == "reclassified")
 
             # Parse filename
             try:
@@ -1154,6 +1166,12 @@ def scan_directory(
             # A savepoint lets PostgreSQL recover after one file fails.
             try:
                 with transaction.atomic():
+                    # Removing the previous classification and creating its
+                    # replacement must either both succeed or both roll back.
+                    stored = reconcile_stored_rom(system, file_path=file_path)
+                    if stored == "current":
+                        skipped += 1
+                        continue
                     rom_set, followup_needed = get_or_create_rom_set(
                         parsed["name"],
                         system,
@@ -1196,6 +1214,7 @@ def scan_directory(
                 continue
 
             added += 1
+            reclassified += int(stored == "reclassified")
             if followup_needed:
                 # Follow-up jobs are queued after all scan writes finish, so
                 # a merge cannot race this transaction.

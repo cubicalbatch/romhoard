@@ -58,6 +58,18 @@ class TestValidateUrl:
         url = validate_url("  https://example.com/data.json  ")
         assert url == "https://example.com/data.json"
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://example.com:bad/file",
+            "https://example.com:65536/file",
+            "https://user@/file",
+        ],
+    )
+    def test_rejects_malformed_authority(self, url):
+        with pytest.raises(URLFetchError):
+            validate_url(url)
+
 
 class TestFetchJsonFromUrl:
     """Tests for fetching JSON from URLs."""
@@ -67,12 +79,11 @@ class TestFetchJsonFromUrl:
         mock_response = MagicMock()
         mock_response.headers = {"content-type": "application/json"}
         mock_response.content = b'{"key": "value"}'
+        mock_response.iter_bytes.return_value = [mock_response.content]
         mock_response.raise_for_status = MagicMock()
 
         with patch("romhoard.url_fetch.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__.return_value.get.return_value = (
-                mock_response
-            )
+            mock_client.return_value.__enter__.return_value.stream.return_value.__enter__.return_value = mock_response
             result = fetch_json_from_url("https://example.com/data.json")
 
         assert result == {"key": "value"}
@@ -82,12 +93,11 @@ class TestFetchJsonFromUrl:
         mock_response = MagicMock()
         mock_response.headers = {"content-type": "text/html; charset=utf-8"}
         mock_response.content = b"<html></html>"
+        mock_response.iter_bytes.return_value = [mock_response.content]
         mock_response.raise_for_status = MagicMock()
 
         with patch("romhoard.url_fetch.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__.return_value.get.return_value = (
-                mock_response
-            )
+            mock_client.return_value.__enter__.return_value.stream.return_value.__enter__.return_value = mock_response
             with pytest.raises(URLFetchError, match="HTML instead of JSON"):
                 fetch_json_from_url("https://example.com/page.html")
 
@@ -95,12 +105,11 @@ class TestFetchJsonFromUrl:
         """Test that oversized content is rejected via content-length header."""
         mock_response = MagicMock()
         mock_response.headers = {"content-length": str(MAX_JSON_SIZE_BYTES + 1)}
+        mock_response.iter_bytes.return_value = [mock_response.content]
         mock_response.raise_for_status = MagicMock()
 
         with patch("romhoard.url_fetch.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__.return_value.get.return_value = (
-                mock_response
-            )
+            mock_client.return_value.__enter__.return_value.stream.return_value.__enter__.return_value = mock_response
             with pytest.raises(URLFetchError, match="too large"):
                 fetch_json_from_url("https://example.com/large.json")
 
@@ -109,12 +118,11 @@ class TestFetchJsonFromUrl:
         mock_response = MagicMock()
         mock_response.headers = {}  # No content-length header
         mock_response.content = b"x" * (MAX_JSON_SIZE_BYTES + 1)
+        mock_response.iter_bytes.return_value = [mock_response.content]
         mock_response.raise_for_status = MagicMock()
 
         with patch("romhoard.url_fetch.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__.return_value.get.return_value = (
-                mock_response
-            )
+            mock_client.return_value.__enter__.return_value.stream.return_value.__enter__.return_value = mock_response
             with pytest.raises(URLFetchError, match="too large"):
                 fetch_json_from_url("https://example.com/large.json")
 
@@ -123,19 +131,18 @@ class TestFetchJsonFromUrl:
         mock_response = MagicMock()
         mock_response.headers = {"content-type": "application/json"}
         mock_response.content = b"not valid json"
+        mock_response.iter_bytes.return_value = [mock_response.content]
         mock_response.raise_for_status = MagicMock()
 
         with patch("romhoard.url_fetch.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__.return_value.get.return_value = (
-                mock_response
-            )
+            mock_client.return_value.__enter__.return_value.stream.return_value.__enter__.return_value = mock_response
             with pytest.raises(URLFetchError, match="Invalid JSON"):
                 fetch_json_from_url("https://example.com/invalid.json")
 
     def test_handles_timeout(self):
         """Test that timeouts are handled."""
         with patch("romhoard.url_fetch.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__.return_value.get.side_effect = (
+            mock_client.return_value.__enter__.return_value.stream.side_effect = (
                 httpx.TimeoutException("Connection timed out")
             )
             with pytest.raises(URLFetchError, match="timed out"):
@@ -144,7 +151,7 @@ class TestFetchJsonFromUrl:
     def test_handles_too_many_redirects(self):
         """Test that too many redirects are handled."""
         with patch("romhoard.url_fetch.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__.return_value.get.side_effect = (
+            mock_client.return_value.__enter__.return_value.stream.side_effect = (
                 httpx.TooManyRedirects("Exceeded max redirects")
             )
             with pytest.raises(URLFetchError, match="redirects"):
@@ -156,7 +163,7 @@ class TestFetchJsonFromUrl:
         mock_response.status_code = 404
 
         with patch("romhoard.url_fetch.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__.return_value.get.side_effect = (
+            mock_client.return_value.__enter__.return_value.stream.side_effect = (
                 httpx.HTTPStatusError("Not found", request=None, response=mock_response)
             )
             with pytest.raises(URLFetchError, match="HTTP error 404"):
@@ -165,11 +172,41 @@ class TestFetchJsonFromUrl:
     def test_handles_connection_errors(self):
         """Test that connection errors are handled."""
         with patch("romhoard.url_fetch.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__.return_value.get.side_effect = (
+            mock_client.return_value.__enter__.return_value.stream.side_effect = (
                 httpx.ConnectError("Connection refused")
             )
             with pytest.raises(URLFetchError, match="Request failed"):
                 fetch_json_from_url("https://example.com/down.json")
+
+    def test_stops_reading_oversized_stream(self):
+        """Reject an unbounded response before consuming the remaining body."""
+        response = MagicMock(headers={})
+
+        def chunks():
+            yield b"x" * MAX_JSON_SIZE_BYTES
+            yield b"x"
+            pytest.fail("Read past the JSON size limit")
+
+        response.iter_bytes.side_effect = lambda **kwargs: chunks()
+        with patch("romhoard.url_fetch.httpx.Client") as client:
+            client.return_value.__enter__.return_value.stream.return_value.__enter__.return_value = response
+            with pytest.raises(URLFetchError, match="too large"):
+                fetch_json_from_url("https://example.com/unbounded.json")
+            client.return_value.__enter__.return_value.get.assert_not_called()
+
+    def test_http_compression_limit_applies_to_decoded_body(self):
+        import gzip
+
+        compressed = gzip.compress(b"x" * (MAX_JSON_SIZE_BYTES + 1))
+        transport = httpx.MockTransport(
+            lambda request: httpx.Response(
+                200, headers={"content-encoding": "gzip"}, content=compressed
+            )
+        )
+        client = httpx.Client(transport=transport)
+        with patch("romhoard.url_fetch.httpx.Client", return_value=client):
+            with pytest.raises(URLFetchError, match="too large"):
+                fetch_json_from_url("https://example.com/compressed.json")
 
 
 class TestCollectionUrlImport:
@@ -469,3 +506,29 @@ class TestFetchZipFromUrl:
             )
             with pytest.raises(URLFetchError, match="HTTP error 404"):
                 fetch_zip_from_url("https://example.com/missing.zip", str(dest_path))
+
+    @pytest.mark.parametrize("existing", [False, True])
+    def test_failed_stream_preserves_destination_and_cleans_partial_file(
+        self, tmp_path, existing
+    ):
+        destination = tmp_path / "collection.zip"
+        if existing:
+            destination.write_bytes(b"original")
+
+        def chunks():
+            yield b"partial download"
+            raise httpx.ReadTimeout("Connection lost")
+
+        response = MagicMock(headers={})
+        response.iter_bytes.side_effect = lambda **kwargs: chunks()
+        with patch("romhoard.url_fetch.httpx.Client") as client:
+            client.return_value.__enter__.return_value.stream.return_value.__enter__.return_value = response
+            with pytest.raises(URLFetchError, match="timed out"):
+                fetch_zip_from_url(
+                    "https://example.com/collection.zip", str(destination)
+                )
+
+        assert destination.exists() is existing
+        if existing:
+            assert destination.read_bytes() == b"original"
+        assert list(tmp_path.iterdir()) == ([destination] if existing else [])

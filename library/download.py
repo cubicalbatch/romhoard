@@ -11,6 +11,15 @@ from .models import ROM, ROMSet
 from .scanner import to_absolute_path
 
 
+def roms_have_file_references(roms: list[ROM]) -> bool:
+    """Whether renaming these ROMs would break a disc descriptor or playlist."""
+    return any(
+        Path(rom.path_in_archive if rom.is_archived else rom.file_name).suffix.lower()
+        in {".cue", ".gdi", ".m3u"}
+        for rom in roms
+    )
+
+
 def is_single_rom_archive(rom: ROM) -> bool:
     """Return True if the ROM lives in an archive that contains only this ROM.
 
@@ -137,9 +146,10 @@ def create_romset_bundle(rom_set: ROMSet) -> tuple[str, str]:
         IOError: If ZIP creation fails
     """
     # Get all ROMs in the ROMSet
-    available_roms = rom_set.roms.all()
-    if not available_roms.exists():
+    available_roms = list(rom_set.roms.all())
+    if not available_roms:
         raise FileNotFoundError(f"No available ROMs in ROMSet: {rom_set}")
+    preserve_filenames = roms_have_file_references(available_roms)
 
     # Create temp ZIP file
     with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as temp_file:
@@ -153,8 +163,9 @@ def create_romset_bundle(rom_set: ROMSet) -> tuple[str, str]:
             for rom in available_roms:
                 try:
                     with get_rom_file(rom) as (rom_path, rom_filename):
-                        # For multi-disc ROMs, include disc number in filename
-                        if rom.disc is not None:
+                        # Disc descriptors contain literal companion filenames.
+                        # Keep those intact rather than invalidating their references.
+                        if rom.disc is not None and not preserve_filenames:
                             # Insert disc number before extension
                             name_parts = (
                                 Path(rom_filename).stem,

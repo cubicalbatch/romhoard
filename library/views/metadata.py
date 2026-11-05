@@ -11,6 +11,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 from procrastinate.contrib.django import app as procrastinate_app
 
+from ..queues import enqueue_job
 from ..models import (
     Game,
     ImageMigrationJob,
@@ -163,9 +164,7 @@ def metadata_page(request):
                     total_images=stats["count"],
                 )
                 Setting.set("metadata_image_path", new_image_path)
-                task_id = run_image_migration.defer(migration_job_id=job.pk)
-                # Avoid overwriting progress if the worker started immediately.
-                ImageMigrationJob.objects.filter(pk=job.pk).update(task_id=str(task_id))
+                enqueue_job(job, run_image_migration, migration_job_id=job.pk)
                 return redirect("library:metadata")
         Setting.set("metadata_image_path", new_image_path)
         return redirect("library:metadata")
@@ -604,11 +603,11 @@ def fetch_system_metadata(request):
     job = SystemMetadataJob.objects.create(task_id=None)
 
     # Enqueue task
-    job_id = run_system_metadata_fetch.configure(priority=PRIORITY_NORMAL).defer(
-        job_id=job.pk
+    enqueue_job(
+        job,
+        run_system_metadata_fetch.configure(priority=PRIORITY_NORMAL),
+        job_id=job.pk,
     )
-    job.task_id = str(job_id)
-    job.save()
 
     return redirect("library:metadata")
 
@@ -665,11 +664,11 @@ def fetch_game_metadata(request, pk):
     job = MetadataJob.objects.create(task_id=None, game=game)
 
     # Enqueue task with high priority (user is viewing this game)
-    job_id = run_metadata_job_for_game.configure(priority=PRIORITY_HIGH).defer(
-        metadata_job_id=job.pk
+    enqueue_job(
+        job,
+        run_metadata_job_for_game.configure(priority=PRIORITY_HIGH),
+        metadata_job_id=job.pk,
     )
-    job.task_id = str(job_id)
-    job.save()
 
     # Return partial for HTMX requests
     if request.headers.get("HX-Request"):
@@ -752,11 +751,11 @@ def set_screenscraper_id(request, pk):
     # Optionally trigger metadata fetch
     if fetch_metadata and game.screenscraper_id:
         job = MetadataJob.objects.create(task_id=None, game=game)
-        job_id = run_metadata_job_for_game.configure(priority=PRIORITY_HIGH).defer(
-            metadata_job_id=job.pk
+        enqueue_job(
+            job,
+            run_metadata_job_for_game.configure(priority=PRIORITY_HIGH),
+            metadata_job_id=job.pk,
         )
-        job.task_id = str(job_id)
-        job.save()
 
     # Return partial for HTMX requests
     if request.headers.get("HX-Request"):

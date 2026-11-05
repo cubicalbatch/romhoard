@@ -1,6 +1,7 @@
 """File serving and download views."""
 
 import json
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from ..download import (
     get_rom_file,
     get_rom_file_as_stored,
 )
+from ..queues import enqueue_job
 from ..models import DownloadJob, Game, GameImage, ROM, ROMSet, System
 from ..tasks import create_download_bundle
 
@@ -57,17 +59,23 @@ def _serve_rom_file(rom: ROM, context_manager) -> HttpResponse:
                 )
 
             # For extracted files, copy to a new temp file and serve with cleanup
-            with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-                temp_path = temp_file.name
-                with open(file_path, "rb") as src:
-                    temp_file.write(src.read())
+            temp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+                    temp_path = temp_file.name
+                    with open(file_path, "rb") as src:
+                        shutil.copyfileobj(src, temp_file, length=1024 * 1024)
 
-            return TempFileResponse(
-                open(temp_path, "rb"),
-                as_attachment=True,
-                filename=filename,
-                temp_path=temp_path,
-            )
+                return TempFileResponse(
+                    open(temp_path, "rb"),
+                    as_attachment=True,
+                    filename=filename,
+                    temp_path=temp_path,
+                )
+            except Exception:
+                if temp_path is not None:
+                    Path(temp_path).unlink(missing_ok=True)
+                raise
     except FileNotFoundError:
         return HttpResponse("ROM file not found", status=404)
 
@@ -166,11 +174,11 @@ def start_romset_download(request, pk: int):
         task_id=None,
     )
 
-    job_id = create_download_bundle.configure(priority=PRIORITY_CRITICAL).defer(
-        download_job_id=job.pk
+    enqueue_job(
+        job,
+        create_download_bundle.configure(priority=PRIORITY_CRITICAL),
+        download_job_id=job.pk,
     )
-    job.task_id = str(job_id)
-    job.save()
 
     return JsonResponse({"job_id": job.pk})
 
@@ -248,11 +256,11 @@ def start_multi_download(request, slug):
     )
 
     # Enqueue background task with high priority (user is waiting)
-    job_id = create_download_bundle.configure(priority=PRIORITY_CRITICAL).defer(
-        download_job_id=job.pk
+    enqueue_job(
+        job,
+        create_download_bundle.configure(priority=PRIORITY_CRITICAL),
+        download_job_id=job.pk,
     )
-    job.task_id = str(job_id)
-    job.save()
 
     return JsonResponse({"job_id": job.pk})
 

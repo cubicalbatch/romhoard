@@ -3,7 +3,6 @@
 import json
 import logging
 import os
-import shutil
 import zipfile
 from datetime import timedelta
 from pathlib import Path
@@ -12,7 +11,7 @@ from django.conf import settings
 from django.utils import timezone
 from procrastinate.contrib.django import app
 
-from library.queues import QUEUE_BACKGROUND, QUEUE_USER_ACTIONS
+from library.queues import QUEUE_BACKGROUND, QUEUE_USER_ACTIONS, enqueue_job
 
 from .models import Collection, CoverJob, ExportJob
 from .serializers import export_collection as serialize_export
@@ -97,13 +96,6 @@ def create_collection_export(export_job_id: int) -> dict:
     try:
         collection = job.collection
 
-        # Clean up old completed export jobs for this collection
-        # (their files will be overwritten by the new export)
-        ExportJob.objects.filter(
-            collection=collection,
-            status=ExportJob.STATUS_COMPLETED,
-        ).exclude(pk=job.pk).delete()
-
         # Get matched games and count images
         matched_games = []
         total_images = 0
@@ -122,11 +114,13 @@ def create_collection_export(export_job_id: int) -> dict:
         exports_dir.mkdir(parents=True, exist_ok=True)
 
         # Create collection-specific export directory
-        collection_export_dir = exports_dir / collection.slug
+        collection_export_dir = exports_dir / str(collection.pk)
         collection_export_dir.mkdir(parents=True, exist_ok=True)
 
         # Final export path (persistent)
-        final_zip_path = collection_export_dir / f"{collection.slug}_with_images.zip"
+        # Each job owns its file, so concurrent exports cannot truncate or move
+        # one another's temporary archive.
+        final_zip_path = collection_export_dir / f"export-{job.pk}.zip"
 
         # Create temp ZIP file first
         temp_zip_path = final_zip_path.with_suffix(".zip.tmp")
@@ -194,9 +188,7 @@ def create_collection_export(export_job_id: int) -> dict:
                         update_progress()
 
             # Move temp file to final location
-            if final_zip_path.exists():
-                final_zip_path.unlink()
-            shutil.move(str(temp_zip_path), str(final_zip_path))
+            temp_zip_path.replace(final_zip_path)
 
             # Complete the job
             job.status = ExportJob.STATUS_COMPLETED
@@ -207,6 +199,32 @@ def create_collection_export(export_job_id: int) -> dict:
             # No expiration for hub exports - they persist until regenerated
             job.expires_at = None
             job.save()
+
+            # Preserve the previous usable export until the replacement is
+            # complete. Never delete a newer job that finished ahead of us.
+            old_jobs = ExportJob.objects.filter(
+                collection=collection,
+                status=ExportJob.STATUS_COMPLETED,
+                created_at__lt=job.created_at,
+            )
+            for old_job in old_jobs:
+                shared_file = (
+                    ExportJob.objects.filter(file_path=old_job.file_path)
+                    .exclude(pk=old_job.pk)
+                    .exists()
+                )
+                if (
+                    old_job.file_path
+                    and old_job.file_path != str(final_zip_path)
+                    and not shared_file
+                ):
+                    try:
+                        Path(old_job.file_path).unlink(missing_ok=True)
+                    except OSError:
+                        logger.warning(
+                            "Could not remove old export %s", old_job.file_path
+                        )
+                old_job.delete()
 
             return {
                 "games_exported": job.games_exported,
@@ -318,7 +336,9 @@ def process_cover_upload(cover_job_id: int) -> dict:
 
         # Resize and save cover
         cover_data = resize_cover_image(upload_path)
-        cover_path = get_collection_cover_path(collection.slug)
+        cover_path = get_collection_cover_path(
+            collection.slug, collection_id=collection.pk
+        )
 
         with open(cover_path, "wb") as f:
             f.write(cover_data)
@@ -398,7 +418,9 @@ def generate_collection_cover(cover_job_id: int) -> dict:
 
         # Create collage
         cover_data = create_collage_cover(game_images)
-        cover_path = get_collection_cover_path(collection.slug)
+        cover_path = get_collection_cover_path(
+            collection.slug, collection_id=collection.pk
+        )
 
         with open(cover_path, "wb") as f:
             f.write(cover_data)
@@ -492,11 +514,11 @@ def maybe_generate_cover(collection: "Collection") -> "CoverJob | None":
     # Queue task outside transaction (defer happens after commit)
     from library.queues import PRIORITY_LOW
 
-    job_id = generate_collection_cover.configure(priority=PRIORITY_LOW).defer(
-        cover_job_id=job.pk
+    enqueue_job(
+        job,
+        generate_collection_cover.configure(priority=PRIORITY_LOW),
+        cover_job_id=job.pk,
     )
-    job.task_id = str(job_id)
-    job.save()
 
     return job
 

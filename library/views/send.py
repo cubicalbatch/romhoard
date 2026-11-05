@@ -6,6 +6,7 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_POST
 
+from ..queues import enqueue_job
 from ..models import Game, ROM, SendJob, System
 
 
@@ -127,11 +128,11 @@ def start_send(request, slug):
     )
 
     # Enqueue with high priority (user is waiting)
-    task_id = run_send_upload.configure(priority=PRIORITY_CRITICAL).defer(
-        send_job_id=job.pk
+    enqueue_job(
+        job,
+        run_send_upload.configure(priority=PRIORITY_CRITICAL),
+        send_job_id=job.pk,
     )
-    job.task_id = str(task_id)
-    job.save()
 
     return JsonResponse({"job_id": job.pk})
 

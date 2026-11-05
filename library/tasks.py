@@ -32,6 +32,7 @@ from .models import (
 )
 from .multidownload import create_multi_game_bundle
 from .queues import (
+    enqueue_job,
     QUEUE_BACKGROUND,
     QUEUE_IDENTIFICATION,
     QUEUE_METADATA,
@@ -101,11 +102,11 @@ def queue_game_metadata(game: Game) -> bool:
     # Enqueue the actual metadata fetch task
     # Use PRIORITY_BULK so scans take precedence over auto-queued metadata
     # Note: run_metadata_job_for_game is defined later in this file
-    job_id = run_metadata_job_for_game.configure(priority=PRIORITY_BULK).defer(
-        metadata_job_id=job.pk
+    enqueue_job(
+        job,
+        run_metadata_job_for_game.configure(priority=PRIORITY_BULK),
+        metadata_job_id=job.pk,
     )
-    job.task_id = str(job_id)
-    job.save()
 
     logger.info(f"Auto-queued metadata fetch for {game} (job {job.pk})")
     return True
@@ -141,6 +142,7 @@ def run_scan(context: job_context.JobContext, scan_job_id: int) -> dict:
             fetch_metadata=scan_job.fetch_metadata,
         )
 
+        scan_job.refresh_from_db()
         scan_job.status = ScanJob.STATUS_COMPLETED
         scan_job.added = result.get("added", 0)
         scan_job.skipped = result.get("skipped", 0)
@@ -165,11 +167,13 @@ def run_scan(context: job_context.JobContext, scan_job_id: int) -> dict:
         return result
     except JobAborted:
         # Task was cancelled - update job status
+        scan_job.refresh_from_db()
         scan_job.status = ScanJob.STATUS_CANCELLED
         scan_job.completed_at = timezone.now()
         scan_job.save()
         raise
     except Exception as e:
+        scan_job.refresh_from_db()
         scan_job.status = ScanJob.STATUS_FAILED
         scan_job.errors = [str(e)]
         scan_job.completed_at = timezone.now()
@@ -396,6 +400,8 @@ def queue_metadata_batch(batch_id: int, force_failed: bool = False) -> dict:
     from .queues import PRIORITY_BULK
 
     batch = MetadataBatch.objects.get(pk=batch_id)
+    if batch.status == MetadataBatch.STATUS_CANCELLED:
+        return {"jobs_queued": 0, "skipped": "cancelled"}
 
     # Skip if ScreenScraper credentials are not configured
     if not screenscraper_available():
@@ -423,20 +429,25 @@ def queue_metadata_batch(batch_id: int, force_failed: bool = False) -> dict:
         )
         # Enqueue the actual metadata fetch task with bulk priority
         # (scans take precedence over batch metadata operations)
-        job_id = run_metadata_job_for_game.configure(priority=PRIORITY_BULK).defer(
-            metadata_job_id=job.pk
+        enqueue_job(
+            job,
+            run_metadata_job_for_game.configure(priority=PRIORITY_BULK),
+            metadata_job_id=job.pk,
         )
-        job.task_id = str(job_id)
-        job.save()
         job_count += 1
 
-    # Transition to pending (ready to run) or completed (if nothing to queue)
-    if job_count > 0:
-        batch.status = MetadataBatch.STATUS_PENDING
-    else:
-        batch.status = MetadataBatch.STATUS_COMPLETED
-        batch.completed_at = timezone.now()
-    batch.save()
+    # Workers can already have started or finished while we enqueue. Keep
+    # their timestamps and a user's cancellation, then check current jobs.
+    with transaction.atomic():
+        batch = MetadataBatch.objects.select_for_update().get(pk=batch_id)
+        if batch.status != MetadataBatch.STATUS_CANCELLED:
+            batch.status = (
+                MetadataBatch.STATUS_RUNNING
+                if batch.started_at
+                else MetadataBatch.STATUS_PENDING
+            )
+            batch.save(update_fields=["status"])
+    _check_batch_completion(batch)
 
     return {"jobs_queued": job_count}
 
@@ -473,10 +484,14 @@ def run_metadata_job_for_game(
     job.save()
 
     # Update batch started_at if this is the first job
-    if job.batch and not job.batch.started_at:
-        job.batch.started_at = timezone.now()
-        job.batch.status = MetadataBatch.STATUS_RUNNING
-        job.batch.save()
+    if job.batch_id:
+        MetadataBatch.objects.filter(pk=job.batch_id, started_at__isnull=True).update(
+            started_at=timezone.now()
+        )
+        # QUEUING must survive until the producer has created every job.
+        MetadataBatch.objects.filter(
+            pk=job.batch_id, status=MetadataBatch.STATUS_PENDING
+        ).update(status=MetadataBatch.STATUS_RUNNING)
 
     game = Game.objects.filter(pk=job.game_id).first()
     if game is None:
@@ -536,12 +551,13 @@ def run_metadata_job_for_game(
         delay_seconds = max(60, delay_seconds)  # At least 1 minute
 
         # Schedule new job for after pause expires
-        new_task_id = run_metadata_job_for_game.configure(
-            schedule_in={"seconds": int(delay_seconds)}
-        ).defer(metadata_job_id=metadata_job_id)
-
-        job.task_id = str(new_task_id)
-        job.save()
+        enqueue_job(
+            job,
+            run_metadata_job_for_game.configure(
+                schedule_in={"seconds": int(delay_seconds)}
+            ),
+            metadata_job_id=metadata_job_id,
+        )
 
         logger.info(
             f"Rescheduled metadata job {metadata_job_id} for {e.retry_after} "
@@ -566,15 +582,19 @@ def _check_batch_completion(batch):
     if not batch:
         return
 
-    pending_or_running = batch.jobs.filter(
-        status__in=[MetadataJob.STATUS_PENDING, MetadataJob.STATUS_RUNNING]
-    ).exists()
-
-    if not pending_or_running:
-        # All jobs done - update batch
-        batch.status = MetadataBatch.STATUS_COMPLETED
-        batch.completed_at = timezone.now()
-        batch.save()
+    with transaction.atomic():
+        batch = MetadataBatch.objects.select_for_update().filter(pk=batch.pk).first()
+        if not batch or batch.status not in {
+            MetadataBatch.STATUS_PENDING,
+            MetadataBatch.STATUS_RUNNING,
+        }:
+            return
+        if not batch.jobs.filter(
+            status__in=[MetadataJob.STATUS_PENDING, MetadataJob.STATUS_RUNNING]
+        ).exists():
+            batch.status = MetadataBatch.STATUS_COMPLETED
+            batch.completed_at = timezone.now()
+            batch.save(update_fields=["status", "completed_at"])
 
 
 def _trigger_cover_for_collections_if_done(game: Game) -> None:
@@ -898,12 +918,13 @@ def run_system_metadata_fetch(context: job_context.JobContext, job_id: int) -> d
         delay_seconds = max(60, delay_seconds)  # At least 1 minute
 
         # Schedule new job for after pause expires
-        new_task_id = run_system_metadata_fetch.configure(
-            schedule_in={"seconds": int(delay_seconds)}
-        ).defer(job_id=job_id)
-
-        job.task_id = str(new_task_id)
-        job.save()
+        enqueue_job(
+            job,
+            run_system_metadata_fetch.configure(
+                schedule_in={"seconds": int(delay_seconds)}
+            ),
+            job_id=job_id,
+        )
 
         logger.info(
             f"Rescheduled system metadata job {job_id} for {e.retry_after} "
@@ -1135,20 +1156,16 @@ def _process_uploaded_file(
 ) -> dict:
     """Process a single uploaded ROM file."""
     import os
-    import shutil
 
     from .chd import extract_chd_sha1, is_chd_file
     from .parser import parse_rom_filename
     from .scanner import get_or_create_rom_set, rom_file_crc32
-    from .upload import ensure_destination_dir, get_unique_filepath
+    from .upload import ensure_destination_dir, move_uploaded_file
 
     try:
         # Ensure destination directory exists
         dest_dir = ensure_destination_dir(system.slug)
-        dest_path = get_unique_filepath(dest_dir, filename)
-
-        # Move file to final location
-        shutil.move(temp_path, dest_path)
+        dest_path = move_uploaded_file(temp_path, dest_dir, filename)
 
         # Parse filename and compute hashes (CHD files identify by internal SHA1)
         parsed = parse_rom_filename(filename, arcade=system.archive_as_rom)
@@ -1274,11 +1291,10 @@ def _process_single_game_archive(
 ) -> dict:
     """Process archive containing a single game - keep archive intact."""
     import os
-    import shutil
 
     from .parser import parse_rom_filename
     from .scanner import get_or_create_rom_set
-    from .upload import ensure_destination_dir, get_unique_filepath
+    from .upload import ensure_destination_dir, move_uploaded_file
 
     try:
         # Use the first ROM file's info for naming
@@ -1286,10 +1302,7 @@ def _process_single_game_archive(
 
         # Ensure destination directory exists
         dest_dir = ensure_destination_dir(system.slug)
-        dest_path = get_unique_filepath(dest_dir, filename)
-
-        # Move archive to final location
-        shutil.move(temp_path, dest_path)
+        dest_path = move_uploaded_file(temp_path, dest_dir, filename)
 
         # Parse filename; the identifying hash is the inner ROM member's CRC
         # (what identify_game looks up), not the outer archive's
@@ -1441,13 +1454,12 @@ def _process_extracted_rom(
         Dict with success status and added count or error message.
     """
     import os
-    import shutil
     import tempfile
 
     from .archive import extract_file_from_archive
     from .parser import parse_rom_filename
     from .scanner import get_or_create_rom_set
-    from .upload import check_duplicate, ensure_destination_dir, get_unique_filepath
+    from .upload import check_duplicate, ensure_destination_dir, move_uploaded_file
 
     try:
         filename = os.path.basename(path_in_archive)
@@ -1466,10 +1478,7 @@ def _process_extracted_rom(
 
         # Ensure destination directory exists
         dest_dir = ensure_destination_dir(system.slug)
-        dest_path = get_unique_filepath(dest_dir, filename)
-
-        # Move to final location
-        shutil.move(temp_path, dest_path)
+        dest_path = move_uploaded_file(temp_path, dest_dir, filename)
 
         # Parse filename
         parsed = parse_rom_filename(filename, arcade=system.archive_as_rom)
@@ -1561,11 +1570,11 @@ def check_scheduled_scans(timestamp) -> dict:
         )
 
         # Use same priority as user-initiated scans
-        job_id = run_scan.configure(priority=PRIORITY_LOW).defer(
-            scan_job_id=scan_job.pk
+        enqueue_job(
+            scan_job,
+            run_scan.configure(priority=PRIORITY_LOW),
+            scan_job_id=scan_job.pk,
         )
-        scan_job.task_id = str(job_id)
-        scan_job.save()
 
         logger.info(f"Triggered scheduled scan for {scan_path.path}")
         scans_triggered += 1

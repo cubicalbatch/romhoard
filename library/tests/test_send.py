@@ -34,13 +34,19 @@ class TestFTPClientTestWrite:
         # Simulate directories not existing: cwd raises error, mkd succeeds
         from ftplib import error_perm
 
-        mock_ftp.cwd.side_effect = error_perm("Directory does not exist")
+        mock_ftp.cwd.side_effect = [
+            None,  # The FTP root exists.
+            error_perm("Directory does not exist"),
+            None,  # Roms exists after mkd.
+            error_perm("Directory does not exist"),
+            None,  # subfolder exists after mkd.
+        ]
 
         # Test path with subdirectory
         test_path = "/Roms/subfolder/.romhoard_test"
 
         # Call test_write
-        client.test_write(test_path)
+        assert client.test_write(test_path) == (True, "")
 
         # Verify ensure_directory was called for parent path
         # After cwd fails, mkd should be called to create directories
@@ -777,3 +783,197 @@ class TestReconnectOnFailure:
                     import os
 
                     os.unlink(temp_path)
+
+
+class TestFTPDirectorySafety:
+    def test_failed_directory_creation_never_uploads_in_parent(self):
+        from ftplib import error_perm
+
+        from library.send import FTPClient
+
+        client = FTPClient("example.com", 21, "user", "password")
+        client.ftp = MagicMock()
+
+        def cwd(path):
+            if path != "/":
+                raise error_perm("550 denied")
+
+        client.ftp.cwd.side_effect = cwd
+        client.ftp.mkd.side_effect = error_perm("550 denied")
+
+        success, _ = client.test_write("/Roms/nes/.romhoard_test")
+
+        assert success is False
+        client.ftp.storbinary.assert_not_called()
+
+    def test_upload_navigates_to_requested_directory(self, tmp_path):
+        from library.send import FTPClient
+
+        local = tmp_path / "game.gba"
+        local.write_bytes(b"ROM")
+        client = FTPClient("example.com", 21, "user", "password")
+        client.ftp = MagicMock()
+        client._current_dir = "Images"
+
+        client.upload_file(str(local), "/Roms/gba/game.gba")
+
+        assert [call.args[0] for call in client.ftp.cwd.call_args_list] == [
+            "/",
+            "Roms",
+            "gba",
+        ]
+        client.ftp.storbinary.assert_called_once()
+
+    def test_initial_root_navigation_is_not_skipped(self):
+        from library.send import FTPClient
+
+        client = FTPClient("example.com", 21, "user", "password")
+        client.ftp = MagicMock()
+
+        client.ensure_directory("Roms")
+
+        assert [call.args[0] for call in client.ftp.cwd.call_args_list] == ["/", "Roms"]
+
+
+class TestTransferIntegrity:
+    @pytest.fixture
+    def transfer(self, tmp_path):
+        from types import SimpleNamespace
+
+        local = tmp_path / "game.gba"
+        local.write_bytes(b"ROM content")
+        game = SimpleNamespace(
+            pk=1, name="Test Game", system=SimpleNamespace(slug="gba")
+        )
+        rom = SimpleNamespace(
+            file_name="game.gba", file_size=local.stat().st_size, is_archived=False
+        )
+        device = MagicMock()
+        device.include_images = False
+        device.get_system_folder.return_value = "gba"
+        device.use_game_folders_for_system.return_value = False
+        device.get_effective_transfer_path.side_effect = lambda path: f"Roms/{path}"
+        client = MagicMock()
+        client.connect.return_value = (True, "")
+        client.test_write.return_value = (True, "")
+        client.get_remote_size.return_value = None
+        client.is_connected.return_value = True
+        return local, game, rom, device, client
+
+    def test_keepalive_stops_before_remote_operations(self, transfer):
+        from contextlib import contextmanager
+
+        from library.send import send_games_to_device
+
+        local, game, rom, device, client = transfer
+        keeping_alive = False
+
+        @contextmanager
+        def keepalive(_client):
+            nonlocal keeping_alive
+            keeping_alive = True
+            try:
+                yield
+            finally:
+                keeping_alive = False
+
+        @contextmanager
+        def extract(_rom):
+            assert keeping_alive
+            yield str(local), rom.file_name
+
+        def upload(*_args):
+            assert not keeping_alive, "keepalive must not race the upload connection"
+
+        client.upload_file.side_effect = upload
+        with (
+            patch("library.send.get_send_files", return_value=[(game, rom, None)]),
+            patch("library.send.create_transfer_client", return_value=client),
+            patch("library.send.get_rom_file", extract),
+            patch("library.send.keepalive_during", keepalive),
+        ):
+            uploaded, _, failed, _ = send_games_to_device([], device, max_retries=1)
+
+        assert len(uploaded) == 1
+        assert failed == []
+
+    def test_retries_do_not_double_count_progress(self, transfer):
+        from contextlib import nullcontext
+
+        from library.send import send_games_to_device
+
+        local, game, rom, device, client = transfer
+        attempts = 0
+        observed = []
+
+        def upload(_local_path, _remote_path, callback):
+            nonlocal attempts
+            attempts += 1
+            callback(5, rom.file_size)
+            if attempts == 1:
+                raise OSError("connection lost")
+            callback(rom.file_size, rom.file_size)
+
+        client.upload_file.side_effect = upload
+        with (
+            patch("library.send.get_send_files", return_value=[(game, rom, None)]),
+            patch("library.send.create_transfer_client", return_value=client),
+            patch(
+                "library.send.get_rom_file",
+                return_value=nullcontext((str(local), rom.file_name)),
+            ),
+            patch("time.sleep"),
+        ):
+            uploaded, _, failed, _ = send_games_to_device(
+                [],
+                device,
+                progress_callback=lambda progress: observed.append(
+                    progress.bytes_uploaded
+                ),
+            )
+
+        assert len(uploaded) == 1
+        assert failed == []
+        assert observed[-1] == rom.file_size
+        assert max(observed) <= rom.file_size
+
+    @pytest.mark.parametrize(
+        "name", ["../game", "folder/game", "folder\\game", "..", "game\r\n"]
+    )
+    def test_remote_names_cannot_create_path_components(self, name):
+        from library.send import _sanitize_filename
+
+        sanitized = _sanitize_filename(name)
+        assert sanitized not in {"", ".", ".."}
+        assert not any(character in sanitized for character in "/\\\r\n")
+
+    def test_image_filename_matches_sanitized_rom_filename(self, transfer):
+        from io import BytesIO
+
+        from library.send import SendProgress, _upload_game_image
+
+        _, game, _, device, client = transfer
+        device.get_effective_image_path.return_value = "Images/Game_ Title.png"
+        with patch(
+            "library.image_utils.prepare_image_for_device",
+            return_value=(BytesIO(b"image"), ".png"),
+        ):
+            result = _upload_game_image(
+                client, game, "Game: Title.gba", device, SendProgress(files_total=1)
+            )
+
+        device.get_effective_image_path.assert_called_once_with(
+            "gba", "Game_ Title.gba"
+        )
+        assert result.success
+
+    def test_sftp_channel_operations_have_a_timeout(self):
+        from library.send import SFTPClient
+
+        with patch("library.send.paramiko.SSHClient") as ssh:
+            client = SFTPClient("example.com", 22, "user", "password")
+            assert client.connect() == (True, "")
+
+        ssh.return_value.open_sftp.return_value.get_channel.return_value.settimeout.assert_called_once_with(
+            30
+        )

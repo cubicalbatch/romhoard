@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 
+from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
@@ -44,12 +45,17 @@ def start_upload(request):
             status=400,
         )
 
-    file_count = int(request.POST.get("file_count", 0))
-    total_size = int(request.POST.get("total_size", 0))
+    try:
+        file_count = int(request.POST.get("file_count", 0))
+        total_size = int(request.POST.get("total_size", 0))
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "Invalid file count or total size"}, status=400)
     fetch_metadata = request.POST.get("fetch_metadata") == "1"
 
-    if file_count == 0:
+    if file_count <= 0:
         return JsonResponse({"error": "No files selected"}, status=400)
+    if file_count > 2**31 - 1 or not 0 <= total_size <= 2**63 - 1:
+        return JsonResponse({"error": "Invalid file count or total size"}, status=400)
 
     # Create upload job
     job = UploadJob.objects.create(
@@ -70,7 +76,7 @@ def check_duplicates(request):
     """
     try:
         files = json.loads(request.body)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, UnicodeDecodeError):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     if not isinstance(files, list):
@@ -78,8 +84,16 @@ def check_duplicates(request):
 
     duplicates = {}
     for f in files:
+        if not isinstance(f, dict):
+            return JsonResponse({"error": "Invalid file details"}, status=400)
         name = f.get("name")
         size = f.get("size")
+        if (
+            not isinstance(name, str)
+            or type(size) is not int
+            or not 0 <= size <= 2**63 - 1
+        ):
+            return JsonResponse({"error": "Invalid file name or size"}, status=400)
         if name and size is not None:
             rom = (
                 ROM.objects.filter(file_name=name, file_size=size)
@@ -102,13 +116,14 @@ def check_duplicates(request):
 
 
 @require_POST
+@transaction.atomic
 def upload_file(request, job_id: int):
     """Handle individual file upload within a job."""
     from ..upload import get_upload_temp_dir
 
-    job = get_object_or_404(UploadJob, pk=job_id)
+    job = get_object_or_404(UploadJob.objects.select_for_update(), pk=job_id)
 
-    if job.status not in [UploadJob.STATUS_UPLOADING, UploadJob.STATUS_PROCESSING]:
+    if job.status != UploadJob.STATUS_UPLOADING:
         return JsonResponse({"error": "Job not accepting uploads"}, status=400)
 
     uploaded_file = request.FILES.get("file")
@@ -128,9 +143,19 @@ def upload_file(request, job_id: int):
     temp_path = os.path.join(job_temp_dir, safe_filename)
 
     # Write chunks to avoid loading large files into memory
-    with open(temp_path, "wb+") as dest:
-        for chunk in uploaded_file.chunks():
-            dest.write(chunk)
+    try:
+        dest = open(temp_path, "xb")
+    except FileExistsError:
+        return JsonResponse(
+            {"error": "A file with this name was already uploaded"}, status=409
+        )
+    try:
+        with dest:
+            for chunk in uploaded_file.chunks():
+                dest.write(chunk)
+    except Exception:
+        os.unlink(temp_path)
+        raise
 
     # Update progress
     job.files_uploaded += 1
@@ -148,12 +173,18 @@ def upload_file(request, job_id: int):
 
 
 @require_POST
+@transaction.atomic
 def finalize_upload(request, job_id: int):
     """Called when all files uploaded - trigger processing."""
-    from ..queues import PRIORITY_CRITICAL
+    from ..queues import PRIORITY_CRITICAL, enqueue_job
     from ..tasks import process_upload_job
 
-    job = get_object_or_404(UploadJob, pk=job_id)
+    job = get_object_or_404(UploadJob.objects.select_for_update(), pk=job_id)
+
+    # A retry or double click must not enqueue a second worker or restart a
+    # finished job. The row lock also waits for an in-flight file upload.
+    if job.status != UploadJob.STATUS_UPLOADING:
+        return JsonResponse({"status": job.status, "job_id": job.pk})
 
     if job.files_uploaded == 0:
         job.status = UploadJob.STATUS_FAILED
@@ -167,11 +198,11 @@ def finalize_upload(request, job_id: int):
     job.save()
 
     # Enqueue background processing task
-    task_id = process_upload_job.configure(priority=PRIORITY_CRITICAL).defer(
-        upload_job_id=job.pk
+    enqueue_job(
+        job,
+        process_upload_job.configure(priority=PRIORITY_CRITICAL),
+        upload_job_id=job.pk,
     )
-    job.task_id = str(task_id)
-    job.save()
 
     return JsonResponse({"status": "processing", "job_id": job.pk})
 
@@ -193,7 +224,7 @@ def resolve_unidentified(request, job_id: int):
     from ..upload import (
         check_duplicate,
         ensure_destination_dir,
-        get_unique_filepath,
+        move_uploaded_file,
         get_upload_temp_dir,
     )
 
@@ -205,13 +236,34 @@ def resolve_unidentified(request, job_id: int):
             {"error": "Job is not awaiting input", "status": job.status}, status=400
         )
 
-    # Mark as processing immediately to prevent race condition
-    job.status = UploadJob.STATUS_PROCESSING
-    job.save(update_fields=["status"])
+    # Validate the entire request before claiming the job or moving any files.
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    assignments = data.get("assignments") if isinstance(data, dict) else None
+    if not isinstance(assignments, dict) or any(
+        not isinstance(value, str) for value in assignments.values()
+    ):
+        return JsonResponse({"error": "Invalid system assignments"}, status=400)
+    expected_paths = {item["temp_path"] for item in job.unidentified_files}
+    if set(assignments) != expected_paths:
+        return JsonResponse(
+            {"error": "Select a system or skip for every file"}, status=400
+        )
+    system_slugs = set(assignments.values()) - {"skip"}
+    valid_slugs = set(
+        System.objects.filter(slug__in=system_slugs).values_list("slug", flat=True)
+    )
+    if system_slugs != valid_slugs:
+        return JsonResponse({"error": "Unknown system selected"}, status=400)
 
-    # Parse system assignments from POST
-    data = json.loads(request.body)
-    assignments = data.get("assignments", {})
+    # Atomically claim the job; a concurrent request must not process it twice.
+    if not UploadJob.objects.filter(
+        pk=job.pk, status=UploadJob.STATUS_AWAITING_INPUT
+    ).update(status=UploadJob.STATUS_PROCESSING):
+        return JsonResponse({"error": "Job is already being processed"}, status=409)
+    job.status = UploadJob.STATUS_PROCESSING
 
     processed_count = 0
     for item in job.unidentified_files:
@@ -243,10 +295,7 @@ def resolve_unidentified(request, job_id: int):
 
             # Ensure destination directory exists
             dest_dir = ensure_destination_dir(system_slug)
-            dest_path = get_unique_filepath(dest_dir, filename)
-
-            # Move file to final location
-            shutil.move(temp_path, dest_path)
+            dest_path = move_uploaded_file(temp_path, dest_dir, filename)
 
             # Parse filename and compute hash
             parsed = parse_rom_filename(filename, arcade=system.archive_as_rom)

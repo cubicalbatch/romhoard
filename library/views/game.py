@@ -10,6 +10,7 @@ from django.views.decorators.http import require_POST
 from romcollections.models import CollectionEntry
 
 from ..merge import merge_games
+from ..queues import enqueue_job
 from ..models import Game, GameImage, System
 
 
@@ -130,12 +131,9 @@ def edit_game(request, pk):
         # Validate name
         if not new_name:
             errors.append("Name cannot be empty")
-        elif (
-            (new_name != old_name or new_system != old_system)
-            and Game.objects.filter(name=new_name, system=new_system)
-            .exclude(pk=pk)
-            .exists()
-        ):
+        elif (new_name != old_name or new_system != old_system) and Game.objects.filter(
+            name=new_name, system=new_system
+        ).exclude(pk=pk).exists():
             errors.append("A game with this name already exists in the selected system")
 
         if errors:
@@ -174,11 +172,11 @@ def edit_game(request, pk):
             from ..tasks import run_metadata_job_for_game
 
             job = MetadataJob.objects.create(task_id=None, game=game)
-            job_id = run_metadata_job_for_game.configure(priority=PRIORITY_HIGH).defer(
-                metadata_job_id=job.pk
+            enqueue_job(
+                job,
+                run_metadata_job_for_game.configure(priority=PRIORITY_HIGH),
+                metadata_job_id=job.pk,
             )
-            job.task_id = str(job_id)
-            job.save()
 
         # Update CollectionEntry references if name or system changed
         if new_name != old_name or new_system != old_system:

@@ -13,6 +13,7 @@ from django.views.decorators.http import require_POST
 from procrastinate.contrib.django import app as procrastinate_app
 
 from ..metadata.screenscraper import screenscraper_available
+from ..queues import enqueue_job
 from ..models import Game, GameImage, ROM, ROMSet, ScanJob, ScanPath
 from ..queues import PRIORITY_LOW
 from ..tasks import run_scan
@@ -119,11 +120,11 @@ def scan_form(request):
                 fetch_metadata=fetch_metadata,
                 task_id=None,
             )
-            job_id = run_scan.configure(priority=PRIORITY_LOW).defer(
-                scan_job_id=scan_job.pk
+            enqueue_job(
+                scan_job,
+                run_scan.configure(priority=PRIORITY_LOW),
+                scan_job_id=scan_job.pk,
             )
-            scan_job.task_id = str(job_id)
-            scan_job.save()
 
             # Redirect to same page to show in-progress scan
             return redirect("library:scan")
@@ -143,11 +144,11 @@ def rescan_path(request, pk):
             fetch_metadata=scan_path.fetch_metadata,
             task_id=None,
         )
-        job_id = run_scan.configure(priority=PRIORITY_LOW).defer(
-            scan_job_id=scan_job.pk
+        enqueue_job(
+            scan_job,
+            run_scan.configure(priority=PRIORITY_LOW),
+            scan_job_id=scan_job.pk,
         )
-        scan_job.task_id = str(job_id)
-        scan_job.save()
 
         # Redirect to same page to show in-progress scan
         return redirect("library:scan")

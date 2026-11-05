@@ -6,7 +6,7 @@ from pathlib import Path
 from django.db.models.signals import post_save, pre_delete
 from django.dispatch import receiver
 
-from library.queues import PRIORITY_LOW
+from library.queues import PRIORITY_LOW, enqueue_job
 
 from .models import Collection, ExportJob
 from .tasks import create_collection_export
@@ -15,7 +15,12 @@ from .tasks import create_collection_export
 @receiver(pre_delete, sender=Collection)
 def cleanup_collection_cover(sender, instance, **kwargs):
     """Delete cover image file when collection is deleted."""
-    if instance.cover_image_path:
+    shared_cover = (
+        Collection.objects.filter(cover_image_path=instance.cover_image_path)
+        .exclude(pk=instance.pk)
+        .exists()
+    )
+    if instance.cover_image_path and not shared_cover:
         cover_path = Path(instance.cover_image_path)
         if cover_path.exists():
             try:
@@ -55,6 +60,8 @@ def trigger_export_on_save(sender, instance, created, update_fields, **kwargs):
         task_id=task_id,
     )
 
-    create_collection_export.configure(priority=PRIORITY_LOW).defer(
-        export_job_id=job.pk
+    enqueue_job(
+        job,
+        create_collection_export.configure(priority=PRIORITY_LOW),
+        export_job_id=job.pk,
     )

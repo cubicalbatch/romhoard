@@ -10,11 +10,15 @@ from pathlib import Path
 from typing import Any
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_slug
+from django.db import transaction
 from django.utils import timezone
 
 from library.merge import find_existing_game
 from library.metadata.screenscraper import ScreenScraperClient
 from library.models import Game, GameImage, MetadataJob, System
+from library.queues import enqueue_job
 from library.tasks import run_metadata_job_for_game
 
 from .models import Collection, CollectionEntry
@@ -202,7 +206,9 @@ def validate_collection_zip(
         with zipfile.ZipFile(zip_path, "r") as zipf:
             # Check for zip bomb - compare compressed vs uncompressed size
             try:
-                total_uncompressed: int = sum(info.file_size for info in zipf.infolist())
+                total_uncompressed: int = sum(
+                    info.file_size for info in zipf.infolist()
+                )
             except (RuntimeError, OSError) as e:
                 return ValidationResult(
                     is_valid=False,
@@ -228,8 +234,7 @@ def validate_collection_zip(
             # Check compression ratio (another zip bomb indicator)
             if compressed_size > 0 and total_uncompressed / compressed_size > 100:
                 warnings.append(
-                    "Very high compression ratio detected. "
-                    "Import may take a while."
+                    "Very high compression ratio detected. Import may take a while."
                 )
 
             # Get file list
@@ -254,7 +259,7 @@ def validate_collection_zip(
                 )
 
             has_collection_json = True
-            info.append(f"Found collection.json")
+            info.append("Found collection.json")
 
             # Initialize counters (in case validation fails early)
             game_count = 0
@@ -298,7 +303,11 @@ def validate_collection_zip(
             has_images_folder = any(n.startswith("images/") for n in namelist)
 
             if has_games_folder:
-                game_files = [n for n in namelist if n.startswith("games/") and n.endswith(".json")]
+                game_files = [
+                    n
+                    for n in namelist
+                    if n.startswith("games/") and n.endswith(".json")
+                ]
                 if game_files:
                     info.append(f"Found {len(game_files)} game metadata file(s)")
 
@@ -326,7 +335,8 @@ def validate_collection_zip(
 
             # Check for suspicious files (potential security issues)
             suspicious = [
-                n for n in namelist
+                n
+                for n in namelist
                 if n.startswith(("../", "/", "..\\")) or ".." in Path(n).parts
             ]
             if suspicious:
@@ -385,10 +395,32 @@ def validate_import_data(data: dict[str, Any]) -> None:
         raise ImportError("Invalid format: missing 'collection' data")
 
     collection_data = data["collection"]
+    if not isinstance(collection_data, dict):
+        raise ImportError("Invalid format: 'collection' must be an object")
     required_fields = ["slug", "name"]
     for field in required_fields:
         if field not in collection_data:
             raise ImportError(f"Invalid format: missing required field '{field}'")
+
+    for field, max_length in (("slug", 50), ("name", 255)):
+        _validate_string(collection_data[field], field, max_length, required=True)
+    try:
+        validate_slug(collection_data["slug"])
+    except ValidationError as exc:
+        raise ImportError(
+            "Invalid format: 'slug' must contain only letters, numbers, hyphens or underscores"
+        ) from exc
+    for field, max_length in (("description", 1000), ("creator", 255)):
+        if field in collection_data:
+            if field == "creator" and collection_data[field] is None:
+                continue  # Older exports use null for the default local creator.
+            _validate_string(collection_data[field], field, max_length)
+    for field in ("is_public", "is_community", "is_personal"):
+        if field in collection_data and not isinstance(collection_data[field], bool):
+            raise ImportError(f"Invalid format: '{field}' must be a boolean")
+    tags = collection_data.get("tags", [])
+    if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
+        raise ImportError("Invalid format: 'tags' must be an array of strings")
 
     if "entries" not in data:
         raise ImportError("Invalid format: missing 'entries' array")
@@ -396,6 +428,7 @@ def validate_import_data(data: dict[str, Any]) -> None:
     if not isinstance(data["entries"], list):
         raise ImportError("Invalid format: 'entries' must be an array")
 
+    seen_entries = set()
     for i, entry in enumerate(data["entries"]):
         if not isinstance(entry, dict):
             raise ImportError(f"Invalid format: entry {i} is not an object")
@@ -403,8 +436,45 @@ def validate_import_data(data: dict[str, Any]) -> None:
             raise ImportError(f"Invalid format: entry {i} missing 'game_name'")
         if "system_slug" not in entry:
             raise ImportError(f"Invalid format: entry {i} missing 'system_slug'")
+        _validate_string(entry["game_name"], f"entry {i} game_name", 255, required=True)
+        _validate_string(
+            entry["system_slug"], f"entry {i} system_slug", 50, required=True
+        )
+        _validate_string(entry.get("notes", ""), f"entry {i} notes", 1000)
+        position = entry.get("position", i)
+        if type(position) is not int or not 0 <= position <= 2147483647:
+            raise ImportError(
+                f"Invalid format: entry {i} position must be a nonnegative integer"
+            )
+        ss_id = entry.get("screenscraper_id")
+        if ss_id is not None and (
+            type(ss_id) is not int or not 1 <= ss_id <= 2147483647
+        ):
+            raise ImportError(
+                f"Invalid format: entry {i} screenscraper_id must be a positive integer"
+            )
+        key = (entry["game_name"], entry["system_slug"])
+        if key in seen_entries:
+            raise ImportError(
+                f"Invalid format: duplicate entry {i}: {entry['game_name']}"
+            )
+        seen_entries.add(key)
 
 
+def _validate_string(
+    value, field: str, max_length: int, *, required: bool = False
+) -> None:
+    if not isinstance(value, str) or "\x00" in value:
+        raise ImportError(
+            f"Invalid format: '{field}' must be a string without NUL characters"
+        )
+    if required and not value.strip():
+        raise ImportError(f"Invalid format: '{field}' must not be empty")
+    if len(value) > max_length:
+        raise ImportError(f"Invalid format: '{field}' exceeds {max_length} characters")
+
+
+@transaction.atomic
 def import_collection(
     data: dict[str, Any],
     overwrite: bool = False,
@@ -447,7 +517,12 @@ def import_collection(
     creator = creator_override or collection_data.get("creator") or "local"
 
     # Check for existing collection with same creator+slug
-    existing = Collection.objects.filter(creator=creator, slug=slug).first()
+    _validate_string(creator, "creator", 255, required=True)
+    existing = (
+        Collection.objects.select_for_update()
+        .filter(creator=creator, slug=slug)
+        .first()
+    )
     if existing:
         if not overwrite:
             raise ImportError(
@@ -462,7 +537,9 @@ def import_collection(
     collection.name = collection_data["name"]
     collection.description = collection_data.get("description", "")
     collection.creator = creator
-    collection.is_public = True if force_public else collection_data.get("is_public", True)
+    collection.is_public = (
+        True if force_public else collection_data.get("is_public", True)
+    )
     # Handle is_community: force_community overrides, then is_personal, then JSON value
     if force_community:
         collection.is_community = True
@@ -538,9 +615,9 @@ def import_collection(
                         # Use unique temp ID to avoid constraint conflicts
                         temp_id = f"pending-{uuid.uuid4().hex[:8]}"
                         job = MetadataJob.objects.create(task_id=temp_id, game=game)
-                        job_id = run_metadata_job_for_game.defer(metadata_job_id=job.id)
-                        job.task_id = str(job_id)
-                        job.save(update_fields=["task_id"])
+                        enqueue_job(
+                            job, run_metadata_job_for_game, metadata_job_id=job.pk
+                        )
                         metadata_jobs_queued += 1
             else:
                 invalid_systems.add(entry_data["system_slug"])
@@ -666,7 +743,9 @@ def import_collection_with_images(
 
                 # Convert to PNG and resize
                 cover_data = resize_cover_image(tmp_cover_path)
-                cover_path = get_collection_cover_path(collection.slug)
+                cover_path = get_collection_cover_path(
+                    collection.slug, collection_id=collection.pk
+                )
 
                 with open(cover_path, "wb") as dst:
                     dst.write(cover_data)
@@ -733,9 +812,8 @@ def import_collection_with_images(
 
         # Prefetch existing image types for all matched games
         game_ids = [g.id for g in matched_games.values()]
-        existing_images_qs = (
-            GameImage.objects.filter(game_id__in=game_ids)
-            .values_list("game_id", "image_type")
+        existing_images_qs = GameImage.objects.filter(game_id__in=game_ids).values_list(
+            "game_id", "image_type"
         )
         existing_images_by_game: dict[int, set[str]] = {}
         for game_id, image_type in existing_images_qs:

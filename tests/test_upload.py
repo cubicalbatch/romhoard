@@ -1,5 +1,7 @@
 """Tests for upload functionality."""
 
+from pathlib import Path
+
 import pytest
 from unittest.mock import patch
 
@@ -827,3 +829,105 @@ class TestCheckDuplicatesEndpoint:
         assert response.status_code == 400
         data = response.json()
         assert data["error"] == "Expected list of files"
+
+
+class TestMoveUploadedFile:
+    def test_concurrent_same_name_uploads_keep_both_files(self, tmp_path, monkeypatch):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier, local
+
+        from library import upload
+
+        destination = tmp_path / "library"
+        destination.mkdir()
+        sources = [tmp_path / "first.tmp", tmp_path / "second.tmp"]
+        for index, source in enumerate(sources):
+            source.write_bytes(f"ROM {index}".encode())
+        barrier = Barrier(2)
+        thread_state = local()
+        get_unique_filepath = upload.get_unique_filepath
+
+        def contested_filename(dest_dir, filename):
+            candidate = get_unique_filepath(dest_dir, filename)
+            if not getattr(thread_state, "waited", False):
+                thread_state.waited = True
+                barrier.wait(timeout=5)
+            return candidate
+
+        monkeypatch.setattr(upload, "get_unique_filepath", contested_filename)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(
+                executor.map(
+                    lambda source: upload.move_uploaded_file(
+                        str(source), str(destination), "game.gba"
+                    ),
+                    sources,
+                )
+            )
+
+        assert len(set(results)) == 2
+        assert {Path(path).read_bytes() for path in results} == {b"ROM 0", b"ROM 1"}
+        assert all(not source.exists() for source in sources)
+
+    def test_failed_move_preserves_source_and_removes_partial_destination(
+        self, tmp_path, monkeypatch
+    ):
+        from library import upload
+
+        source = tmp_path / "source.tmp"
+        source.write_bytes(b"original ROM")
+        destination = tmp_path / "library"
+        destination.mkdir()
+
+        def failed_move(source_path, destination_path):
+            Path(destination_path).write_bytes(b"partial")
+            raise OSError("disk full")
+
+        monkeypatch.setattr(upload.shutil, "move", failed_move)
+        with pytest.raises(OSError, match="disk full"):
+            upload.move_uploaded_file(str(source), str(destination), "game.gba")
+
+        assert source.read_bytes() == b"original ROM"
+        assert list(destination.iterdir()) == []
+
+    def test_cross_filesystem_move_keeps_content(self, tmp_path, monkeypatch):
+        import errno
+
+        from library import upload
+
+        source = tmp_path / "source.tmp"
+        source.write_bytes(b"ROM contents")
+        destination = tmp_path / "library"
+        destination.mkdir()
+
+        def cross_device_rename(*args):
+            raise OSError(errno.EXDEV, "Cross-device link")
+
+        monkeypatch.setattr(upload.shutil.os, "rename", cross_device_rename)
+        result = upload.move_uploaded_file(str(source), str(destination), "game.gba")
+
+        assert Path(result).read_bytes() == b"ROM contents"
+        assert not source.exists()
+
+    def test_dangling_symlink_does_not_get_overwritten(self, tmp_path):
+        from library.upload import move_uploaded_file
+
+        source = tmp_path / "source.tmp"
+        source.write_bytes(b"ROM contents")
+        destination = tmp_path / "library"
+        destination.mkdir()
+        link = destination / "game.gba"
+        link.symlink_to(tmp_path / "missing.gba")
+
+        result = move_uploaded_file(str(source), str(destination), "game.gba")
+
+        assert Path(result).name == "game_1.gba"
+        assert link.is_symlink()
+        assert not (tmp_path / "missing.gba").exists()
+
+    @pytest.mark.parametrize("filename", ["", ".", "..", "../game.gba", "/game.gba"])
+    def test_directory_paths_are_rejected(self, tmp_path, filename):
+        from library.upload import move_uploaded_file
+
+        with pytest.raises(ValueError):
+            move_uploaded_file("source", str(tmp_path), filename)

@@ -60,3 +60,17 @@ def test_truncated_header(tmp_path):
 
 def test_unreadable_file(tmp_path):
     assert extract_chd_sha1(str(tmp_path / "missing.chd")) is None
+
+
+def test_short_declared_header_cannot_return_truncated_sha1(tmp_path):
+    path = tmp_path / "malformed.chd"
+    path.write_bytes(b"MComprHD" + struct.pack(">II", 16, 5) + b"\x01" * 70)
+
+    assert extract_chd_sha1(str(path)) is None
+
+
+def test_sha1_outside_declared_header_is_rejected(tmp_path):
+    path = tmp_path / "malformed.chd"
+    path.write_bytes(b"MComprHD" + struct.pack(">II", 16, 5) + b"\x01" * 108)
+
+    assert extract_chd_sha1(str(path)) is None

@@ -481,6 +481,10 @@ def apply_metadata_to_game(game: Game, metadata: dict) -> bool:
                     f"Merging '{game.name}' (pk={game.pk}) into it."
                 )
                 merge_games(existing_with_ss_id, game)
+                # merge_games locks and saves fresh instances, including the
+                # best ROMSet and metadata copied from the duplicate. Reload
+                # those changes before saving this previously loaded target.
+                existing_with_ss_id.refresh_from_db()
                 # Update the existing game's metadata instead
                 game = existing_with_ss_id
 

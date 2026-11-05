@@ -51,7 +51,7 @@ def extract_chd_sha1(file_path: str) -> str | None:
 
     length, version = struct.unpack(">II", header[8:16])
     offset = SHA1_OFFSETS.get(version)
-    if offset is None or len(header) < min(length, offset + 20):
+    if offset is None or length < offset + 20 or len(header) < offset + 20:
         logger.debug("Unsupported CHD version %d: %s", version, file_path)
         return None
 

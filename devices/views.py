@@ -297,7 +297,7 @@ def import_device(request):
             data = json.loads(file.read().decode("utf-8"))
             serialize_import(data, overwrite=overwrite)
             return redirect("devices:device_list")
-        except json.JSONDecodeError:
+        except (UnicodeDecodeError, json.JSONDecodeError):
             context = {"error": "Invalid JSON file"}
             return render(request, "devices/import.html", context)
         except SerializerImportError as e:

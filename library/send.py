@@ -4,7 +4,7 @@ import ftplib
 import logging
 import os
 import threading
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -49,7 +49,9 @@ def keepalive_during(client: "TransferClient", interval: float = 15.0):
         yield
     finally:
         stop_event.set()
-        thread.join(timeout=2.0)
+        # Wait for an in-flight command to finish before the main thread uses
+        # the connection again. FTP and SFTP clients are not safe to share.
+        thread.join()
 
 
 @dataclass
@@ -157,10 +159,11 @@ class FTPClient(TransferClient):
         self.password = password
         self.use_tls = use_tls
         self.ftp: Optional[ftplib.FTP] = None
-        self._current_dir: str = ""
+        self._current_dir: str | None = None
 
     def _cwd_to(self, target_dir: str) -> None:
         """Change to target directory, using relative path if possible."""
+        target_dir = target_dir.strip("/")
         if self._current_dir == target_dir:
             return
         if not target_dir:
@@ -207,7 +210,7 @@ class FTPClient(TransferClient):
                 self.ftp.login()
             if self.use_tls:
                 self.ftp.prot_p()
-            self._current_dir = ""
+            self._current_dir = None
             logger.debug(
                 f"{protocol}: Connected successfully to {self.host}:{self.port}"
             )
@@ -229,6 +232,8 @@ class FTPClient(TransferClient):
 
             if parent_dir:
                 self.ensure_directory(parent_dir)
+            else:
+                self._cwd_to("")
 
             test_data = b"RomHoard test"
             test_file = BytesIO(test_data)
@@ -278,12 +283,14 @@ class FTPClient(TransferClient):
             except ftplib.error_perm:
                 try:
                     self.ftp.mkd(part)
-                    self.ftp.cwd(part)
-                    self._current_dir = (
-                        f"{self._current_dir}/{part}" if self._current_dir else part
-                    )
                 except ftplib.error_perm:
+                    # Another client may have just created it; cwd is the
+                    # authoritative check. Never continue in the parent folder.
                     pass
+                self.ftp.cwd(part)
+                self._current_dir = (
+                    f"{self._current_dir}/{part}" if self._current_dir else part
+                )
 
     def upload_file(
         self,
@@ -301,7 +308,7 @@ class FTPClient(TransferClient):
             if progress_callback:
                 progress_callback(bytes_sent[0], file_size)
 
-        # Use only the filename since ensure_directory already navigated there
+        self._cwd_to("/".join(remote_path.split("/")[:-1]))
         filename = remote_path.split("/")[-1]
         with open(local_path, "rb") as f:
             self.ftp.storbinary(f"STOR {filename}", f, callback=callback)
@@ -309,7 +316,7 @@ class FTPClient(TransferClient):
     def upload_data(self, data: BytesIO, remote_path: str) -> None:
         """Upload data from BytesIO to remote path."""
         data.seek(0)
-        # Use only the filename since ensure_directory already navigated there
+        self._cwd_to("/".join(remote_path.split("/")[:-1]))
         filename = remote_path.split("/")[-1]
         self.ftp.storbinary(f"STOR {filename}", data)
 
@@ -369,6 +376,7 @@ class SFTPClient(TransferClient):
                 look_for_keys=False,
             )
             self.sftp = self.client.open_sftp()
+            self.sftp.get_channel().settimeout(30)
             logger.debug(f"SFTP: Connected successfully to {self.host}:{self.port}")
             return True, ""
         except Exception as e:
@@ -502,10 +510,11 @@ def create_transfer_client(device: Device) -> TransferClient:
 def _sanitize_filename(name: str) -> str:
     """Sanitize filename for safe remote storage."""
     # Remove or replace unsafe characters
-    unsafe_chars = '<>:"|?*'
+    unsafe_chars = '<>:"|?*/\\'
     for char in unsafe_chars:
         name = name.replace(char, "_")
-    return name
+    name = "".join("_" if ord(char) < 32 or ord(char) == 127 else char for char in name)
+    return name.strip(". ") or "_"
 
 
 def get_send_files(
@@ -586,7 +595,9 @@ def _upload_game_image(
     from library.image_utils import prepare_image_for_device
 
     # Get remote image path
-    image_remote_path = device.get_effective_image_path(game.system.slug, rom_filename)
+    image_remote_path = device.get_effective_image_path(
+        game.system.slug, _sanitize_filename(rom_filename)
+    )
     if not image_remote_path:
         return None
 
@@ -778,108 +789,105 @@ def send_games_to_device(
 
             # Need to upload - now extract the ROM (with keepalive during extraction)
             try:
-                with keepalive_during(client):
-                    with get_rom_file(rom) as (local_path, extracted_filename):
-                        # Use extracted filename in case it differs
-                        actual_filename = extracted_filename
-                        local_size = os.path.getsize(local_path)
+                with ExitStack() as file_stack:
+                    with keepalive_during(client):
+                        local_path, extracted_filename = file_stack.enter_context(
+                            get_rom_file(rom)
+                        )
+                    # Use extracted filename in case it differs
+                    actual_filename = extracted_filename
+                    local_size = os.path.getsize(local_path)
 
-                        # Ensure remote directory exists
-                        remote_dir = "/".join(remote_path.split("/")[:-1])
-                        if remote_dir:
-                            client.ensure_directory(remote_dir)
+                    # Ensure remote directory exists
+                    remote_dir = "/".join(remote_path.split("/")[:-1])
+                    if remote_dir:
+                        client.ensure_directory(remote_dir)
 
-                        # Upload with retries
-                        last_error = ""
-                        upload_success = False
-                        for attempt in range(max_retries):
-                            try:
-                                # Check connection before upload, reconnect if needed
-                                logger.debug(
-                                    f"Attempt {attempt + 1}: checking connection..."
-                                )
-                                if not client.is_connected():
-                                    logger.info(
-                                        "Connection lost, attempting reconnect..."
-                                    )
-                                    success, error = client.reconnect()
-                                    if not success:
-                                        logger.warning(f"Reconnect failed: {error}")
-                                        last_error = f"Reconnect failed: {error}"
-                                        continue
-                                    logger.info("Reconnected successfully")
-                                    # Re-navigate to directory after reconnect
-                                    if remote_dir:
-                                        client.ensure_directory(remote_dir)
-
-                                bytes_before = progress.bytes_uploaded
-
-                                def file_progress(bytes_transferred, total_bytes):
-                                    progress.bytes_uploaded = (
-                                        bytes_before + bytes_transferred
-                                    )
-                                    if progress_callback:
-                                        progress_callback(progress)
-
-                                client.upload_file(
-                                    local_path, remote_path, file_progress
-                                )
-                                upload_success = True
-                                progress.bytes_uploaded = bytes_before + local_size
-                                break
-                            except Exception as e:
-                                last_error = str(e)
-                                logger.warning(
-                                    f"Upload attempt {attempt + 1}/{max_retries} failed for {actual_filename}: {e}"
-                                )
-                                if attempt < max_retries - 1:
-                                    import time
-
-                                    time.sleep(1)
-
-                        if upload_success:
-                            result = FileResult(
-                                game_id=game.pk,
-                                filename=actual_filename,
-                                remote_path=remote_path,
-                                success=True,
-                                bytes=local_size,
+                    # Upload with retries
+                    last_error = ""
+                    upload_success = False
+                    bytes_before = progress.bytes_uploaded
+                    for attempt in range(max_retries):
+                        try:
+                            # Check connection before upload, reconnect if needed
+                            logger.debug(
+                                f"Attempt {attempt + 1}: checking connection..."
                             )
-                            uploaded.append(result)
-                            progress.files_uploaded += 1
-                            logger.info(
-                                f"Uploaded {actual_filename} -> {remote_path}"
-                            )
+                            if not client.is_connected():
+                                logger.info("Connection lost, attempting reconnect...")
+                                success, error = client.reconnect()
+                                if not success:
+                                    logger.warning(f"Reconnect failed: {error}")
+                                    last_error = f"Reconnect failed: {error}"
+                                    continue
+                                logger.info("Reconnected successfully")
+                                # Re-navigate to directory after reconnect
+                                if remote_dir:
+                                    client.ensure_directory(remote_dir)
 
-                            # Upload image for this game if enabled
-                            if device.include_images:
-                                image_result = _upload_game_image(
-                                    client=client,
-                                    game=game,
-                                    rom_filename=actual_filename,
-                                    device=device,
-                                    progress=progress,
+                            def file_progress(bytes_transferred, total_bytes):
+                                progress.bytes_uploaded = (
+                                    bytes_before + bytes_transferred
                                 )
-                                if image_result:
-                                    image_results.append(image_result)
-                                    if progress_callback:
-                                        progress_callback(progress)
-                        else:
-                            result = FileResult(
-                                game_id=game.pk,
-                                filename=actual_filename,
-                                remote_path=remote_path,
-                                success=False,
-                                error=last_error,
-                            )
-                            failed.append(result)
-                            progress.files_failed += 1
-                            logger.error(
-                                f"Failed to upload {actual_filename}: {last_error}"
-                            )
+                                if progress_callback:
+                                    progress_callback(progress)
 
-                        if progress_callback:
-                            progress_callback(progress)
+                            client.upload_file(local_path, remote_path, file_progress)
+                            upload_success = True
+                            progress.bytes_uploaded = bytes_before + local_size
+                            break
+                        except Exception as e:
+                            progress.bytes_uploaded = bytes_before
+                            last_error = str(e)
+                            logger.warning(
+                                f"Upload attempt {attempt + 1}/{max_retries} failed for {actual_filename}: {e}"
+                            )
+                            if attempt < max_retries - 1:
+                                import time
+
+                                time.sleep(1)
+
+                    if upload_success:
+                        result = FileResult(
+                            game_id=game.pk,
+                            filename=actual_filename,
+                            remote_path=remote_path,
+                            success=True,
+                            bytes=local_size,
+                        )
+                        uploaded.append(result)
+                        progress.files_uploaded += 1
+                        logger.info(f"Uploaded {actual_filename} -> {remote_path}")
+
+                        # Upload image for this game if enabled
+                        if device.include_images:
+                            image_result = _upload_game_image(
+                                client=client,
+                                game=game,
+                                rom_filename=actual_filename,
+                                device=device,
+                                progress=progress,
+                            )
+                            if image_result:
+                                image_results.append(image_result)
+                                if progress_callback:
+                                    progress_callback(progress)
+                    else:
+                        result = FileResult(
+                            game_id=game.pk,
+                            filename=actual_filename,
+                            remote_path=remote_path,
+                            success=False,
+                            error=last_error,
+                        )
+                        failed.append(result)
+                        progress.files_failed += 1
+                        logger.error(
+                            f"Failed to upload {actual_filename}: {last_error}"
+                        )
+
+                    if progress_callback:
+                        progress_callback(progress)
 
             except (FileNotFoundError, IOError, OSError) as e:
                 # File missing or extraction failed

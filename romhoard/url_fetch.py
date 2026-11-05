@@ -1,6 +1,9 @@
 """URL fetching utility for importing JSON from remote URLs."""
 
 import json
+import os
+import tempfile
+from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
@@ -40,13 +43,16 @@ def validate_url(url: str) -> str:
 
     try:
         parsed = urlparse(url)
+        hostname = parsed.hostname
+        # Accessing port also validates its syntax and range.
+        parsed.port
     except ValueError as e:
         raise URLFetchError(f"Invalid URL: {e}") from e
 
     if parsed.scheme not in ("http", "https"):
         raise URLFetchError("URL must use http or https")
 
-    if not parsed.netloc:
+    if not hostname:
         raise URLFetchError("URL must have a hostname")
 
     return url
@@ -82,34 +88,35 @@ def fetch_json_from_url(url: str) -> dict:
             follow_redirects=True,
             max_redirects=MAX_REDIRECTS,
         ) as client:
-            response = client.get(url)
-            response.raise_for_status()
+            with client.stream("GET", url) as response:
+                response.raise_for_status()
 
-            # Check content type - reject HTML
-            content_type = response.headers.get("content-type", "").lower()
-            if "text/html" in content_type:
-                raise URLFetchError(
-                    "URL returned HTML instead of JSON. "
-                    "Make sure the URL points directly to a JSON file."
-                )
+                content_type = response.headers.get("content-type", "").lower()
+                if "text/html" in content_type:
+                    raise URLFetchError(
+                        "URL returned HTML instead of JSON. "
+                        "Make sure the URL points directly to a JSON file."
+                    )
 
-            # Check content length if provided
-            content_length = response.headers.get("content-length")
-            if content_length:
-                try:
-                    if int(content_length) > MAX_JSON_SIZE_BYTES:
+                content_length = response.headers.get("content-length")
+                if content_length:
+                    try:
+                        if int(content_length) > MAX_JSON_SIZE_BYTES:
+                            raise URLFetchError(
+                                f"File too large (max {MAX_JSON_SIZE_BYTES // 1024 // 1024}MB)"
+                            )
+                    except ValueError:
+                        pass
+
+                # Limit decoded bytes while receiving the body, including
+                # responses without Content-Length or with HTTP compression.
+                content = bytearray()
+                for chunk in response.iter_bytes(chunk_size=8192):
+                    if len(content) + len(chunk) > MAX_JSON_SIZE_BYTES:
                         raise URLFetchError(
                             f"File too large (max {MAX_JSON_SIZE_BYTES // 1024 // 1024}MB)"
                         )
-                except ValueError:
-                    pass  # Invalid content-length header, check actual size below
-
-            # Check actual content size
-            content = response.content
-            if len(content) > MAX_JSON_SIZE_BYTES:
-                raise URLFetchError(
-                    f"File too large (max {MAX_JSON_SIZE_BYTES // 1024 // 1024}MB)"
-                )
+                    content.extend(chunk)
 
             # Parse JSON
             try:
@@ -125,7 +132,7 @@ def fetch_json_from_url(url: str) -> dict:
         raise URLFetchError(f"Too many redirects (max {MAX_REDIRECTS})")
     except httpx.HTTPStatusError as e:
         raise URLFetchError(f"HTTP error {e.response.status_code}") from e
-    except httpx.RequestError as e:
+    except (httpx.RequestError, httpx.InvalidURL) as e:
         raise URLFetchError(f"Request failed: {e}") from e
 
 
@@ -147,6 +154,7 @@ def fetch_zip_from_url(url: str, dest_path: str) -> None:
     """
     url = validate_url(url)
 
+    temp_path = None
     try:
         with httpx.Client(
             timeout=httpx.Timeout(
@@ -173,7 +181,13 @@ def fetch_zip_from_url(url: str, dest_path: str) -> None:
 
                 # Stream to file, checking size as we go
                 total_size = 0
-                with open(dest_path, "wb") as f:
+                # Replace only a complete download; retain an existing file on
+                # timeout, oversized response, or a local write failure.
+                destination = Path(dest_path)
+                with tempfile.NamedTemporaryFile(
+                    dir=destination.parent, prefix=f".{destination.name}.", delete=False
+                ) as f:
+                    temp_path = f.name
                     for chunk in response.iter_bytes(chunk_size=8192):
                         total_size += len(chunk)
                         if total_size > MAX_ZIP_SIZE_BYTES:
@@ -181,6 +195,7 @@ def fetch_zip_from_url(url: str, dest_path: str) -> None:
                                 f"File too large (max {MAX_ZIP_SIZE_BYTES // 1024 // 1024}MB)"
                             )
                         f.write(chunk)
+                os.replace(temp_path, dest_path)
 
     except httpx.TimeoutException:
         raise URLFetchError("Request timed out")
@@ -188,5 +203,8 @@ def fetch_zip_from_url(url: str, dest_path: str) -> None:
         raise URLFetchError(f"Too many redirects (max {MAX_REDIRECTS})")
     except httpx.HTTPStatusError as e:
         raise URLFetchError(f"HTTP error {e.response.status_code}") from e
-    except httpx.RequestError as e:
+    except (httpx.RequestError, httpx.InvalidURL) as e:
         raise URLFetchError(f"Request failed: {e}") from e
+    finally:
+        if temp_path is not None:
+            Path(temp_path).unlink(missing_ok=True)

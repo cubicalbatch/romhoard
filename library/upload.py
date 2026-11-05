@@ -10,6 +10,7 @@ This module provides utilities for:
 
 import logging
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -163,15 +164,42 @@ def get_unique_filepath(dest_dir: str, filename: str) -> str:
     """
     dest_path = os.path.join(dest_dir, filename)
 
-    if not os.path.exists(dest_path):
+    if not os.path.lexists(dest_path):
         return dest_path
 
     base, ext = os.path.splitext(filename)
     counter = 1
-    while os.path.exists(dest_path):
+    while os.path.lexists(dest_path):
         dest_path = os.path.join(dest_dir, f"{base}_{counter}{ext}")
         counter += 1
 
+    return dest_path
+
+
+def move_uploaded_file(temp_path: str, dest_dir: str, filename: str) -> str:
+    """Move an upload without overwriting concurrent uploads or existing files.
+
+    Reserve the final filename with exclusive creation. A competing upload that
+    selected the same name retries with a new suffix. shutil.move retains its
+    cross-filesystem support, and failures remove the reserved/partial output.
+    """
+    if not filename or filename in {".", ".."} or Path(filename).name != filename:
+        raise ValueError("Upload filename must not contain a directory path")
+
+    while True:
+        dest_path = get_unique_filepath(dest_dir, filename)
+        try:
+            with open(dest_path, "xb"):
+                pass
+        except FileExistsError:
+            continue
+        break
+
+    try:
+        shutil.move(temp_path, dest_path)
+    except BaseException:
+        Path(dest_path).unlink(missing_ok=True)
+        raise
     return dest_path
 
 
