@@ -416,13 +416,7 @@ document.addEventListener('alpine:init', () => {
                     throw new Error('Invalid response from server');
                 }
             } catch (error) {
-                if (contentEl) {
-                    contentEl.innerHTML = `
-                        <div class="p-6 text-center">
-                            <p class="retro-result-error mb-4">Error: ${error.message}</p>
-                            <button data-modal-close="download-progress" class="retro-btn">Close</button>
-                        </div>`;
-                }
+                showModalError(contentEl, error.message, 'download-progress');
             }
         },
 
@@ -464,13 +458,7 @@ document.addEventListener('alpine:init', () => {
                     throw new Error('Invalid response from server');
                 }
             } catch (error) {
-                if (contentEl) {
-                    contentEl.innerHTML = `
-                        <div class="p-6 text-center">
-                            <p class="retro-result-error mb-4">Error: ${error.message}</p>
-                            <button data-modal-close="send-progress" class="retro-btn">Close</button>
-                        </div>`;
-                }
+                showModalError(contentEl, error.message, 'send-progress');
             }
         }
     });
@@ -514,13 +502,7 @@ document.addEventListener('alpine:init', () => {
                     throw new Error('Invalid response from server');
                 }
             } catch (error) {
-                if (contentEl) {
-                    contentEl.innerHTML = `
-                        <div class="p-6 text-center">
-                            <p class="retro-result-error mb-4">Error: ${error.message}</p>
-                            <button data-modal-close="download-progress" class="retro-btn">Close</button>
-                        </div>`;
-                }
+                showModalError(contentEl, error.message, 'download-progress');
             }
         }
     });

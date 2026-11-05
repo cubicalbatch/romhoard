@@ -3,6 +3,7 @@
   "private": true,
   "description": "Tailwind CSS build for RomHoard Docker image",
   "scripts": {
+    "test:js": "node --test tests/js/*.test.cjs",
     "build:css": "tailwindcss -i static/css/tailwind-input.css -o static/css/tailwind.css --minify"
   },
   "devDependencies": {

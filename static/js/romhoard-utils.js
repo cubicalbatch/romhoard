@@ -16,6 +16,23 @@ function spinnerHtml(message = '') {
     </div>`;
 }
 
+function showModalError(container, message, modalId) {
+    if (!container) return;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'p-6 text-center';
+    const text = document.createElement('p');
+    text.className = 'retro-result-error mb-4';
+    // Server errors can contain filenames or remote responses. Render them as
+    // text so they can never introduce markup or event handlers.
+    text.textContent = `Error: ${message}`;
+    const close = document.createElement('button');
+    close.className = 'retro-btn';
+    close.dataset.modalClose = modalId;
+    close.textContent = 'Close';
+    wrapper.append(text, close);
+    container.replaceChildren(wrapper);
+}
+
 function initNavHighlight() {
     const currentPath = window.location.pathname;
     // Support both desktop (.retro-nav-btn) and mobile (.retro-nav-btn-mobile) nav links
@@ -161,6 +178,7 @@ Theme.init();
 // Export to window for Alpine stores
 window.getCsrfToken = getCsrfToken;
 window.spinnerHtml = spinnerHtml;
+window.showModalError = showModalError;
 window.formatBytes = formatBytes;
 window.Theme = Theme;
 
