@@ -5,18 +5,18 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "cryptography>=46.0.3",
-    "django>=6.0",
-    "django-allauth>=65.14.0",
+    "cryptography>=50.0.2",
+    "django>=6.0.10,<6.1",
+    "django-allauth>=65.14.1",
     "gunicorn>=23.0.0",
     "httpx>=0.28.1",
     "paramiko>=4.0.0",
-    "pillow>=12.0.0",
+    "pillow>=13.0.0",
     "procrastinate>=3.6.0",
     "psycopg[binary]>=3.3.2",
-    "py7zr>=1.0.0",
-    "pyjwt>=2.11.0",
-    "requests>=2.32.5",
+    "py7zr>=1.1.4",
+    "pyjwt>=2.15.1",
+    "requests>=2.34.2",
     "whitenoise>=6.11.0",
 ]
 
